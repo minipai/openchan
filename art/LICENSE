@@ -1,0 +1,44 @@
+The cast — persona files and artwork
+===================================
+
+Copyright (c) 2026 Art Pai. All rights reserved, except as granted below.
+
+The maids of Claude Café — their names, their persona files (`*/persona.*.md`)
+and their artwork (`*/expressions/`, `*/portraits/`) — are the identity of this
+project rather than part of its source code, and the MIT license at the
+repository root does not cover them.
+
+
+You are welcome to
+------------------
+
+- Put any maid to work with Claude Code: hire her from claudecafe.dev, keep her
+  persona in `~/.claude/cafe/personas/`, and let her serve you.
+- Change her for your own use — rewrite her lines, redraw her, dress her
+  differently — as long as the result stays something you use rather than
+  something you publish.
+- Quote her and screenshot her when writing about the project.
+
+
+Please don't
+------------
+
+- Sell her, or anything derived from her.
+- Publish her as your own character, or under a name that would leave people
+  believing your version is the one from Claude Café.
+- Use her name or her face to suggest this project endorses something it
+  doesn't.
+
+
+About the artwork, honestly
+---------------------------
+
+The sprites and portraits were generated with AI image tools, from pencil
+references and a written style spec kept outside this repository, then finished
+with the scripts under `scripts/`. How much copyright attaches to work made that
+way is unsettled, and the answer differs by country — in some of them it is
+little or nothing.
+
+So take the rules above for what they are: a request about how to treat someone
+else's work, not a threat. The persona files are a different matter — they are
+written text, and protected as such.

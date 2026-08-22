@@ -1,0 +1,21 @@
+{
+  "name": "openchan",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/main.tsx",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "1.17.11",
+    "@opentui/core": "^0.5.3",
+    "@opentui/react": "^0.5.3",
+    "react": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.1.0",
+    "typescript": "^5.7.0"
+  }
+}
