@@ -1,14 +1,11 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import net from 'node:net'
 import { createOpencode } from '@opencode-ai/sdk'
+import { briefFor, type Character } from './cast'
 import { faceFor, type Expression } from './expressions'
 import type { BridgeEvent, Conversation, Model } from './protocol'
-
-const here = path.dirname(fileURLToPath(import.meta.url))
-const project = path.resolve(here, '..')
 
 /**
  * Which model she starts the session thinking with — she can be handed another
@@ -66,36 +63,20 @@ export type ProviderModels = {
  */
 const PERMISSION = { bash: 'ask', edit: 'ask', webfetch: 'ask' } as const
 
-/** The one language she has, until the screen has more than one. Her persona
- * file and every word on screen are in it. */
-const SPEAKS = 'English'
-
 /**
- * Her persona, written where opencode can be pointed at it.
+ * Whoever is on shift, written where opencode can be pointed at it.
  *
  * `instructions` appends rather than replaces, which is the point: she keeps
  * the coding agent's own discipline about reading before writing and gets to be
- * ことね on top of it. Replacing the prompt would make her charming and useless.
+ * ことね — or くるみ — on top of it. Replacing the prompt would make her charming
+ * and useless.
  *
- * The mood marker travels with her, because the whole sprite layer is driven by
- * it — the 【…】 she signs with is looked up against the artwork's filenames.
+ * A file per girl rather than one file overwritten: swapping closes one server
+ * and starts another, and for a moment both of them are reading.
  */
-function writePersona() {
-  const persona = fs
-    .readFileSync(path.join(project, 'persona/kotone.en.md'), 'utf8')
-    .replace(/^---\n[\s\S]*?\n---\n/, '')
-  const cues = fs
-    .readFileSync(path.join(project, 'persona/cues.md'), 'utf8')
-    .replace(/\$lang/g, SPEAKS)
-  const brief = [
-    'Adopt this persona for the entire session — it overrides the default assistant voice:',
-    persona,
-    cues,
-    `Respond in ${SPEAKS}.`,
-  ].join('\n\n')
-
-  const file = path.join(os.tmpdir(), 'openchan-persona.md')
-  fs.writeFileSync(file, brief)
+function writePersona(who: Character) {
+  const file = path.join(os.tmpdir(), `openchan-persona-${who.id}.md`)
+  fs.writeFileSync(file, briefFor(who))
   return file
 }
 
@@ -202,13 +183,22 @@ export class MaidSession implements Conversation {
   private models: Model[] = []
 
   /** The folder she works in is the one she was started in — opencode takes
-   * the process's own. */
-  constructor(private onEvent: (event: BridgeEvent) => void) {}
+   * the process's own. Which of them is speaking is settled here: the persona
+   * goes in when the server is started, so a session is one girl from end to
+   * end. */
+  constructor(
+    private onEvent: (event: BridgeEvent) => void,
+    private who: Character,
+  ) {}
 
   async start() {
     try {
       await this.open()
     } catch (trouble) {
+      // Unless this one was shut on the way up: swapping her closes a booting
+      // server out from under itself, and the scene the complaint would land in
+      // belongs to the girl who replaced her.
+      if (this.closed) return
       // A server that never came up is invisible from everywhere else — the
       // window would sit at "waking her up…" for good, holding a sentence for a
       // session that is never going to open.
@@ -219,7 +209,7 @@ export class MaidSession implements Conversation {
   private async open() {
     const started = await createOpencode({
       port: await freePort(),
-      config: { model: MODEL, instructions: [writePersona()], permission: PERMISSION },
+      config: { model: MODEL, instructions: [writePersona(this.who)], permission: PERMISSION },
     })
     if (this.closed) return void started.server.close()
     this.client = started.client

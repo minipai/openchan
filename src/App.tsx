@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
 import { KeysOverlay } from './KeysOverlay'
-import { Picker } from './Picker'
+import { Picker, type Choice } from './Picker'
 import { cornerFor, keyFor, pressed, shownAs, takes } from './keys'
 import { useMaid, type Scene } from './brain'
+import type { Character } from './cast'
 import { paletteOver } from './theme'
 
 /** The strip the window leaves under the dialogue box. */
@@ -26,10 +27,16 @@ function invitation(scene: Scene): string {
  * The line above the box: what she is doing, or — before there is anyone to do
  * anything — that what was said to her is being kept. It goes there rather than
  * in the input because it has to survive the next thing being typed.
+ *
+ * It is also where someone sent for mid-conversation waits. She cannot come out
+ * until this session is over, and a pick that changed nothing anybody can see
+ * would read as the list being broken — so the screen says who is next while
+ * there is nothing more pressing to say.
  */
-function above(scene: Scene): string | null {
+function above(scene: Scene, next: Character | null): string | null {
   if (!scene.isReady && scene.held !== null) return 'waiting for her to wake up'
-  return scene.narration
+  if (scene.narration) return scene.narration
+  return next && `${next.name} takes the next shift`
 }
 
 export function App({ behind }: { behind: string | undefined }) {
@@ -37,19 +44,20 @@ export function App({ behind }: { behind: string | undefined }) {
   // Her box is coloured against the terminal, the same answer that keeps her
   // out of a black slab.
   const theme = paletteOver(behind)
-  const { scene, ask, answer, stop, use } = useMaid()
+  const { scene, cast, onShift, nextShift, ask, answer, stop, use, swapTo } = useMaid()
   const [typed, setTyped] = useState('')
   // Ctrl-B: draw her out of half-block characters even where the terminal
   // could take real pixels. It is the rougher picture, and it is a look.
   const [blocks, setBlocks] = useState(false)
   const [keysUp, setKeysUp] = useState(false)
-  // Ctrl-P: the list of what she could think with. Which one is hers is the
-  // scene's, so all the window keeps is whether the list is open.
-  const [picking, setPicking] = useState(false)
+  // Ctrl-P and Ctrl-G: what she could think with, and which of them is standing
+  // there. What each list is picked from is held elsewhere, so all the window
+  // keeps is which of them is open.
+  const [picking, setPicking] = useState<'models' | 'shift' | null>(null)
 
   const where = {
     up: keysUp,
-    picking,
+    picking: picking !== null,
     isWorking: scene.isWorking,
     asked: scene.permission !== null,
   }
@@ -70,7 +78,7 @@ export function App({ behind }: { behind: string | undefined }) {
         // One thing over the scene at a time: a list left open underneath would
         // go on taking Enter behind these keys, and swap what she thinks with
         // while the master is reading about it.
-        setPicking(false)
+        setPicking(null)
         return setKeysUp(true)
       case 'close':
         return setKeysUp(false)
@@ -84,13 +92,33 @@ export function App({ behind }: { behind: string | undefined }) {
         return setBlocks((was) => !was)
       case 'models':
         setKeysUp(false)
-        return setPicking(true)
-      // Nothing else happens: what she thinks with is only ever changed by
-      // picking something off the list.
+        return setPicking('models')
+      case 'who':
+        setKeysUp(false)
+        return setPicking('shift')
+      // Nothing else happens: what she thinks with and who is standing there
+      // are only ever changed by picking something off the list.
       case 'cancel':
-        return setPicking(false)
+        return setPicking(null)
     }
   })
+
+  // Everyone who could be standing there, as rows. The list knows nothing about
+  // what is in it, so the id it hands back is hers and the label is her name.
+  const shifts: Choice[] = useMemo(
+    () => cast.map((one) => ({ id: one.id, label: one.name })),
+    [cast],
+  )
+
+  // What the list open right now is a list of, and nothing at all when none is
+  // open. The frame, the keys and putting it away are the same either way —
+  // only the rows and where a chosen one goes differ.
+  const list =
+    picking === null
+      ? null
+      : picking === 'models'
+        ? { title: 'What she thinks with', items: scene.models, chosen: scene.model, take: use }
+        : { title: 'Who is on shift', items: shifts, chosen: nextShift.id, take: swapTo }
 
   // 760px of a 960px window, and never wider than the terminal has room for.
   const boxWidth = Math.min(90, width - 6)
@@ -106,6 +134,7 @@ export function App({ behind }: { behind: string | undefined }) {
           the strip below it, the same as she runs off the bottom of the
           window. The box is drawn over her, not instead of her. */}
       <SpriteLayer
+        who={onShift}
         expression={scene.expression}
         columns={spriteColumns(width)}
         rows={height}
@@ -121,9 +150,10 @@ export function App({ behind }: { behind: string | undefined }) {
       >
         <DialogueBox
           theme={theme}
+          name={onShift.name}
           width={boxWidth}
           line={scene.line}
-          narration={above(scene)}
+          narration={above(scene, nextShift.id === onShift.id ? null : nextShift)}
           mood={scene.mood}
           isWorking={scene.isWorking}
           corner={cornerFor(where)}
@@ -138,7 +168,7 @@ export function App({ behind }: { behind: string | undefined }) {
               <box flexDirection="row" gap={1}>
                 <text fg={theme.primary}>›</text>
                 <input
-                  focused={!keysUp && !picking}
+                  focused={!keysUp && picking === null}
                   value={typed}
                   placeholder={invitation(scene)}
                   flexGrow={1}
@@ -155,7 +185,7 @@ export function App({ behind }: { behind: string | undefined }) {
 
       {/* Over the box rather than beside it, and above her: a list is the thing
           being answered while it is open. */}
-      {picking && (
+      {list && (
         <box
           position="absolute"
           top={0}
@@ -167,14 +197,18 @@ export function App({ behind }: { behind: string | undefined }) {
           zIndex={8}
         >
           <Picker
+            // One list per thing being picked: the other key opens the other
+            // list while this one is up, and a list that stayed put would keep
+            // the row it was left on — over rows that are now somebody else's.
+            key={picking}
             theme={theme}
-            title="What she thinks with"
-            items={scene.models}
-            chosen={scene.model}
+            title={list.title}
+            items={list.items}
+            chosen={list.chosen}
             width={Math.min(60, width - 6)}
-            onPick={(model) => {
-              use(model)
-              setPicking(false)
+            onPick={(id) => {
+              list.take(id)
+              setPicking(null)
             }}
           />
         </box>

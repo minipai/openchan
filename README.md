@@ -58,14 +58,25 @@ up never quietly spends money.
 | `src/keys.ts` | every key the window answers to, written down once — the overlay and the screen both read it off here |
 | `src/App.tsx` + `SpriteLayer` / `DialogueBox` / `KeysOverlay` | the screen |
 | `src/expressions.ts` | the 26 faces, and the mood marker that names them |
-| `persona/` | who she is, appended to opencode's own instructions rather than replacing them |
-| `art/` | her sprites |
+| `src/cast.ts` | who can be sent for: whoever is both written and drawn |
+| `persona/` | who each of them is, appended to opencode's own instructions rather than replacing them |
+| `art/` | their sprites, one folder each |
 
 Swapping the agent underneath means writing one more translator and touching
 nothing else.
 
-## Her
+## Her, and the other one
 
-She is ことね, out of [claudecafe](https://github.com/minipai/claudecafe). The
-code is MIT. The character and the artwork are not: see `art/LICENSE` — yours to
-use and to alter, not to resell or to publish as your own character.
+She is ことね, out of [claudecafe](https://github.com/minipai/claudecafe), and
+くるみ is here too — `Ctrl-G` says who is on shift. Who is standing there is
+settled when a session opens: her persona goes into the agent as that starts, so
+sending for the other one mid-conversation puts her on the next session rather
+than rewriting the one you are in. The pick is kept in `~/.openchan/on-shift`,
+so the next window opens as her.
+
+Anyone with a persona file in `persona/` and all 26 faces in `art/` joins the
+list, and the cast is written down nowhere else. ことね is only the one who opens
+the door the first time.
+
+The code is MIT. The characters and the artwork are not: see `art/LICENSE` —
+yours to use and to alter, not to resell or to publish as your own character.

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NativeImage } from '@opentui/core'
 import { useRenderer, useTerminalDimensions } from '@opentui/react'
-import { ARTWORK, SPRITE_SHARE, spriteFor, type Expression } from './cast'
+import { ARTWORK, SPRITE_SHARE, spriteFor, type Character, type Expression } from './cast'
 import { useColourBehindHer } from './behind'
 
 /** Decoded artwork, kept between faces — she wears the same handful all
@@ -22,12 +22,15 @@ const framed = new Map<string, NativeImage>()
  * dialogue box and out through the strip below it.
  */
 export function SpriteLayer({
+  who,
   expression,
   columns,
   rows,
   behind: asked,
   blocks,
 }: {
+  /** Whose artwork is being stood there. */
+  who: Character
   expression: Expression
   /** How wide she stands, in cells. */
   columns: number
@@ -41,7 +44,10 @@ export function SpriteLayer({
   const { width } = useTerminalDimensions()
   const cell = useCellShape()
   const behind = useColourBehindHer(asked, blocks)
-  const [shown, setShown] = useState<NativeImage | null>(null)
+  // Whose artwork is on screen as well as which: hers is decoded a moment
+  // behind the name plate, and the girl who just left must not be the one
+  // standing under it while that happens.
+  const [shown, setShown] = useState<{ who: string; image: NativeImage } | null>(null)
 
   // How much of her the scene has room for, measured in the artwork's own
   // pixels: the space above the box, turned back into the shape it would be if
@@ -54,14 +60,19 @@ export function SpriteLayer({
   useEffect(() => {
     if (columns <= 0 || rows <= 0) return
     let current = true
-    const file = spriteFor(expression)
+    const file = spriteFor(who, expression)
     const key = `${file}@${cut}`
 
     const ready = framed.get(key)
     if (ready) {
-      setShown(ready)
+      setShown({ who: who.id, image: ready })
       return
     }
+
+    // Nobody, until hers has been decoded: a face of her own still on screen is
+    // her changing expression, but the last girl's is the wrong girl — and a
+    // load that never lands would leave her there for good.
+    setShown((was) => (was?.who === who.id ? was : null))
 
     void (async () => {
       let whole = artwork.get(file)
@@ -74,13 +85,13 @@ export function SpriteLayer({
       // bottom of itself.
       const cropped = whole.extract({ left: 0, top: 0, width: ARTWORK.width, height: cut })
       framed.set(key, cropped)
-      if (current) setShown(cropped)
+      if (current) setShown({ who: who.id, image: cropped })
     })().catch((error) => console.error('her artwork did not load:', error))
 
     return () => {
       current = false
     }
-  }, [expression, cut, columns, rows])
+  }, [who, expression, cut, columns, rows])
 
   if (!shown) return null
 
@@ -100,7 +111,7 @@ export function SpriteLayer({
       <image
         width={columns}
         height={rows}
-        source={shown}
+        source={shown.image}
         // Kitty keeps her alpha, so she stands on whatever the terminal's own
         // background is — no plate behind her, the same as the window. Asked
         // for cells, she is drawn out of half-block characters instead, on
