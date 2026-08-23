@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { testRender } from '@opentui/react/test-utils'
+import { readingKeys, shownAs } from './keys'
 import { ReportReader } from './ReportReader'
 import type { Report } from './scene'
 import { paletteOver } from './theme'
@@ -17,10 +18,10 @@ afterEach(() => {
   for (const setup of shown.splice(0)) setup.renderer.destroy()
 })
 
-async function show(report: Report) {
+async function show(report: Report, width = 60) {
   const setup = await testRender(
-    <ReportReader theme={paletteOver(undefined)} report={report} width={60} height={16} />,
-    { width: 64, height: 18 },
+    <ReportReader theme={paletteOver(undefined)} report={report} width={width} height={16} />,
+    { width: width + 4, height: 18 },
   )
   await setup.flush()
   shown.push(setup)
@@ -40,6 +41,22 @@ test('a report longer than the page is cut off rather than running off it', asyn
 
   // The end of it is not on screen — which is what there is to scroll to.
   expect(setup.captureCharFrame()).not.toContain('finding-29')
+})
+
+test('every key the page answers to is on it, however narrow it is', async () => {
+  // A row of keys too wide for the page is not cut short — it runs off the
+  // edge and takes the border with it, and whichever key was written down last
+  // is the one nobody ever sees. So they are put on as many rows as they need.
+  for (const width of [46, 60, 74]) {
+    const frame = (await show(REPORT, width)).captureCharFrame()
+    for (const key of readingKeys()) {
+      expect([width, frame.includes(`${shownAs(key.press)} ${key.says}`)]).toEqual([width, true])
+    }
+    // The frame is still a frame: every row of it ends where it started.
+    for (const row of frame.split('\n').filter((one) => one.trimEnd().startsWith('│'))) {
+      expect([width, row.trimEnd().endsWith('│')]).toEqual([width, true])
+    }
+  }
 })
 
 test('the arrows move down the page and back up it', async () => {

@@ -19,6 +19,7 @@ const idle: Where = {
   path: false,
   reading: false,
   hasReport: false,
+  said: false,
   isWorking: false,
   asked: false,
   trouble: null,
@@ -36,6 +37,8 @@ const typingPath = (where: Where): Where => ({ ...where, path: true })
 const wrote = (where: Where): Where => ({ ...where, hasReport: true })
 /** …and it is open, which it can only be if there is one. */
 const reading = (where: Where): Where => ({ ...where, hasReport: true, reading: true })
+/** She has said something, so there is a line in the box. */
+const said = (where: Where): Where => ({ ...where, said: true })
 /** Something in the way with her session gone with it, and something in the way
  * that left her standing there. */
 const gone: Where = { ...idle, trouble: 'gone' }
@@ -403,8 +406,38 @@ test('scrolling is the page’s own to do, and is not taken from it', () => {
   expect(takes('report')).toBe(true)
 })
 
+test('her line is copied by a key of its own, and only while there is one', () => {
+  // An empty box has nothing to copy: the key copying nothing and saying so
+  // would be worse than the key not being there.
+  expect(pressed(press('ctrl+y'), idle)).toBeNull()
+  expect(offered(idle)).not.toContain('copy-line')
+  expect(pressed(press('ctrl+y'), said(idle))).toBe('copy-line')
+  expect(pressed(press('ctrl+y'), said(working))).toBe('copy-line')
+  expect(pressed(press('ctrl+y'), said(asked))).toBe('copy-line')
+  expect(pressed(press('ctrl+y'), said(up(idle)))).toBe('copy-line')
+  expect(offered(said(idle))).toContain('copy-line')
+  // Listed with the rest of what can be taken from anywhere, not as a state.
+  expect(keysNow(said(idle)).find((group) => group.keys.some((key) => key.does === 'copy-line'))?.heading).toBe(
+    'Whenever',
+  )
+})
+
+test('while what she wrote is open, the same key copies the page instead', () => {
+  expect(pressed(press('ctrl+y'), reading(idle))).toBe('copy-page')
+  expect(pressed(press('ctrl+y'), said(reading(idle)))).toBe('copy-page')
+  // Once, as the page: a key listed twice doing two things is a key that does
+  // one of them.
+  expect(offered(said(reading(idle))).filter((does) => does.startsWith('copy'))).toEqual(['copy-page'])
+})
+
+test('copying is the window’s own, and takes nothing from the line she is spoken to on', () => {
+  expect([takes('copy-line'), takes('copy-page')]).toEqual([true, true])
+  // The line keeps Enter either way.
+  expect(pressed(press('return'), said(idle))).toBe('send')
+})
+
 test('what an open report answers to is what the page itself prints', () => {
-  expect(readingKeys().map((key) => key.does)).toEqual(['close', 'scroll-up', 'scroll-down'])
+  expect(readingKeys().map((key) => key.does)).toEqual(['close', 'scroll-up', 'scroll-down', 'copy-page'])
   for (const key of readingKeys()) {
     expect(pressed(press(key.press), reading(idle))).toBe(key.does)
   }
@@ -430,6 +463,7 @@ const EVERY_PRESS = [
   'ctrl+g',
   'ctrl+f',
   'ctrl+r',
+  'ctrl+y',
   'y',
   'n',
   'r',
@@ -459,14 +493,17 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
           { hasReport: true, reading: false },
           { hasReport: true, reading: true },
         ].flatMap((written) =>
-          (['stuck', 'gone', null] as const).map((trouble) => ({
-            up,
-            isWorking,
-            asked,
-            trouble,
-            ...over,
-            ...written,
-          })),
+          [false, true].flatMap((said) =>
+            (['stuck', 'gone', null] as const).map((trouble) => ({
+              up,
+              isWorking,
+              asked,
+              trouble,
+              said,
+              ...over,
+              ...written,
+            })),
+          ),
         ),
       ),
     ),
