@@ -78,14 +78,16 @@ export interface Conversation {
 }
 
 /**
- * How one is opened: hand her the way to speak and say which of them is on
- * shift, and she is yours.
+ * How one is opened: hand her the way to speak, say which of them is on shift
+ * and which folder she is working in, and she is yours.
  *
- * Who she is belongs to the session rather than to something set on it
- * afterwards: her persona is the one thing the agent underneath cannot be told
- * to change halfway through, so it is settled here or not at all.
+ * Both of those belong to the session rather than to something set on it
+ * afterwards: her persona and the folder she can see are the two things the
+ * agent underneath cannot be told to change halfway through, so they are
+ * settled here or not at all.
  */
 export type OpenConversation = (
   say: (event: BridgeEvent) => void,
   who: Character,
+  folder: string,
 ) => Conversation

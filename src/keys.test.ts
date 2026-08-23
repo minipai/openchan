@@ -4,6 +4,7 @@ import {
   keyFor,
   keysNow,
   listKeys,
+  pathKeys,
   pressed,
   readingKeys,
   shownAs,
@@ -14,6 +15,7 @@ import {
 const idle: Where = {
   up: false,
   picking: false,
+  path: false,
   reading: false,
   hasReport: false,
   isWorking: false,
@@ -23,6 +25,9 @@ const working: Where = { ...idle, isWorking: true }
 const asked: Where = { ...working, asked: true }
 const up = (where: Where): Where => ({ ...where, up: true })
 const picking = (where: Where): Where => ({ ...where, picking: true })
+/** The folder list, one step further in: the rows are away and a path is being
+ * written out in their place. */
+const typingPath = (where: Where): Where => ({ ...where, path: true })
 /** She has written something, and it has not been opened. */
 const wrote = (where: Where): Where => ({ ...where, hasReport: true })
 /** …and it is open, which it can only be if there is one. */
@@ -209,6 +214,44 @@ test('which of them is on shift is opened with a key of its own', () => {
   expect(keyFor('who').says).toBe('who is on shift')
 })
 
+test('where she works is opened with a key of its own', () => {
+  expect(pressed(press('ctrl+f'), idle)).toBe('where')
+  expect(pressed(press('ctrl+f'), working)).toBe('where')
+  expect(keyFor('where').says).toBe('where she works')
+})
+
+test('a path being written out is taken by enter and put away by escape', () => {
+  // Enter is the line's own the way it is the input's — the window must not
+  // take it — and escape is the same one that would have put the rows away.
+  // That nothing else is answered from here is the exhaustive check's, below.
+  expect(pressed(press('return'), typingPath(idle))).toBe('go')
+  expect(pressed(press('escape'), typingPath(idle))).toBe('cancel')
+  expect(takes('go')).toBe(false)
+  expect(pathKeys().map((key) => key.does)).toEqual(['go', 'cancel'])
+})
+
+test('nothing is offered on the line that is behind a path being written out', () => {
+  // The same rule as the list and the open report: the input under it is
+  // blurred, so the table must not go on claiming Enter for it.
+  expect(offered(typingPath(idle))).not.toContain('send')
+  // And the rows are not there to be moved through any more.
+  expect(pressed(press('up'), typingPath(idle))).toBeNull()
+  expect(offered(typingPath(idle))).not.toContain('choose')
+})
+
+test('escape puts the path away rather than stopping her or answering for her', () => {
+  expect(pressed(press('escape'), typingPath(working))).toBe('cancel')
+  expect(pressed(press('escape'), typingPath(asked))).toBe('cancel')
+})
+
+test('a letter in a path is not an answer to what she is waiting to be allowed', () => {
+  // y and n are letters, and `~/Sync` is a folder. Her question is still on
+  // screen and still answerable — the moment the path is away.
+  expect(pressed(press('y'), asked)).toBe('allow')
+  expect(pressed(press('y'), typingPath(asked))).toBeNull()
+  expect(pressed(press('n'), typingPath(asked))).toBeNull()
+})
+
 test('keys are printed the way they are pressed, not the way the terminal names them', () => {
   expect(shownAs('escape')).toBe('ESC')
   expect(shownAs('return')).toBe('Enter')
@@ -283,6 +326,7 @@ const EVERY_PRESS = [
   'ctrl+k',
   'ctrl+p',
   'ctrl+g',
+  'ctrl+f',
   'ctrl+r',
   'y',
   'n',
@@ -293,7 +337,13 @@ const EVERY_PRESS = [
   'ctrl+c',
 ]
 const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
-  [false, true].flatMap((picking) =>
+  // A list and a path being typed are one thing over the scene in two states:
+  // taking the row that asks for a path is what puts the rows away.
+  [
+    { picking: false, path: false },
+    { picking: true, path: false },
+    { picking: false, path: true },
+  ].flatMap((over) =>
     [false, true].flatMap((isWorking) =>
       [false, true].flatMap((asked) =>
         // Only the three the window can actually be in: it never opens a
@@ -302,7 +352,7 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
           { hasReport: false, reading: false },
           { hasReport: true, reading: false },
           { hasReport: true, reading: true },
-        ].map((written) => ({ up, picking, isWorking, asked, ...written })),
+        ].map((written) => ({ up, isWorking, asked, ...over, ...written })),
       ),
     ),
   ),

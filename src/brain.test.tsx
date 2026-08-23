@@ -1,8 +1,12 @@
 import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { act } from 'react'
 import { testRender } from '@opentui/react/test-utils'
 import { useMaid } from './brain'
 import { briefFor, CAST, remember, remembered, type Character } from './cast'
+import { OPENED_IN } from './folder'
 import type { BridgeEvent, Conversation, Model, OpenConversation } from './protocol'
 
 /** What the stand-in says she could think with. */
@@ -26,6 +30,7 @@ class Stand implements Conversation {
   constructor(
     private say: (event: BridgeEvent) => void,
     readonly who: Character,
+    readonly folder: string,
   ) {}
   async start() {}
   wakeUp() {
@@ -64,6 +69,21 @@ type Maid = ReturnType<typeof useMaid>
  * reading the same note. */
 const kept = remembered()
 afterAll(() => remember(kept))
+
+/** Somewhere to move her that is a real folder — the window refuses to open a
+ * session onto one that is not there — and is gone again afterwards, which is
+ * also what takes it back out of the note. */
+const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'openchan-been-')))
+/** The note the master's own windows read, put back exactly as it was found:
+ * moving her writes the folders down, and these tests move her to folders that
+ * are nobody's. */
+const NOTE = path.join(os.homedir(), '.openchan', 'folders')
+const note = fs.existsSync(NOTE) ? fs.readFileSync(NOTE, 'utf8') : null
+afterAll(() => {
+  fs.rmSync(elsewhere, { recursive: true, force: true })
+  if (note === null) fs.rmSync(NOTE, { force: true })
+  else fs.writeFileSync(NOTE, note)
+})
 /** Every window here opens on ことね, whoever the last test sent for. */
 const kotone = CAST.find((one) => one.id === 'kotone')!
 beforeEach(() => remember(kotone))
@@ -89,8 +109,8 @@ async function open() {
   let maid!: Maid
   const setup = await testRender(
     <Window
-      open={(say, who) => {
-        const her = new Stand(say, who)
+      open={(say, who, folder) => {
+        const her = new Stand(say, who, folder)
         sessions.push(her)
         return her
       }}
@@ -113,6 +133,9 @@ async function open() {
     scene: () => maid.scene,
     pick: (model: string) => settle(() => maid.use(model)),
     sendFor: (id: string) => settle(() => maid.swapTo(id)),
+    moveTo: (where: string) => settle(() => maid.moveTo(where)),
+    folder: () => maid.folder,
+    been: () => maid.been,
     stop: () => settle(() => maid.stop()),
     onShift: () => maid.onShift,
     nextShift: () => maid.nextShift,
@@ -344,4 +367,124 @@ test('a session closed to make room does not fail into the scene of the girl who
 
   expect(scene().lost).toBeNull()
   expect(scene().isReady).toBe(true)
+})
+
+
+test('she starts in the folder the window was started in', async () => {
+  const { her, folder } = await open()
+
+  expect(folder()).toBe(OPENED_IN)
+  expect(her.folder).toBe(OPENED_IN)
+})
+
+test('moving her opens a session in the folder she was moved to', async () => {
+  const { her, sessions, moveTo, folder } = await open()
+
+  await moveTo(elsewhere)
+
+  // opencode settles a session's folder when it opens it, so the only honest
+  // way to move her is the one sending for one of the others takes: close the
+  // conversation and open another.
+  expect(her.closed).toBe(true)
+  expect(sessions.map((one) => one.folder)).toEqual([OPENED_IN, elsewhere])
+  expect(folder()).toBe(elsewhere)
+})
+
+test('the girl who comes back is not handed the scene she left in the old folder', async () => {
+  const { wakeUp, moveTo, scene } = await open()
+
+  await wakeUp()
+  expect(scene().isReady).toBe(true)
+
+  await moveTo(elsewhere)
+
+  expect(scene().isReady).toBe(false)
+  expect(scene().models).toEqual([])
+})
+
+test('a conversation is not what stops her being moved', async () => {
+  // Unlike sending for one of the others: being asked to work somewhere else is
+  // a thing to do now, and one that waited for the next window would be no
+  // answer at all.
+  const { sessions, wakeUp, say, moveTo, folder } = await open()
+
+  await wakeUp()
+  await say('good morning')
+  await moveTo(elsewhere)
+
+  expect(sessions).toHaveLength(2)
+  expect(folder()).toBe(elsewhere)
+})
+
+test('the folder she was in is on the list that took her out of it', async () => {
+  const { moveTo, been } = await open()
+
+  await moveTo(elsewhere)
+
+  // Both ends are written down, so the list that moved her is also the one that
+  // brings her back.
+  expect(been()[0]).toBe(elsewhere)
+  expect(been()).toContain(OPENED_IN)
+
+  // And the next window opens with them already in it.
+  const later = await open()
+  expect(later.been()).toContain(elsewhere)
+})
+
+test('moving her to where she already is is not a move', async () => {
+  const { sessions, wakeUp, say, moveTo, scene } = await open()
+
+  await wakeUp()
+  await say('good morning')
+  await moveTo(OPENED_IN)
+
+  // Which is also what taking the row already marked comes to: the list closes
+  // and nothing under it has moved.
+  expect(sessions).toHaveLength(1)
+  expect(scene().isReady).toBe(true)
+})
+
+test('a folder that is not there is not opened onto', async () => {
+  const { sessions, moveTo, folder } = await open()
+
+  // A row written down for a folder that has been moved or deleted since. The
+  // session it would open never comes up, several seconds later, with nothing
+  // on screen to say a missing folder was why.
+  await moveTo(path.join(elsewhere, 'nowhere'))
+
+  expect(sessions).toHaveLength(1)
+  expect(folder()).toBe(OPENED_IN)
+})
+
+test('whoever was sent for mid-conversation walks into the folder she is moved to', async () => {
+  // The next session is the one she has been waiting for, and this is it. The
+  // screen has been saying she is next — leaving her out of the session that
+  // opens here would leave it saying so forever.
+  const { sessions, wakeUp, say, sendFor, moveTo, onShift, nextShift } = await open()
+
+  await wakeUp()
+  await say('good morning')
+  await sendFor('kurumi')
+  expect(onShift().id).toBe('kotone')
+
+  await moveTo(elsewhere)
+
+  expect(sessions.map((one) => one.who.id)).toEqual(['kotone', 'kurumi'])
+  expect(sessions[1]!.folder).toBe(elsewhere)
+  expect(onShift().id).toBe('kurumi')
+  expect(nextShift().id).toBe('kurumi')
+})
+
+test('neither picking a model nor sending for one of them moves her', async () => {
+  // What she thinks with, who is standing there and where she works are three
+  // lists, and only one of them is this one.
+  const { sessions, wakeUp, say, pick, sendFor, folder } = await open()
+
+  await wakeUp()
+  await say('good morning')
+  await pick('anthropic/opus')
+  await sendFor('kurumi')
+
+  expect(sessions).toHaveLength(1)
+  expect(folder()).toBe(OPENED_IN)
 })

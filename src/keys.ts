@@ -23,12 +23,14 @@ export type Does =
   | 'leave'
   | 'models'
   | 'who'
+  | 'where'
   | 'report'
   | 'scroll-up'
   | 'scroll-down'
   | 'previous'
   | 'next'
   | 'choose'
+  | 'go'
   | 'cancel'
 
 /**
@@ -37,7 +39,7 @@ export type Does =
  * open list and an open report take the arrows, the list takes Enter, and the
  * renderer takes Ctrl-C.
  */
-const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'leave', 'scroll-up', 'scroll-down']
+const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'go', 'leave', 'scroll-up', 'scroll-down']
 
 /** Whether pressing it is the window's own to act on — and so to keep from
  * reaching what is drawn under it. */
@@ -45,9 +47,9 @@ export const takes = (does: Does) => !THEIRS.includes(does)
 
 /** When a key is worth anything: whenever, while there is a line to type into,
  * while she is working, while she is waiting to be allowed, while a list is
- * open, while there is something she wrote to read, while it is open, or while
- * these keys are on screen. */
-type When = 'always' | 'typing' | 'working' | 'asked' | 'picking' | 'reported' | 'reading' | 'up'
+ * open, while a path is being typed into one, while there is something she
+ * wrote to read, while it is open, or while these keys are on screen. */
+type When = 'always' | 'typing' | 'working' | 'asked' | 'picking' | 'path' | 'reported' | 'reading' | 'up'
 
 export type Shortcut = {
   /** As the terminal names it: the key, with `ctrl+` in front if it is held. */
@@ -66,6 +68,8 @@ export type Where = {
   asked: boolean
   /** Whether there is a list open to pick something off. */
   picking: boolean
+  /** Whether a folder is being typed out rather than picked off a list. */
+  path: boolean
   /** Whether what she wrote is open and being read. */
   reading: boolean
   /** Whether she has written something there is a report to open at all. */
@@ -91,6 +95,11 @@ const KEYS: (Shortcut & { when: When })[] = [
   // A list takes the keys that move through it and the one that takes what it
   // is on, and it takes ESC before she does: the list is what is being answered
   // while it is open, not her.
+  // A path being typed is the list one step further in: the rows have been put
+  // away and the same ESC that would have closed them closes this.
+  { when: 'path', press: 'return', does: 'go', says: 'work there' },
+  { when: 'path', press: 'escape', does: 'cancel', says: 'never mind' },
+
   { when: 'picking', press: 'up', does: 'previous', says: 'the one above' },
   { when: 'picking', press: 'down', does: 'next', says: 'the one below' },
   { when: 'picking', press: 'return', does: 'choose', says: 'use it' },
@@ -109,6 +118,7 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'always', press: 'ctrl+k', does: 'keys', says: 'these keys' },
   { when: 'always', press: 'ctrl+p', does: 'models', says: 'what she thinks with' },
   { when: 'always', press: 'ctrl+g', does: 'who', says: 'who is on shift' },
+  { when: 'always', press: 'ctrl+f', does: 'where', says: 'where she works' },
   { when: 'always', press: 'ctrl+b', does: 'blocks', says: 'swap how she is drawn' },
   { when: 'always', press: 'ctrl+c', does: 'leave', says: 'leave' },
 ]
@@ -118,6 +128,7 @@ const HEADINGS: Record<When, string> = {
   up: 'While these are up',
   reading: 'While what she wrote is open',
   picking: 'While a list is open',
+  path: 'While a path is being typed',
   asked: 'While she is waiting to be allowed',
   working: 'While she is working',
   // Two of them, because what can be typed and what can be pressed read as one
@@ -146,14 +157,18 @@ const holds = (when: When, where: Where) =>
   (when === 'up' && where.up) ||
   (when === 'reading' && where.reading) ||
   (when === 'picking' && where.picking) ||
+  (when === 'path' && where.path) ||
   // Not while it is already open: the key that opens it is not worth offering
   // from inside it.
   (when === 'reported' && where.hasReport && !where.reading) ||
   // The line she is spoken to on is behind these keys while they are up, and
   // behind a list or an open report while one of those is; a blurred input does
   // not take Enter — so it is not offered while any of them are.
-  (when === 'typing' && !where.up && !where.picking && !where.reading) ||
-  (when === 'asked' && where.asked) ||
+  (when === 'typing' && !where.up && !where.picking && !where.path && !where.reading) ||
+  // Not while a path is being written out: y and n are letters in a path, and a
+  // folder under `~/Sync` would otherwise answer her question halfway through
+  // being typed.
+  (when === 'asked' && where.asked && !where.path) ||
   (when === 'working' && where.isWorking && !where.asked)
 
 /**
@@ -167,7 +182,7 @@ const holds = (when: When, where: Where) =>
 export function keysNow(where: Where): Group[] {
   const groups: Group[] = []
   const taken = new Set<string>()
-  for (const when of ['up', 'reading', 'picking', 'asked', 'working', 'typing', 'reported', 'always'] as const) {
+  for (const when of ['up', 'reading', 'path', 'picking', 'asked', 'working', 'typing', 'reported', 'always'] as const) {
     if (!holds(when, where)) continue
     const keys: Shortcut[] = []
     for (const { when: _, ...key } of KEYS.filter((one) => one.when === when)) {
@@ -212,6 +227,15 @@ const ARROWS: Record<string, string> = { up: '↑', down: '↓' }
  */
 export function listKeys(): Shortcut[] {
   return KEYS.filter((one) => one.when === 'picking').map(({ when: _, ...key }) => key)
+}
+
+/**
+ * What the box a path is typed into answers to. It prints its own for the same
+ * reason the list does — it is one thing over the scene, and bringing the
+ * overlay up would take it away rather than explain it.
+ */
+export function pathKeys(): Shortcut[] {
+  return KEYS.filter((one) => one.when === 'path').map(({ when: _, ...key }) => key)
 }
 
 /**

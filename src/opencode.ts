@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
-import { createOpencode } from '@opencode-ai/sdk'
+import { createOpencodeClient, createOpencodeServer, type OpencodeClient } from '@opencode-ai/sdk'
 import { briefFor, type Character } from './cast'
 import { faceFor, type Expression } from './expressions'
 import type { BridgeEvent, Conversation, Model } from './protocol'
@@ -229,8 +229,8 @@ export function splitReport(said: string): {
  * spoken — otherwise she reads her own private notes out loud.
  */
 export class MaidSession implements Conversation {
-  private client: Awaited<ReturnType<typeof createOpencode>>['client'] | null = null
-  private server: Awaited<ReturnType<typeof createOpencode>>['server'] | null = null
+  private client: OpencodeClient | null = null
+  private server: Awaited<ReturnType<typeof createOpencodeServer>> | null = null
   private sessionId: string | null = null
   private closed = false
   /** What she is thinking with, which is hers to remember rather than the
@@ -263,13 +263,14 @@ export class MaidSession implements Conversation {
    * way it was first said. */
   private models: Model[] = []
 
-  /** The folder she works in is the one she was started in — opencode takes
-   * the process's own. Which of them is speaking is settled here: the persona
-   * goes in when the server is started, so a session is one girl from end to
-   * end. */
+  /** Both of the things a session is fixed to are settled here: the persona
+   * goes into the server as it starts and the folder goes into the session as
+   * it is opened, so a session is one girl in one folder from end to end.
+   * Moving either of them is this one being closed and another opened. */
   constructor(
     private onEvent: (event: BridgeEvent) => void,
     private who: Character,
+    private folder: string,
   ) {}
 
   async start() {
@@ -288,13 +289,21 @@ export class MaidSession implements Conversation {
   }
 
   private async open() {
-    const started = await createOpencode({
+    const started = await createOpencodeServer({
       port: await freePort(),
       config: { model: MODEL, instructions: [writePersona(this.who)], permission: PERMISSION },
     })
-    if (this.closed) return void started.server.close()
-    this.client = started.client
-    this.server = started.server
+    if (this.closed) return void started.close()
+    this.server = started
+
+    // The folder goes on the client rather than on the one call that opens the
+    // session: opencode holds a server's folders apart from one another all the
+    // way down, and the events are the half that catches anyone out. A session
+    // opened in one folder publishes onto that folder's stream and no other, so
+    // a client asking for the folder the window happens to have been started in
+    // would leave her working perfectly and silently — nothing she said, nothing
+    // she picked up and nothing she wanted permission for would ever arrive.
+    this.client = createOpencodeClient({ baseUrl: started.url, directory: this.folder })
 
     const opened = await this.client.session.create({ body: { title: 'claudecafe' } })
     this.sessionId = (opened as { data?: { id: string } }).data?.id ?? null
