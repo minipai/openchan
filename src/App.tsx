@@ -42,10 +42,15 @@ type Over = 'keys' | 'models' | 'shift' | 'folder' | 'path' | 'report' | null
 function OverTheScene({
   width,
   height,
+  shown = true,
   children,
 }: {
   width: number
   height: number
+  /** Whether it is drawn at all. Not drawn is not the same as not there: what
+   * is in it is kept, for the one thing over the scene that is hers rather
+   * than the window's and has to come back as it was left. */
+  shown?: boolean
   children: ReactNode
 }) {
   return (
@@ -58,6 +63,7 @@ function OverTheScene({
       alignItems="center"
       justifyContent="center"
       zIndex={8}
+      visible={shown}
     >
       {children}
     </box>
@@ -132,8 +138,24 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // Her box is coloured against the terminal, the same answer that keeps her
   // out of a black slab.
   const theme = paletteOver(behind)
-  const { scene, cast, onShift, nextShift, folder, been, ask, answer, stop, use, swapTo, moveTo, retry, dismiss } =
-    useMaid(openMaid)
+  const {
+    scene,
+    cast,
+    onShift,
+    nextShift,
+    folder,
+    been,
+    ask,
+    answer,
+    choose,
+    decline,
+    stop,
+    use,
+    swapTo,
+    moveTo,
+    retry,
+    dismiss,
+  } = useMaid(openMaid)
   const [typed, setTyped] = useState('')
   // Ctrl-B: draw her out of half-block characters even where the terminal
   // could take real pixels. It is the rougher picture, and it is a look.
@@ -149,6 +171,10 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // thing she asks for is a fresh question and starts shut, however the last
   // one was left.
   const [opened, setOpened] = useState<string | null>(null)
+  // What has been picked so far of a question she asked in several parts, and
+  // which question it was picked for: the next thing she asks is a fresh one
+  // and starts from nothing, the same as the one before it being opened up.
+  const [picks, setPicks] = useState<{ of: string; answers: string[][] }>({ of: '', answers: [] })
   // What she wrote is the one of them that can be taken out from under itself:
   // the next thing she is asked takes the report with it, and a reader left
   // standing over nothing would go on swallowing ESC with no page on screen to
@@ -161,9 +187,27 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     standing === 'models' || standing === 'shift' || standing === 'folder' ? standing : null
 
   const asked = scene.permission
+  // Her question with the answers written out. She raised it, so it is not one
+  // of the things the window opens — anything the window does open goes over
+  // it, and it is back, where it was left, when that is put away. Kept on the
+  // scene and only hidden while something is over it: the ticks and the
+  // highlight are the list's own, and a list taken down and put up again
+  // would come back with neither.
+  const choosing = scene.asked
+  const answers = choosing && picks.of === choosing.askId ? picks.answers : []
+  // Which of her questions is up, when she asked several at once: they are
+  // taken one at a time, in the order she asked them.
+  const question = choosing?.questions[answers.length] ?? null
+  // Whether the question is the thing being answered right now, rather than
+  // waiting under something else. Something in the way counts: the note goes
+  // over it the same way it goes over her permission question, and ESC is the
+  // note's until it is put away — not a decline aimed at a list nobody can
+  // see.
+  const answering = standing === null && scene.trouble === null && question !== null
   const where = {
     up: standing === 'keys',
-    picking: picking !== null,
+    picking: picking !== null || answering,
+    ticking: answering && question.multiple,
     path: standing === 'path',
     reading: standing === 'report',
     hasReport: scene.report !== null,
@@ -215,9 +259,14 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         return setOver('report')
       // Nothing else happens: what she thinks with, who is standing there and
       // where she works are only ever changed by taking a row off the list — or,
-      // for a folder she has never been in, by typing it out in full.
+      // for a folder she has never been in, by typing it out in full. Her own
+      // question is the one list that is not simply put away: she is waiting
+      // on it, and is told that nobody is going to pick — which is not the
+      // same as being told nothing was picked.
       case 'cancel':
-        return setOver(null)
+        if (!answering) return setOver(null)
+        setPicks({ of: '', answers: [] })
+        return decline(choosing!.askId)
     }
   })
 
@@ -318,7 +367,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
               <box flexDirection="row" gap={1}>
                 <text fg={theme.primary}>›</text>
                 <input
-                  focused={standing === null}
+                  focused={standing === null && !answering}
                   value={typed}
                   placeholder={invitation(scene)}
                   flexGrow={1}
@@ -350,9 +399,40 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
             // Off the list once the row has been taken — unless taking it
             // put something else there: the one row that is not a folder asks
             // for one instead, and it is the line to type it on that stays.
-            onPick={(id) => {
-              list.take(id)
+            onPick={([id]) => {
+              list.take(id!)
               setOver((was) => (was === picking ? null : was))
+            }}
+          />
+        </OverTheScene>
+      )}
+
+      {/* Her question, in the same list everything else is picked off — one
+          of them at a time, when she asked several. The last one answered is
+          what hands the whole of it back; until then they are kept here. */}
+      {choosing && question && (
+        <OverTheScene width={width} height={height} shown={answering}>
+          <Picker
+            // One list per question: the next one is a fresh list, with no
+            // ticks carried over from the last and the highlight back at the
+            // top.
+            key={`${choosing.askId}/${answers.length}`}
+            theme={theme}
+            title={question.header}
+            asks={question.question}
+            items={question.options.map((one) => ({ id: one.label, label: one.label, description: one.description }))}
+            chosen={null}
+            multiple={question.multiple}
+            focused={answering}
+            width={Math.min(60, width - 6)}
+            onPick={(labels) => {
+              const all = [...answers, labels]
+              // The last one answered hands the whole of it back, and what
+              // was kept for it is let go of — a question asked again under
+              // the same id is a fresh question.
+              if (all.length < choosing.questions.length) return setPicks({ of: choosing.askId, answers: all })
+              setPicks({ of: '', answers: [] })
+              choose(choosing.askId, all)
             }}
           />
         </OverTheScene>

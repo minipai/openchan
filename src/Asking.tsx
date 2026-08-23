@@ -88,7 +88,7 @@ export function columns(text: string): number {
  * what she is being allowed. Cut by glyph rather than by index, so a pair that
  * makes one character is not left as half of one.
  */
-function cut(text: string, room: number): string {
+export function cut(text: string, room: number): string {
   if (columns(text) <= room) return text
   let kept = ''
   let wide = 0

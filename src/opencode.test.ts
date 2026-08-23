@@ -88,7 +88,7 @@ mock.module('@opencode-ai/sdk', () => ({
   }),
 }))
 
-import { MaidSession, modelsIn, type ProviderModels } from './opencode'
+import { MaidSession, modelsIn, questionsIn, type ProviderModels } from './opencode'
 import { CAST } from './cast'
 
 beforeEach(() => {
@@ -269,4 +269,33 @@ test('the same model from two providers is two rows that can be told apart', () 
 
 test('a provider with nothing configured adds nothing to the list', () => {
   expect(modelsIn([{ id: 'lonely', name: 'Lonely', models: {} }])).toEqual([])
+})
+
+test('a question the server raises comes through as she asked it, less the empty parts', () => {
+  const questions = questionsIn({
+    id: 'q-1',
+    questions: [
+      {
+        question: 'Which first?',
+        header: 'Which',
+        options: [
+          { label: 'Tests', description: 'What is red.' },
+          // The server's schema makes the description required, so an agent
+          // with nothing to say leaves it empty rather than out.
+          { label: 'Docs', description: '' },
+        ],
+      },
+      { question: 'Which ones?', header: 'Ones', options: [{ label: 'A', description: '' }], multiple: true },
+    ],
+  })
+
+  expect(questions).toEqual([
+    {
+      header: 'Which',
+      question: 'Which first?',
+      options: [{ label: 'Tests', description: 'What is red.' }, { label: 'Docs' }],
+      multiple: false,
+    },
+    { header: 'Ones', question: 'Which ones?', options: [{ label: 'A' }], multiple: true },
+  ])
 })

@@ -5,7 +5,7 @@ import { MaidSession } from './opencode'
 import { handedOver, hold, next, OPENING, unspoken, type Scene } from './scene'
 import type { Conversation, OpenConversation } from './protocol'
 
-export type { Permission, Scene } from './scene'
+export type { Asked, Permission, Scene } from './scene'
 
 /** The only agent there is today. Written once rather than inline in the
  * default: a fresh one each render would be a fresh conversation each render
@@ -178,9 +178,22 @@ export function useMaid(open: OpenConversation = openMaid) {
       session.current?.answer(askId, allow)
       setScene((was) => ({ ...was, permission: null }))
     },
+    /** What was picked, handed back to her. The list comes off the screen here
+     * rather than when she acknowledges it — pressing Enter has to look like
+     * something happening. */
+    choose(askId: string, answers: string[][]) {
+      session.current?.choose(askId, answers)
+      setScene((was) => ({ ...was, asked: null }))
+    },
+    /** Her question put down without an answer. She is told so, and goes on
+     * without one: nothing picked is not the same as the first row picked. */
+    decline(askId: string) {
+      session.current?.decline(askId)
+      setScene((was) => ({ ...was, asked: null }))
+    },
     stop() {
       session.current?.interrupt()
-      setScene((was) => ({ ...was, isWorking: false, permission: null }))
+      setScene((was) => ({ ...was, isWorking: false, permission: null, asked: null }))
     },
   }
 }

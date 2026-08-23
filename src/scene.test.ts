@@ -85,6 +85,42 @@ test('a tool that came with nothing but its name is still a question', () => {
   expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash', summary: null, detail: null })
 })
 
+/** Something she wants picked rather than typed. */
+const CHOICE = {
+  kind: 'ask-choice' as const,
+  askId: 'ask-2',
+  questions: [
+    {
+      header: 'Which',
+      question: 'Which one first?',
+      options: [{ label: 'Tests' }, { label: 'Docs', description: 'The long way round.' }],
+      multiple: false,
+    },
+  ],
+}
+
+test('a question with the answers written out goes on the scene as she asked it', () => {
+  const scene = next(working, CHOICE)
+
+  expect(scene.asked).toEqual({ askId: 'ask-2', questions: CHOICE.questions })
+  // Beside a permission she is waiting on, not instead of it: they are two
+  // different things waiting on two different answers.
+  expect(scene.permission).toBeNull()
+})
+
+test('the turn closing takes a question with choices with it too', () => {
+  const scene = next(next(working, CHOICE), { kind: 'done' })
+
+  expect(scene.asked).toBeNull()
+})
+
+test('a question with choices goes with the session, and waits behind a note that did not take it', () => {
+  const asked = next(working, CHOICE)
+
+  expect(next(asked, { kind: 'trouble', trouble: LOST }).asked).toBeNull()
+  expect(next(asked, { kind: 'trouble', trouble: STUCK }).asked).toEqual({ askId: 'ask-2', questions: CHOICE.questions })
+})
+
 test('the turn closing puts her down and takes any question with it', () => {
   const spoken = next(working, { kind: 'says', line: 'There you go' })
   const asked = next(spoken, { kind: 'ask-permission', askId: 'ask-1', toolName: 'bash' })

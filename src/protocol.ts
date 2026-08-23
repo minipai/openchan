@@ -12,6 +12,23 @@ export type Model = { id: string; label: string }
  * markdown under it. */
 export type Report = { title: string; body: string }
 
+/** One of the answers she has written out: the label is the answer itself —
+ * it is what goes back to her — and the description is why someone might
+ * give it, when she has bothered to say. */
+export type Option = { label: string; description?: string }
+
+/**
+ * A question she asks with the answers already written out, rather than a
+ * line to type one on: what she is asking, the few words it goes under, what
+ * can be picked, and whether more than one of them can be.
+ */
+export type Question = {
+  header: string
+  question: string
+  options: Option[]
+  multiple: boolean
+}
+
 /**
  * Something in the way that she cannot get past on her own, said in words
  * rather than left as an error string nobody reads.
@@ -65,6 +82,10 @@ export type BridgeEvent =
    * with it: one line of it for the box, which has room for one line, and the
    * whole of it for whoever wants to read before saying yes. */
   | { kind: 'ask-permission'; askId: string; toolName: string; summary?: string; detail?: string }
+  /** Something she wants picked rather than typed. Several at once is one
+   * event rather than several: the agent asks them together and wants them
+   * back together, answered or not answered as one. */
+  | { kind: 'ask-choice'; askId: string; questions: Question[] }
   /** Something is in the way — or, with nothing in it, that whatever was in
    * the way is not any more. Whether her session survived it is the trouble's
    * own to say: some of them leave her standing there, and some take the
@@ -82,7 +103,7 @@ export type BridgeEvent =
 /**
  * Her brain, from the face's side of the bridge.
  *
- * Seven things is all the window ever does to her, and it does them the same
+ * Nine things is all the window ever does to her, and it does them the same
  * way whichever agent is underneath — so this is the whole of what something
  * has to be able to do to stand in for opencode.
  */
@@ -93,6 +114,15 @@ export interface Conversation {
   /** An answer to an `ask-permission`. An id she is no longer waiting on is
    * dropped rather than sent. */
   answer(askId: string, allow: boolean): void
+  /** An answer to an `ask-choice`: for each question, in the order they were
+   * asked, the labels picked — none of them, for a question that takes several
+   * and got none. An id she is no longer waiting on is dropped rather than
+   * sent. */
+  choose(askId: string, answers: string[][]): void
+  /** An `ask-choice` put down unanswered. Said as its own thing rather than as
+   * an empty answer, because an empty answer is an answer: she gets told that
+   * nobody picked, not that nobody picked anything. */
+  decline(askId: string): void
   /** What she thinks with from the next turn on, by the id the `thinks-with`
    * list gives it. Answered with a `thinks-with` of its own, so what the screen
    * marks is what the next prompt will carry rather than a second copy of it
