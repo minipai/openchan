@@ -35,6 +35,12 @@ Each issue gets its own worktree beside it (`~/Dev/openchan-sta-NN`), so two
 of us working at once never share a checkout. Update main there with
 `git fetch origin main:main`, not by checking anything out.
 
+Inside a worktree that same command is refused — git will not write a branch
+another checkout is sitting on, and the main repo is sitting on `main`. Rebase
+onto the remote instead: `git fetch origin main` then `git rebase origin/main`.
+On a branch stacked on another issue's, rebase onto that parent instead —
+`origin/main` would rewrite the parent's commits into yours.
+
 ## Testing it running
 
 She is a picture in a terminal. Open a **new herdr tab** and run `bun run dev`
