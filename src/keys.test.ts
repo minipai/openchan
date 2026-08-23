@@ -135,6 +135,20 @@ test('the keys a list and an input answer for themselves are not taken from them
   expect(takes('details')).toBe(true)
 })
 
+test('a line break is the window\'s, whichever name the terminal gives it', () => {
+  // Ctrl-J and a linefeed are the same key: one is what the terminal calls it
+  // when it can, the other is the byte itself — and the byte is also what every
+  // line break in a paste comes in as, from a terminal that does not wrap one.
+  expect(pressed(press('ctrl+j'), idle)).toBe('new-line')
+  expect(pressed({ name: 'linefeed' }, idle)).toBe('new-line')
+  // Taken from the line rather than left to it: the line would read it as an
+  // Enter and send half a pasted sentence.
+  expect(takes('new-line')).toBe(true)
+  // And not the window's while the line is behind something: a list is what is
+  // being typed at while it is open.
+  expect(pressed({ name: 'linefeed' }, picking(idle))).toBeNull()
+})
+
 test('what she would do with it can be looked at, and only while she is asking', () => {
   expect(pressed(press('tab'), asked)).toBe('details')
   expect(pressed(press('tab'), working)).toBeNull()
