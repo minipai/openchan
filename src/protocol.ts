@@ -8,6 +8,17 @@ import type { Expression } from './expressions'
  */
 export type Model = { id: string; label: string }
 
+/**
+ * One conversation she has already had in this folder: the id it is reopened
+ * by, what it came to be called, and when it was last spoken in.
+ *
+ * The title is the agent's to write, the same as a model's label is — she is
+ * named after the first thing said to her and nothing up here could do better.
+ * The time is what tells two of them apart when the titles read alike, which
+ * for a week's work in one folder is most of them.
+ */
+export type Talk = { id: string; title: string; when: number }
+
 /** Something she wrote rather than said: what she headed it with, and the
  * markdown under it. */
 export type Report = { title: string; body: string }
@@ -91,6 +102,20 @@ export type BridgeEvent =
    * own to say: some of them leave her standing there, and some take the
    * server behind her with them. */
   | { kind: 'trouble'; trouble: Trouble | null }
+  /** Every conversation there has been in this folder, and which of them she
+   * is in now. Said when the session opens and again when one of the others is
+   * picked up — asked for once rather than when the list is opened, because a
+   * list that fetches its own contents opens onto an empty box. */
+  | { kind: 'talks'; talks: Talk[]; current: string }
+  /** An earlier conversation, picked up: the last thing she said in it, and
+   * the page under it if she wrote one.
+   *
+   * It replaces the scene rather than adding to it. Everything on screen
+   * belonged to the conversation being left — her line, what she was in the
+   * middle of, anything she was waiting on — and none of it is true of the one
+   * being opened.
+   */
+  | { kind: 'picks-up'; line: string; expression?: Expression; mood?: string; report: Report | null }
   /** What she can think with, and which of them she is thinking with. Said
    * when the session opens and again every time it changes — the one in force
    * is the agent's to report, so the list only ever marks what has taken. */
@@ -103,7 +128,7 @@ export type BridgeEvent =
 /**
  * Her brain, from the face's side of the bridge.
  *
- * Nine things is all the window ever does to her, and it does them the same
+ * Ten things is all the window ever does to her, and it does them the same
  * way whichever agent is underneath — so this is the whole of what something
  * has to be able to do to stand in for opencode.
  */
@@ -128,6 +153,18 @@ export interface Conversation {
    * marks is what the next prompt will carry rather than a second copy of it
    * kept up here. */
   use(model: string): void
+  /**
+   * Go back into one of the conversations the `talks` list gave, by its id.
+   *
+   * Nothing is restarted: the server behind her holds every session it has ever
+   * had in this folder, so picking one up is a matter of which id the next
+   * prompt goes into. What she last said in it is announced as it is picked up
+   * — a resume that changed nothing anybody can see reads as a list that does
+   * nothing.
+   *
+   * The one she is already in is dropped rather than reopened.
+   */
+  resume(id: string): void
   /** Open her again, after something took the session down. What is on screen
    * is cleared as the attempt starts — pressing it has to look like something
    * happening — and a new trouble raised if this one does not get through

@@ -28,9 +28,10 @@ function readsAs(label: string, typed: string): boolean {
  * A list laid over the scene, to pick one thing off — or several.
  *
  * The same list every time something has to be chosen — a model, whichever of
- * her the master wants, which folder, and the answers she has written out to a
- * question of her own — so it knows nothing about what is in it beyond what a
- * row says and which one is already in force.
+ * her the master wants, which folder, which of the conversations already had
+ * there, and the answers she has written out to a question of her own — so it
+ * knows nothing about what is in it beyond what a row says and which one is
+ * already in force.
  *
  * Told it takes several, it takes them the way a form does: Space ticks the
  * row it is on, Enter hands back whatever is ticked — none of them, if that is
@@ -44,9 +45,10 @@ function readsAs(label: string, typed: string): boolean {
  *
  * Told it can be narrowed by typing, it takes the letters too: every word typed
  * has to be somewhere in a row for the row to stay. What was typed is shown
- * above the rows, so it is clear why the rest went away. Only one of the lists
- * is told so — what she thinks with runs to hundreds of rows; who is on shift
- * is four names, and a search box over four names is noise.
+ * above the rows, so it is clear why the rest went away. Two of the lists are
+ * told so — what she thinks with runs to hundreds of rows, and what has been
+ * talked about here is rows of sentences, which is what typing is for. Who is
+ * on shift is four names, and a search box over four names is noise.
  *
  * Moving through it and taking what it is on are the list's own keys, the way
  * Enter is the input's; putting it away is the window's, because the window is

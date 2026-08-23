@@ -27,6 +27,7 @@ export type Does =
   | 'models'
   | 'who'
   | 'where'
+  | 'talks'
   | 'report'
   | 'scroll-up'
   | 'scroll-down'
@@ -209,6 +210,7 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'always', press: 'ctrl+p', does: 'models', says: 'what she thinks with' },
   { when: 'always', press: 'ctrl+g', does: 'who', says: 'who is on shift' },
   { when: 'always', press: 'ctrl+f', does: 'where', says: 'where she works' },
+  { when: 'always', press: 'ctrl+o', does: 'talks', says: 'an earlier conversation' },
   { when: 'always', press: 'ctrl+b', does: 'blocks', says: 'swap how she is drawn' },
   { when: 'always', press: 'ctrl+c', does: 'leave', says: 'leave' },
 ]

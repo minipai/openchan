@@ -11,8 +11,31 @@ import type { BridgeEvent } from './protocol'
  * the test can cut, which is what a server dying looks like from her side.
  */
 const servers: { closed: boolean }[] = []
-/** Every session any server here has opened, by id. */
-const onDisk = new Set<string>()
+/**
+ * Every session on disk, by id: the ones the servers here opened and the ones a
+ * test planted to have been talked in before. What is in each of them is kept
+ * too — going back into one is a matter of reading it.
+ */
+const onDisk = new Map<string, PastSession & { messages: PastMessage[] }>()
+
+/** When a session opened here was opened. Everything a test plants is older, so
+ * the one she is in is the top of the list, as it is on a real server. */
+const NOW = 1_000_000
+
+/** One conversation already on disk when the window opens, with a line of hers
+ * at the end of it. */
+function planted(id: string, title: string, when: number, said: string, parentID?: string) {
+  onDisk.set(id, {
+    id,
+    title,
+    ...(parentID ? { parentID } : {}),
+    time: { created: when - 1000, updated: when },
+    messages: [
+      { info: { role: 'user' }, parts: [{ type: 'text', text: 'go on then' }] },
+      { info: { role: 'assistant' }, parts: [{ type: 'text', text: said }] },
+    ],
+  })
+}
 /** Every prompt posted, by the session it went into. */
 const prompted: string[] = []
 const streams: Stream[] = []
@@ -23,15 +46,50 @@ let wontStart = false
 let wontListen = false
 /** What the next look-up of a session answers with, instead of looking. */
 let lookupSays: { name: string } | null = null
+/** Whether the next read of a conversation's messages throws rather than
+ * answering — a server that is not there rejects rather than replying. */
+let wontRead = false
+/** Whether the next list of the folder's conversations throws. */
+let wontList = false
+/** While this is set, reading a conversation back waits on it: the moment
+ * between a row being taken and the server answering, held open. */
+let reading: Promise<void> | null = null
+let letRead: (() => void) | null = null
+const holdReads = () => void (reading = new Promise<void>((go) => (letRead = go)))
+const letReadsThrough = () => {
+  letRead?.()
+  reading = null
+  letRead = null
+}
+/** Every permission answered over HTTP, in order. */
+const refused: { id: string; permissionID: string; response: string }[] = []
 
-/** The event stream: nothing, until the test cuts it. */
+/** The event stream: nothing, until the test says something over it or cuts
+ * it. */
 class Stream {
-  private cut: ((trouble: Error) => void) | null = null
+  private waiting: (() => void) | null = null
+  private queued: unknown[] = []
+  private cut: Error | null = null
   async *[Symbol.asyncIterator]() {
-    throw await new Promise<Error>((settle) => (this.cut = settle))
+    for (;;) {
+      while (this.queued.length) yield this.queued.shift()
+      if (this.cut) throw this.cut
+      await new Promise<void>((go) => (this.waiting = go))
+    }
+  }
+  /** One event, as the server would publish it. */
+  say(event: unknown) {
+    this.queued.push(event)
+    this.wake()
   }
   drop() {
-    this.cut?.(new Error('the server went away'))
+    this.cut = new Error('the server went away')
+    this.wake()
+  }
+  private wake() {
+    const go = this.waiting
+    this.waiting = null
+    go?.()
   }
 }
 
@@ -55,7 +113,9 @@ mock.module('@opencode-ai/sdk', () => ({
     session: {
       create: async () => {
         const id = `ses_${++sessions}`
-        onDisk.add(id)
+        // Freshly opened and never spoken in: created and last touched at the
+        // same moment, which is how the real one comes back too.
+        onDisk.set(id, { id, title: 'New session', time: { created: NOW, updated: NOW }, messages: [] })
         return { data: { id } }
       },
       get: async ({ path }: { path: { id: string } }) => {
@@ -66,8 +126,35 @@ mock.module('@opencode-ai/sdk', () => ({
         }
         return onDisk.has(path.id) ? { data: { id: path.id } } : { error: { name: 'NotFoundError' } }
       },
+      list: async () => {
+        if (wontList) {
+          wontList = false
+          throw new Error('the server went away')
+        }
+        return { data: [...onDisk.values()] }
+      },
+      update: async ({ path, body }: { path: { id: string }; body: { title: string } }) => {
+        const one = onDisk.get(path.id)
+        if (one) one.title = body.title
+        return { data: one }
+      },
+      messages: async ({ path }: { path: { id: string } }) => {
+        if (reading) await reading
+        if (wontRead) {
+          wontRead = false
+          throw new Error('the server went away')
+        }
+        return onDisk.has(path.id)
+          ? { data: onDisk.get(path.id)!.messages }
+          : { error: { name: 'NotFoundError' } }
+      },
       promptAsync: async ({ path }: { path: { id: string } }) => {
         prompted.push(path.id)
+        // The real server touches a session whenever anything lands in it,
+        // which is how one that was only ever opened is told from one that was
+        // talked in.
+        const one = onDisk.get(path.id)
+        if (one) one.time.updated = NOW + prompted.length
         return {}
       },
       abort: async () => ({}),
@@ -84,11 +171,30 @@ mock.module('@opencode-ai/sdk', () => ({
       },
     },
     config: { providers: async () => ({ data: { providers: [] } }) },
-    postSessionIdPermissionsPermissionId: async () => ({}),
+    postSessionIdPermissionsPermissionId: async ({
+      path,
+      body,
+    }: {
+      path: { id: string; permissionID: string }
+      body: { response: string }
+    }) => {
+      refused.push({ ...path, response: body.response })
+      return {}
+    },
   }),
 }))
 
-import { MaidSession, modelsIn, questionsIn, type ProviderModels } from './opencode'
+import {
+  lastSaid,
+  MaidSession,
+  nameFor,
+  modelsIn,
+  questionsIn,
+  talksIn,
+  type PastMessage,
+  type PastSession,
+  type ProviderModels,
+} from './opencode'
 import { CAST } from './cast'
 
 beforeEach(() => {
@@ -99,7 +205,12 @@ beforeEach(() => {
   sessions = 0
   wontStart = false
   wontListen = false
+  wontRead = false
+  wontList = false
+  reading = null
+  letRead = null
   lookupSays = null
+  refused.length = 0
 })
 
 /** Until something is true of what she has said, or it has had long enough. */
@@ -121,10 +232,13 @@ async function opened() {
   sessionsOpened.push(her)
   await her.start()
   const troubles = () => events.filter((event) => event.kind === 'trouble').map((event) => event.trouble)
+  /** The stream the live attempt is listening to, for the test to speak over. */
+  const stream = () => streams[streams.length - 1]!
   return {
     her,
     events,
     troubles,
+    stream,
     /** The server behind her going away, and her noticing. */
     lose: async () => {
       streams[streams.length - 1]!.drop()
@@ -298,4 +412,272 @@ test('a question the server raises comes through as she asked it, less the empty
     },
     { header: 'Ones', question: 'Which ones?', options: [{ label: 'A' }], multiple: true },
   ])
+})
+
+/** Everything a folder worked in for a while has in it: the conversation open
+ * now, two that were had and left, a subagent's scratchpad under one of them,
+ * and a window that was opened and closed again without a word said. */
+const SESSIONS: PastSession[] = [
+  { id: 'ses_now', title: 'New session', time: { created: 90, updated: 90 } },
+  { id: 'ses_old', title: 'Where the needle was', time: { created: 10, updated: 20 } },
+  { id: 'ses_recent', title: 'The colours of the sky', time: { created: 30, updated: 60 } },
+  { id: 'ses_sub', title: 'grep for it', parentID: 'ses_recent', time: { created: 40, updated: 50 } },
+  { id: 'ses_unspoken', title: 'New session', time: { created: 70, updated: 70 } },
+]
+
+test('the one she is in before anything is said in it is offered as that', () => {
+  expect(talksIn(SESSIONS, 'ses_now')[0]).toEqual({
+    id: 'ses_now',
+    title: 'Nothing said in it yet',
+    when: 90,
+  })
+})
+
+test('the conversations offered are the ones somebody had, most recently spoken in first', () => {
+  // The one she is in is there whether or not anything has been said in it —
+  // the list marks where it stands. A subagent's scratchpad and a window opened
+  // and closed again are not conversations anybody had.
+  expect(talksIn(SESSIONS, 'ses_now').map((one) => one.id)).toEqual(['ses_now', 'ses_recent', 'ses_old'])
+})
+
+test('a conversation is offered under the name it was given, and when it was last spoken in', () => {
+  expect(talksIn(SESSIONS, 'ses_now')[1]).toEqual({
+    id: 'ses_recent',
+    title: 'The colours of the sky',
+    when: 60,
+  })
+})
+
+test('where a conversation was left is the last thing she said in it', () => {
+  const left = lastSaid([
+    { info: { role: 'user' }, parts: [{ type: 'text', text: 'good morning' }] },
+    { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Good morning, goshujin-sama.' }] },
+    { info: { role: 'user' }, parts: [{ type: 'text', text: 'where was the needle?' }] },
+    {
+      info: { role: 'assistant' },
+      // What she thought and what she picked up are not what she said.
+      parts: [
+        { type: 'reasoning', text: 'haystacks, haystacks' },
+        { type: 'tool' },
+        { type: 'text', text: 'In the second haystack.【 proud ᕙ( •̀ ᗜ •́)ᕗ 】' },
+      ],
+    },
+  ])
+
+  expect(left.line).toBe('In the second haystack.')
+  expect(left.expression).toBe('proud')
+  expect(left.mood).toBe('【 proud ᕙ( •̀ ᗜ •́)ᕗ 】')
+  expect(left.report).toBeNull()
+})
+
+test('a page she wrote in it comes back split from the line, the same as it was said', () => {
+  const left = lastSaid([
+    {
+      info: { role: 'assistant' },
+      parts: [{ type: 'text', text: 'Here is what I found:\n\n# Colours\n\nThe sky was grey.' }],
+    },
+  ])
+
+  expect(left.line).toBe('Here is what I found:')
+  expect(left.report).toEqual({ title: 'Colours', body: '# Colours\n\nThe sky was grey.' })
+})
+
+test('a conversation nobody has answered in yet is picked up with nothing to say', () => {
+  const left = lastSaid([{ info: { role: 'user' }, parts: [{ type: 'text', text: 'are you there?' }] }])
+
+  expect(left.line).toBe('')
+  expect(left.report).toBeNull()
+})
+
+test('every conversation the folder has is offered, with the one she is in marked', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { events } = await opened()
+
+  const talks = events.filter((event) => event.kind === 'talks').at(-1)
+  expect(talks?.talks.map((one) => one.title)).toEqual(['Nothing said in it yet', 'Where the needle was'])
+  expect(talks?.current).toBe('ses_1')
+})
+
+test('an earlier conversation is picked up where it was left, and the next thing said goes into it', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.【 proud ᕙ( •̀ ᗜ •́)ᕗ 】')
+  const { her, events } = await opened()
+  her.ask('good morning')
+
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+  her.ask('and which haystack was that?')
+
+  // One server throughout: nothing was torn down, only the id the prompt goes
+  // into changed.
+  expect(servers).toHaveLength(1)
+  expect(prompted).toEqual(['ses_1', 'ses_old'])
+  // And the screen is where that conversation was left, not where this one was.
+  const up = events.find((event) => event.kind === 'picks-up')
+  expect(up?.line).toBe('It was in the second haystack.')
+  expect(up?.expression).toBe('proud')
+  // The list says which one she is in now, so it opens marking the right row.
+  expect(events.filter((event) => event.kind === 'talks').at(-1)?.current).toBe('ses_old')
+})
+
+test('the conversation she is already in is not picked up again', async () => {
+  const { her, events } = await opened()
+  const before = events.length
+
+  her.resume('ses_1')
+  await new Promise((tick) => setTimeout(tick, 5))
+
+  expect(events.slice(before)).toEqual([])
+})
+
+test('a conversation that is not there any more says so, and leaves her where she is', async () => {
+  const { her, events, troubles } = await opened()
+  her.ask('good morning')
+
+  her.resume('ses_deleted')
+  await until('said it could not be opened', () => troubles().length > 0)
+  her.ask('are you still there?')
+
+  // Still in the conversation she was in, and still able to be spoken to: this
+  // is one she is standing behind rather than one that took her with it.
+  expect(prompted).toEqual(['ses_1', 'ses_1'])
+  expect(events.some((event) => event.kind === 'picks-up')).toBe(false)
+  expect(troubles().at(-1)?.gone).toBe(false)
+})
+
+test('a conversation is named after the first line of what was said in it', () => {
+  expect(nameFor('where was the needle?')).toBe('where was the needle?')
+  // A paste is a paragraph, and a row of a list is a row.
+  expect(nameFor('  \n\nwhere was the needle?\nand the second one?')).toBe('where was the needle?')
+  expect(nameFor('a'.repeat(80))).toBe(`${'a'.repeat(59)}…`)
+})
+
+test('the first thing said in a conversation is what it is called from then on', async () => {
+  const { her, events } = await opened()
+
+  her.ask('where was the needle?')
+  await until('named the conversation', () =>
+    events.some((event) => event.kind === 'talks' && event.talks.some((one) => one.title === 'where was the needle?')),
+  )
+
+  // Named once, by how it started: the next thing said does not rename it.
+  her.ask('and the second haystack?')
+  await new Promise((tick) => setTimeout(tick, 5))
+  expect(onDisk.get('ses_1')?.title).toBe('where was the needle?')
+})
+
+test('a turn cut off before she said anything is picked up on the last words there were', () => {
+  const left = lastSaid([
+    { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Looking now.' }] },
+    { info: { role: 'user' }, parts: [{ type: 'text', text: 'and the other one?' }] },
+    // Stopped mid-tool: a turn of hers with nothing said in it. An empty box is
+    // what a resume that did nothing looks like.
+    { info: { role: 'assistant' }, parts: [{ type: 'step-start' }, { type: 'tool' }] },
+  ])
+
+  expect(left.line).toBe('Looking now.')
+})
+
+test('a conversation the server will not answer for leaves her where she was, and says so', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, troubles } = await opened()
+  wontRead = true
+
+  her.resume('ses_old')
+  await until('said it could not be opened', () => troubles().length > 0)
+  her.ask('are you still there?')
+
+  // A rejected read is the server being gone, not the window being over: she is
+  // back in the conversation she was in and can still be spoken to.
+  expect(prompted).toEqual(['ses_1'])
+  expect(events.some((event) => event.kind === 'picks-up')).toBe(false)
+  expect(troubles().at(-1)?.gone).toBe(false)
+})
+
+test('a second conversation taken before the first has been read back is the one she is in', async () => {
+  planted('ses_a', 'The colours of the sky', 20_000, 'Grey.')
+  planted('ses_b', 'Where the needle was', 30_000, 'In the second haystack.')
+  const { her, events } = await opened()
+
+  holdReads()
+  her.resume('ses_a')
+  her.resume('ses_b')
+  letReadsThrough()
+  await until('picked one up', () => events.some((event) => event.kind === 'picks-up'))
+  her.ask('and then?')
+
+  // The first row's answer is about a conversation nobody is standing in.
+  expect(events.filter((event) => event.kind === 'picks-up').map((event) => event.line)).toEqual([
+    'In the second haystack.',
+  ])
+  expect(prompted).toEqual(['ses_b'])
+})
+
+test('a sentence said before the conversation has been read back goes into the one that was picked', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events } = await opened()
+
+  holdReads()
+  her.resume('ses_old')
+  // Nothing on screen says the pick has not landed: the list is gone and the
+  // line is there to be typed on.
+  her.ask('and which haystack was that?')
+  letReadsThrough()
+  await until('said the list again', () => events.filter((event) => event.kind === 'talks').length > 1)
+
+  expect(prompted).toEqual(['ses_old'])
+  // And where it was left is not put over the answer she is already giving.
+  expect(events.some((event) => event.kind === 'picks-up')).toBe(false)
+})
+
+test('a sentence already sent into the picked conversation keeps her in it when the read back fails', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, troubles } = await opened()
+
+  holdReads()
+  her.resume('ses_old')
+  her.ask('and which haystack was that?')
+  wontRead = true
+  letReadsThrough()
+  await until('said it could not be read back', () => troubles().length > 0)
+  her.ask('and the first one?')
+
+  // Put back where she was, that sentence would be answered into a session the
+  // window has stopped listening to and the next one would go somewhere else
+  // again. All that failed is the reading back, and that is all it says.
+  expect(prompted).toEqual(['ses_old', 'ses_old'])
+  expect(troubles().at(-1)?.title).toBe('That conversation could not be read back')
+  expect(troubles().at(-1)?.gone).toBe(false)
+})
+
+test('a tool she was waiting to be allowed is refused when the conversation it was in is left', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, stream } = await opened()
+  stream().say({
+    type: 'permission.asked',
+    properties: { id: 'ask-1', sessionID: 'ses_1', permission: 'bash', metadata: { command: 'ls' } },
+  })
+  await until('put the question up', () => events.some((event) => event.kind === 'ask-permission'))
+
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+
+  // Left alone it would hold that turn open on the server for ever: the
+  // question is off the screen with the conversation it belongs to, and there
+  // is nobody left who could answer it.
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-1', response: 'reject' }])
+})
+
+test('a list the server will not give is not said as a folder with nothing in it', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { events, stream } = await opened()
+  const said = () => events.filter((event) => event.kind === 'talks').length
+
+  const before = said()
+  wontList = true
+  stream().say({ type: 'session.idle', properties: { sessionID: 'ses_1' } })
+  await new Promise((tick) => setTimeout(tick, 10))
+
+  // The list on screen is right, and saying nothing is better than saying there
+  // is nothing — this is asked again at the end of every turn.
+  expect(said()).toBe(before)
 })
