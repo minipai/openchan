@@ -1,6 +1,13 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react'
-import { CliRenderEvents, type InputRenderable, type Selection } from '@opentui/core'
-import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react'
+import {
+  CliRenderEvents,
+  decodePasteBytes,
+  stripAnsiSequences,
+  type InputRenderable,
+  type PasteEvent,
+  type Selection,
+} from '@opentui/core'
+import { useKeyboard, usePaste, useRenderer, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
 import { KeysOverlay } from './KeysOverlay'
@@ -29,6 +36,34 @@ const SAID_FOR = 2000
  * like one that worked until it is pasted.
  */
 const WILL_NOT_TAKE = 'this terminal will not take a clipboard write'
+
+/**
+ * What a line break is drawn as on the one line she is spoken to on.
+ *
+ * The line is one row and cannot hold a real newline — the input drops them —
+ * so a pasted paragraph would arrive with its lines run together into one
+ * sentence. It is written down as a mark instead: what is on the line is what
+ * will be said, breaks and all, and every mark is a newline again on the way
+ * out. Visible on purpose, because a break that showed as nothing would read
+ * as a paste that had lost it.
+ *
+ * On this line the mark is what a break is, so a paste that carries one of its
+ * own is read as a break as well — and reads as one, because that is what it
+ * is drawn as. Keeping the two apart means keeping what was pasted somewhere
+ * the line is not, and then what is on the line is no longer what will be said.
+ */
+const A_BREAK = '↵'
+
+/**
+ * How much the line will hold.
+ *
+ * The input keeps a thousand characters unless it is told otherwise, and what
+ * is past that it drops without a word — a pasted page arrives with its end
+ * missing and nothing on screen says so. This is high enough that nothing
+ * anybody says to her in one go reaches it, and what does reach it is said
+ * rather than swallowed.
+ */
+export const LINE_HOLDS = 100_000
 
 /**
  * What can stand over the scene: the keyboard help, one of the three lists, the
@@ -266,6 +301,12 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // note's until it is put away — not a decline aimed at a list nobody can
   // see.
   const answering = standing === null && scene.trouble === null && question !== null
+  // Whether the line she is spoken to on is the thing being typed into. A list,
+  // a page, her own question or something in the way stands where the line is
+  // or over it, and a tool she is waiting to be allowed is drawn in its place —
+  // so what is pasted then belongs to whatever is there, and the line is not
+  // even on screen to take it.
+  const spokenTo = standing === null && !answering && scene.trouble === null && asked === null
   const where = {
     up: standing === 'keys',
     picking: picking !== null || answering,
@@ -313,6 +354,12 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         return setOpened(showing ? null : asked!.askId)
       case 'stop':
         return stop()
+      // A line break rather than an Enter: the byte a terminal sends for one is
+      // not the byte it sends for the other, and only Enter was ever meant to
+      // send. It is written onto the line as a mark, which is what a break is
+      // on a line that only has one row.
+      case 'new-line':
+        return line.current!.insertText(A_BREAK)
       case 'retry':
         return retry()
       case 'dismiss':
@@ -349,6 +396,29 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         setPicks({ of: '', answers: [] })
         return decline(choosing!.askId)
     }
+  })
+
+  // A paste the terminal wrapped up as one, taken by the window rather than by
+  // the line.
+  //
+  // The line would take it itself, and drop every newline in it on the way in:
+  // three lines arrive as one run-on sentence. So it is written onto the line
+  // here instead, with each break kept as a mark, and it goes off as the one
+  // thing it was pasted as.
+  //
+  // What it does not fit is said. The line holds a great deal and a paste that
+  // reaches the end of it is a page rather than a sentence — but the end is
+  // silent, and a paste with its tail missing looks exactly like a paste that
+  // arrived.
+  usePaste((paste: PasteEvent) => {
+    if (!spokenTo) return
+    paste.preventDefault()
+    // The escape sequences a terminal would otherwise be driven by are taken
+    // out of it, the same as the line takes them out of what it pastes itself.
+    const text = stripAnsiSequences(decodePasteBytes(paste.bytes)).replace(/\r\n|\r|\n/g, A_BREAK)
+    const room = LINE_HOLDS - line.current!.value.length
+    line.current!.insertText(text.slice(0, room))
+    if (text.length > room) setNote({ text: `the last ${text.length - room} characters would not fit` })
   })
 
   // Everyone who could be standing there, as rows. The list knows nothing about
@@ -401,7 +471,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   const boxWidth = Math.min(90, width - 6)
 
   const send = () => {
-    ask(line.current!.value)
+    ask(line.current!.value.replaceAll(A_BREAK, '\n'))
     line.current!.value = ''
   }
 
@@ -456,7 +526,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
                 <text fg={theme.primary}>›</text>
                 <input
                   ref={line}
-                  focused={standing === null && !answering}
+                  focused={spokenTo}
+                  maxLength={LINE_HOLDS}
                   value={typed}
                   placeholder={invitation(scene)}
                   flexGrow={1}

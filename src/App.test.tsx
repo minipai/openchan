@@ -25,7 +25,7 @@ mock.module('./SpriteLayer', () => ({
   ),
 }))
 
-import { App } from './App'
+import { App, LINE_HOLDS } from './App'
 import { CAST, remember, remembered } from './cast'
 import { OPENED_IN } from './folder'
 import type { BridgeEvent } from './protocol'
@@ -211,13 +211,14 @@ test('a paste landing in the middle of what was typed keeps both', async () => {
   expect(her.asked).toEqual(['good morning, not evening'])
 })
 
-test('a sentence dropped in with its newline, by a terminal that does not wrap pastes, is sent', async () => {
+test('a sentence dropped in with its Enter, by a terminal that does not wrap pastes, is sent', async () => {
   const { her, wakeUp, drop, type, enter, frame } = await onScreen()
   await wakeUp()
 
   // Every byte of it lands before the window has drawn once: the sentence and
-  // the Enter at the end of it in the same breath.
-  await drop('good morning\n')
+  // the Enter at the end of it in the same breath. Enter is the carriage
+  // return — the byte the key sends, and not the one a line break is.
+  await drop('good morning\r')
 
   expect(her.asked).toEqual(['good morning'])
   // And the line is empty for the next thing, not still holding a sentence she
@@ -226,6 +227,47 @@ test('a sentence dropped in with its newline, by a terminal that does not wrap p
   await type('and again')
   await enter()
   expect(her.asked).toEqual(['good morning', 'and again'])
+})
+
+test('a paste with lines in it is one prompt, with its lines, sent once', async () => {
+  const { her, wakeUp, paste, enter, frame } = await onScreen()
+  await wakeUp()
+
+  await paste('line one\nline two\nline three')
+  // On the line, where it can still be read over and typed at, with each break
+  // written down rather than dropped.
+  expect(frame()).toContain('line one↵line two↵line three')
+
+  await enter()
+
+  expect(her.asked).toEqual(['line one\nline two\nline three'])
+})
+
+test('the same paste, by a terminal that does not wrap it, is still one prompt', async () => {
+  const { her, wakeUp, drop, enter } = await onScreen()
+  await wakeUp()
+
+  // Read as keys, one at a time, a line break among them being the key it is
+  // rather than the Enter it is not.
+  await drop('line one\nline two\nline three')
+  await enter()
+
+  expect(her.asked).toEqual(['line one\nline two\nline three'])
+})
+
+test('a paste with more in it than the line will hold says what did not fit', async () => {
+  const { her, wakeUp, paste, enter, frame } = await onScreen()
+  await wakeUp()
+
+  await paste('x'.repeat(LINE_HOLDS - 4))
+  await paste('a page too far')
+
+  // Four of the fourteen fit on the end of it; the ten that did not are said to
+  // be gone, rather than quietly not arriving.
+  expect(frame()).toContain('the last 10 characters would not fit')
+
+  await enter()
+  expect(her.asked).toEqual(['x'.repeat(LINE_HOLDS - 4) + 'a pa'])
 })
 
 test('ESC stops her, and the line is hers to be spoken to on again', async () => {
@@ -396,6 +438,30 @@ test('a half-written sentence is still on the line once her question has been an
   await type(' and sent')
   await enter()
   expect(her.asked).toEqual(['tidy up', 'half written and sent'])
+})
+
+test('a paste while she is waiting to be allowed something is not hers to take', async () => {
+  const { her, paste, drop, press, frame } = await asking()
+
+  // The line is not on screen — her question is drawn in its place — so what
+  // is pasted goes nowhere rather than onto a line nobody can see, and the
+  // question is still the thing being answered.
+  await paste('good morning\nand good evening')
+  // The same paste from a terminal that does not wrap one, which arrives as
+  // keys: the break in it is not a line to write anywhere either.
+  await drop('later\n')
+  expect(frame()).toContain('She wants to use bash: rm -rf node_modules')
+
+  await press('y')
+
+  expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
+  // Nothing else was said to her: the sentence she is working on is the one
+  // that put her to work.
+  expect(her.asked).toEqual(['tidy up'])
+  // And the line, back in its place, is empty rather than holding what was
+  // pasted at something else.
+  expect(frame()).not.toContain('good morning')
+  expect(frame()).not.toContain('later')
 })
 
 test('a tool she is waiting to be allowed is refused from the keyboard', async () => {

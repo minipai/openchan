@@ -15,6 +15,7 @@
  * put the terminal back. They are here to be listed. */
 export type Does =
   | 'send'
+  | 'new-line'
   | 'stop'
   | 'allow'
   | 'refuse'
@@ -186,6 +187,17 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'working', press: 'escape', does: 'stop', says: 'stop her' },
 
   { when: 'typing', press: 'return', does: 'send', says: 'say it' },
+  // A break in what is being said rather than the end of it. Enter is the only
+  // key that sends, so a sentence with more than one line in it has to be got
+  // onto the line some other way — and this is the key a terminal is already
+  // sending when it hands over a pasted line break of its own.
+  //
+  // A clipboard written on Windows is the one this cannot save: its breaks are
+  // a carriage return and a linefeed both, the first of them is Enter by every
+  // reading, and it has sent before the second arrives. Short of holding every
+  // Enter back to see what comes behind it, a paste like that from a terminal
+  // that does not wrap one still goes off a line at a time.
+  { when: 'typing', press: 'ctrl+j', does: 'new-line', says: 'another line' },
 
   // Her words and nothing else — not the frame around them, and not what was
   // typed to her. Ctrl-Y because the keys that read as "copy" are spoken for:
@@ -262,11 +274,14 @@ const holds = (when: When, where: Where) =>
   // a list or a path being typed or an open report while one of those is, and
   // not drawn at all while something is in the way; a blurred input does not
   // take Enter — so it is not offered while any of those hold.
+  // …and not while she is waiting to be allowed something: what she is asking
+  // about is drawn where the line is, so there is no line there to type on.
   (when === 'typing' &&
     !where.up &&
     !where.picking &&
     !where.path &&
     !where.reading &&
+    !where.asked &&
     where.trouble === null) ||
   // Not while a path is being written out, or a list is being typed at: y and
   // n are letters in a path, and a folder under `~/Sync` would otherwise answer
@@ -322,7 +337,12 @@ export function keysNow(where: Where): Group[] {
 /** What a key press comes to, from where the window is. Nothing, if it is not
  * one of hers. */
 export function pressed(key: { name?: string; ctrl?: boolean }, where: Where): Does | null {
-  const press = `${key.ctrl ? 'ctrl+' : ''}${key.name ?? ''}`
+  // A linefeed is Ctrl-J by another name: it is the byte that key sends, it is
+  // what a terminal too old for the kitty protocol calls it, and it is what a
+  // terminal that does not wrap a paste hands over for every line break in one.
+  // Written down once, under the name anybody would look for it by.
+  const named = key.name === 'linefeed' ? { name: 'j', ctrl: true } : key
+  const press = `${named.ctrl ? 'ctrl+' : ''}${named.name ?? ''}`
   return KEYS.find((one) => one.press === press && holds(one.when, where))?.does ?? null
 }
 
