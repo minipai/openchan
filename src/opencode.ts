@@ -149,12 +149,50 @@ function said(trouble: unknown) {
 }
 
 /** A tool she may not use until he says so. The server names the tool under
- * `permission`, and older ones under `type` or `title`. */
+ * `permission`, and older ones under `type` or `title`; what it would be used
+ * for is under `metadata`, shaped by the tool. */
 type AskedPermission = {
   id: string
   permission?: string
   type?: string
   title?: string
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * What she would actually do with the tool she is asking for, off the
+ * permission the server raised: the one line the box has room for, and the
+ * whole of it for whoever wants to read before saying yes.
+ *
+ * The server shapes `metadata` by the tool — a command for bash, a path and a
+ * unified diff for edit, an address for webfetch — so this is the one place
+ * that knows those shapes, the same as `narrate` is for tool calls. Both halves
+ * are given even when they say the same thing: the box shortens the line it
+ * shows to whatever is left after the keys, and the long way round is how the
+ * rest of it gets read.
+ */
+function asking(metadata: Record<string, unknown>): { summary?: string; detail?: string } {
+  const { command, filepath, diff, url } = metadata as Record<string, string | undefined>
+  if (typeof command === 'string') return { summary: command.split('\n')[0], detail: command }
+  if (typeof filepath === 'string') {
+    const near = path.relative(process.cwd(), filepath)
+    return {
+      summary: near && !near.startsWith('..') ? near : filepath,
+      detail: typeof diff === 'string' ? hunks(diff) : undefined,
+    }
+  }
+  if (typeof url === 'string') return { summary: url, detail: url }
+  return {}
+}
+
+/** A unified diff with its preamble off. The server writes the path three
+ * times above the first hunk and the box has already said which file this is —
+ * what is worth the screen is the changed lines. */
+function hunks(diff: string): string {
+  // The start of a line, not anywhere: the path is written above the first
+  // hunk three times, and a path with @@ in it would otherwise be the cut.
+  const first = diff.search(/^@@/m)
+  return (first === -1 ? diff : diff.slice(first)).trim()
 }
 
 /**
@@ -528,6 +566,7 @@ export class MaidSession implements Conversation {
       kind: 'ask-permission',
       askId: asked.id,
       toolName: asked.permission ?? asked.type ?? asked.title ?? 'a tool',
+      ...asking(asked.metadata ?? {}),
     })
   }
 

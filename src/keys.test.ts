@@ -117,6 +117,15 @@ test('the keys a list and an input answer for themselves are not taken from them
     false,
   ])
   expect([takes('cancel'), takes('models'), takes('stop')]).toEqual([true, true, true])
+  // Looking at what she would do is the window's own, the same as answering
+  // her: it changes nothing underneath and nothing underneath wants the key.
+  expect(takes('details')).toBe(true)
+})
+
+test('what she would do with it can be looked at, and only while she is asking', () => {
+  expect(pressed(press('tab'), asked)).toBe('details')
+  expect(pressed(press('tab'), working)).toBeNull()
+  expect(pressed(press('tab'), idle)).toBeNull()
 })
 
 test('a key that means nothing from here is nothing', () => {
@@ -326,6 +335,7 @@ test('keys are printed the way they are pressed, not the way the terminal names 
   expect(shownAs('up')).toBe('↑')
   expect(shownAs('down')).toBe('↓')
   expect(shownAs('ctrl+k')).toBe('Ctrl-K')
+  expect(shownAs('tab')).toBe('Tab')
   expect(shownAs('y')).toBe('y')
 })
 
@@ -397,6 +407,7 @@ const EVERY_PRESS = [
   'y',
   'n',
   'r',
+  'tab',
   'return',
   'up',
   'down',

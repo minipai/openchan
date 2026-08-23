@@ -60,9 +60,29 @@ test('speaking again puts the narration down', () => {
 })
 
 test('a tool she may not use yet becomes a question on screen', () => {
+  const scene = next(working, {
+    kind: 'ask-permission',
+    askId: 'ask-1',
+    toolName: 'bash',
+    summary: 'rm -rf dist',
+    detail: 'set -e\nrm -rf dist',
+  })
+
+  expect(scene.permission).toEqual({
+    askId: 'ask-1',
+    toolName: 'bash',
+    summary: 'rm -rf dist',
+    detail: 'set -e\nrm -rf dist',
+  })
+})
+
+test('a tool that came with nothing but its name is still a question', () => {
+  // Everything opencode asks about says what it would be used for, but the
+  // question is the tool's name and the y/n — the rest is what the box would
+  // show if it had it.
   const scene = next(working, { kind: 'ask-permission', askId: 'ask-1', toolName: 'bash' })
 
-  expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash' })
+  expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash', summary: null, detail: null })
 })
 
 test('the turn closing puts her down and takes any question with it', () => {
@@ -198,7 +218,7 @@ test('a question on a session that is still standing waits behind the note', () 
   // The server is still holding this one open. Letting go of it here would take
   // the only thing that can answer it off the screen and leave the tool call
   // waiting for good.
-  expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash' })
+  expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash', summary: null, detail: null })
 })
 
 test('clearing it gives the scene back without anything being reopened', () => {
