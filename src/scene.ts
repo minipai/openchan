@@ -14,6 +14,12 @@ export type Scene = {
   narration: string | null
   isWorking: boolean
   permission: Permission | null
+  /** Whether there is a session to speak to yet. She is several seconds behind
+   * the window that draws her. */
+  isReady: boolean
+  /** Something said to her before there was a session to say it to, waiting
+   * for one. */
+  held: string | null
 }
 
 /** Before she has said anything. */
@@ -24,6 +30,8 @@ export const OPENING: Scene = {
   narration: null,
   isWorking: false,
   permission: null,
+  isReady: false,
+  held: null,
 }
 
 /**
@@ -36,6 +44,8 @@ export const OPENING: Scene = {
  */
 export function next(was: Scene, event: BridgeEvent): Scene {
   switch (event.kind) {
+    case 'ready':
+      return { ...was, isReady: true }
     case 'says':
       return {
         ...was,
@@ -52,5 +62,37 @@ export function next(was: Scene, event: BridgeEvent): Scene {
       return { ...was, permission: { askId: event.askId, toolName: event.toolName } }
     case 'done':
       return { ...was, isWorking: false, permission: null, line: event.error ?? was.line }
+  }
+}
+
+/**
+ * A prompt, submitted. It waits on the scene rather than going anywhere: the
+ * window takes sentences several seconds before there is a session to hand
+ * them to, and the input has no way of knowing which side of that it is on.
+ *
+ * The last thing typed is what she gets — saying something else before she is
+ * up is a correction, not a queue.
+ */
+export function hold(was: Scene, prompt: string): Scene {
+  if (!prompt.trim()) return was
+  return { ...was, held: prompt }
+}
+
+/**
+ * The scene the moment what was held is handed over: the box is cleared for her
+ * answer and she is working. That last part is the whole point of holding —
+ * putting her to work over a prompt nobody has received leaves her at
+ * "thinking…" with nothing on the way back.
+ */
+export function handedOver(was: Scene, prompt: string): Scene {
+  return {
+    ...was,
+    // Only what actually went is let go of: something typed while it was on
+    // its way is the next thing to hand over, not something to lose here.
+    held: was.held === prompt ? null : was.held,
+    line: '',
+    mood: null,
+    narration: null,
+    isWorking: true,
   }
 }

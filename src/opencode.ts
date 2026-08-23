@@ -158,6 +158,17 @@ export class MaidSession implements Conversation {
   constructor(private onEvent: (event: BridgeEvent) => void) {}
 
   async start() {
+    try {
+      await this.open()
+    } catch (trouble) {
+      // A server that never came up is invisible from everywhere else — the
+      // window would sit at "waking her up…" for good, holding a sentence that
+      // has nowhere to go. There is one line on this screen; this goes on it.
+      this.onEvent({ kind: 'done', error: `she could not be woken up — ${trouble}` })
+    }
+  }
+
+  private async open() {
     const started = await createOpencode({
       port: await freePort(),
       config: { model: MODEL, instructions: [writePersona()], permission: PERMISSION },
@@ -168,14 +179,21 @@ export class MaidSession implements Conversation {
 
     const opened = await this.client.session.create({ body: { title: 'claudecafe' } })
     this.sessionId = (opened as { data?: { id: string } }).data?.id ?? null
+    if (!this.sessionId) throw new Error('the server opened no session')
 
-    void this.listen()
+    // Listening is waited for rather than left running, and she is only
+    // announced once it has taken: whoever was waiting to speak to her speaks
+    // the moment this lands, and a prompt sent before the stream is open loses
+    // the front of her answer.
+    const stream = await this.client.event.subscribe()
+    if (this.closed) return
+    void this.listen(stream.stream)
+    this.onEvent({ kind: 'ready' })
   }
 
   /** Every event the server has, filtered down to this conversation. */
-  private async listen() {
-    const stream = await this.client!.event.subscribe()
-    for await (const event of stream.stream) {
+  private async listen(events: AsyncIterable<unknown>) {
+    for await (const event of events) {
       if (this.closed) return
       const props = (event as { properties?: Record<string, unknown> }).properties ?? {}
       if (props.sessionID && props.sessionID !== this.sessionId) continue

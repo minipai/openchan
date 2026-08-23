@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { MaidSession } from './opencode'
-import { next, OPENING, type Scene } from './scene'
+import { handedOver, hold, next, OPENING, type Scene } from './scene'
 import type { Conversation, OpenConversation } from './protocol'
 
 export type { Permission, Scene } from './scene'
@@ -36,12 +36,21 @@ export function useMaid(open: OpenConversation = openMaid) {
     }
   }, [open])
 
+  // Nothing is sent from where it was typed. It waits on the scene until there
+  // is a session to take it, and goes the moment there is — the window is up
+  // and taking sentences for the several seconds the server takes to boot, and
+  // a prompt handed over in that gap is dropped on the floor.
+  useEffect(() => {
+    if (!scene.isReady || scene.held === null) return
+    const waiting = scene.held
+    setScene((was) => handedOver(was, waiting))
+    session.current?.ask(waiting)
+  }, [scene.isReady, scene.held])
+
   return {
     scene,
     ask(prompt: string) {
-      if (!prompt.trim()) return
-      setScene((was) => ({ ...was, line: '', mood: null, narration: null, isWorking: true }))
-      session.current?.ask(prompt)
+      setScene((was) => hold(was, prompt))
     },
     answer(askId: string, allow: boolean) {
       session.current?.answer(askId, allow)

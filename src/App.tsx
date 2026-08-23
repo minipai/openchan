@@ -4,11 +4,31 @@ import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
 import { KeysOverlay } from './KeysOverlay'
 import { cornerFor, keyFor, pressed, shownAs } from './keys'
-import { useMaid } from './brain'
+import { useMaid, type Scene } from './brain'
 import { paletteOver } from './theme'
 
 /** The strip the window leaves under the dialogue box. */
 const UNDER_THE_BOX = 1
+
+/**
+ * What the empty input says. An input that looks ready to be spoken to is what
+ * made the first sentence anyone typed look like it had vanished, so it says
+ * she is not up yet for as long as she is not.
+ */
+function invitation(scene: Scene): string {
+  if (!scene.isReady) return 'Waking her up…'
+  return scene.isWorking ? 'ESC to stop her…' : 'Say something to her…'
+}
+
+/**
+ * The line above the box: what she is doing, or — before there is anyone to do
+ * anything — that what was said to her is being kept. It goes there rather than
+ * in the input because it has to survive the next thing being typed.
+ */
+function above(scene: Scene): string | null {
+  if (!scene.isReady && scene.held !== null) return 'waiting for her to wake up'
+  return scene.narration
+}
 
 export function App({ behind }: { behind: string | undefined }) {
   const { width, height } = useTerminalDimensions()
@@ -83,7 +103,7 @@ export function App({ behind }: { behind: string | undefined }) {
           theme={theme}
           width={boxWidth}
           line={scene.line}
-          narration={scene.narration}
+          narration={above(scene)}
           mood={scene.mood}
           isWorking={scene.isWorking}
           corner={cornerFor(where)}
@@ -100,7 +120,7 @@ export function App({ behind }: { behind: string | undefined }) {
                 <input
                   focused={!keysUp}
                   value={typed}
-                  placeholder={scene.isWorking ? 'ESC to stop her…' : 'Say something to her…'}
+                  placeholder={invitation(scene)}
                   flexGrow={1}
                   backgroundColor={theme.card}
                   onInput={setTyped}
