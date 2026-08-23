@@ -20,6 +20,7 @@ const idle: Where = {
   hasReport: false,
   isWorking: false,
   asked: false,
+  trouble: null,
 }
 const working: Where = { ...idle, isWorking: true }
 const asked: Where = { ...working, asked: true }
@@ -32,6 +33,10 @@ const typingPath = (where: Where): Where => ({ ...where, path: true })
 const wrote = (where: Where): Where => ({ ...where, hasReport: true })
 /** …and it is open, which it can only be if there is one. */
 const reading = (where: Where): Where => ({ ...where, hasReport: true, reading: true })
+/** Something in the way with her session gone with it, and something in the way
+ * that left her standing there. */
+const gone: Where = { ...idle, trouble: 'gone' }
+const stuck: Where = { ...idle, trouble: 'stuck' }
 
 /** A key as the terminal hands it over, from how the table writes it down. */
 const press = (written: string) =>
@@ -152,7 +157,7 @@ test('the only thing the list takes from her is the key that closes it', () => {
 })
 
 test('what a key is listed as doing is what it does', () => {
-  for (const where of [idle, working, asked, up(idle), up(asked), picking(idle), picking(asked)]) {
+  for (const where of [idle, working, asked, gone, stuck, up(idle), up(asked), picking(idle), picking(asked)]) {
     for (const group of keysNow(where)) {
       for (const key of group.keys) {
         expect(pressed(press(key.press), where)).toBe(key.does)
@@ -182,6 +187,63 @@ test('nothing is offered on the line that is behind the list', () => {
   expect(offered(up(asked))).not.toContain('send')
 })
 
+test('a session that has gone can only be opened again', () => {
+  expect(pressed(press('r'), gone)).toBe('retry')
+  // Putting it away would leave a line to type into with nobody on the other
+  // end of it, so it is not offered — the way out is the one key.
+  expect(pressed(press('escape'), gone)).toBeNull()
+  expect(offered(gone)).not.toContain('dismiss')
+})
+
+test('trouble she is still standing behind is put away rather than retried', () => {
+  expect(pressed(press('escape'), stuck)).toBe('dismiss')
+  // Opening her again is not what gets past this one, and she is not gone.
+  expect(pressed(press('r'), stuck)).toBeNull()
+  expect(offered(stuck)).not.toContain('retry')
+})
+
+test('nothing is offered on the line that is not drawn while something is in the way', () => {
+  // The same rule as the overlay and the list: what is in the way takes the box
+  // the input lives in, so Enter never reaches it.
+  for (const where of [gone, stuck]) {
+    expect(pressed(press('return'), where)).toBeNull()
+    expect(offered(where)).not.toContain('send')
+  }
+})
+
+test('what is in the way is listed under what can be done about it', () => {
+  expect(headings(gone)).toEqual(['While she cannot be reached', 'Whenever'])
+  expect(headings(stuck)).toEqual(['While something is in the way', 'Whenever'])
+})
+
+test('a question behind the note is not answered by the key that puts the note away', () => {
+  // The note takes the box her question is drawn in, so while it is up the
+  // question is not on screen — and answering an invisible one with the key the
+  // note says puts it away is the worst of both.
+  const troubled: Where = { ...asked, trouble: 'stuck' }
+
+  expect(pressed(press('escape'), troubled)).toBe('dismiss')
+  expect(offered(troubled)).not.toContain('allow')
+  expect(pressed(press('y'), troubled)).toBeNull()
+  // And once it is put away she is waiting to be allowed something, same as she
+  // was: the question was never answered for her.
+  expect(pressed(press('y'), asked)).toBe('allow')
+})
+
+test('opening her again is not behind whatever else is on the screen', () => {
+  // The two things that go over the scene are read off it — these keys, and a
+  // list — so neither of them is a reason she cannot be opened again.
+  expect(pressed(press('r'), up(gone))).toBe('retry')
+  expect(pressed(press('r'), picking(gone))).toBe('retry')
+})
+
+test('while the keys are up, escape puts them away rather than what is in the way', () => {
+  expect(pressed(press('escape'), up(stuck))).toBe('close')
+  // And what she thinks with is still a key away — which is the shorter way out
+  // of a model she cannot get at.
+  expect(pressed(press('ctrl+p'), stuck)).toBe('models')
+})
+
 test('the corner says what escape does from here, and never something else', () => {
   expect(cornerFor(idle)).toBe('Ctrl-K these keys')
   expect(cornerFor(working)).toBe('ESC stop her')
@@ -190,6 +252,10 @@ test('the corner says what escape does from here, and never something else', () 
   expect(cornerFor(asked)).toBe("ESC don't")
   expect(cornerFor(up(working))).toBe('')
   expect(cornerFor(picking(working))).toBe('ESC never mind')
+  expect(cornerFor(stuck)).toBe('ESC put it away')
+  // Nothing for ESC to do while she is gone, so the corner says the thing it
+  // says when there is nothing better.
+  expect(cornerFor(gone)).toBe('Ctrl-K these keys')
 })
 
 test('the words under her permission question come off the same list', () => {
@@ -330,6 +396,7 @@ const EVERY_PRESS = [
   'ctrl+r',
   'y',
   'n',
+  'r',
   'return',
   'up',
   'down',
@@ -352,7 +419,16 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
           { hasReport: false, reading: false },
           { hasReport: true, reading: false },
           { hasReport: true, reading: true },
-        ].map((written) => ({ up, isWorking, asked, ...over, ...written })),
+        ].flatMap((written) =>
+          (['stuck', 'gone', null] as const).map((trouble) => ({
+            up,
+            isWorking,
+            asked,
+            trouble,
+            ...over,
+            ...written,
+          })),
+        ),
       ),
     ),
   ),

@@ -151,6 +151,29 @@ export function useMaid(open: OpenConversation = openMaid) {
       setWho(asked)
       setFolder(where)
     },
+    /**
+     * Open her again, after something took her session down.
+     *
+     * Nothing is set from here: the attempt is the one that knows how it went,
+     * and it says so — the trouble comes off the screen as it starts and a new
+     * one goes up if this one does not get through either. What was said to her
+     * meanwhile is still held, and goes the moment she is up.
+     */
+    retry() {
+      session.current?.retry()
+    },
+    /** Put what is in the way away. She is still standing there — this is only
+     * for the troubles that left her that way — so the box goes back to being
+     * hers to be spoken to on, and if it is still true the next thing said to
+     * her raises it again. */
+    dismiss() {
+      // Never the ones that took her session with them, whatever the keys
+      // thought when this was pressed: a key press is answered against the last
+      // screen drawn, so one aimed at a note that had just been replaced would
+      // otherwise leave a window with an input nothing can go out of and no key
+      // that does anything.
+      setScene((was) => (was.trouble?.gone ? was : { ...was, trouble: null }))
+    },
     answer(askId: string, allow: boolean) {
       session.current?.answer(askId, allow)
       setScene((was) => ({ ...was, permission: null }))

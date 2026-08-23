@@ -7,7 +7,22 @@ import { testRender } from '@opentui/react/test-utils'
 import { useMaid } from './brain'
 import { briefFor, CAST, remember, remembered, type Character } from './cast'
 import { OPENED_IN } from './folder'
-import type { BridgeEvent, Conversation, Model, OpenConversation } from './protocol'
+import type { BridgeEvent, Conversation, Model, OpenConversation, Trouble } from './protocol'
+
+/** Her server never came up, or went away: nobody left to speak to until she is
+ * opened again. */
+const LOST: Trouble = {
+  title: 'She could not be woken up',
+  body: 'The opencode server behind her did not start.',
+  gone: true,
+}
+
+/** Something in the way of the model she is on, with her still standing there. */
+const STUCK: Trouble = {
+  title: 'She is not signed in to anthropic',
+  body: 'opencode has no credentials for anthropic.',
+  gone: false,
+}
 
 /** What the stand-in says she could think with. */
 const MODELS: Model[] = [
@@ -26,6 +41,8 @@ class Stand implements Conversation {
   readonly handed: string[] = []
   /** Whether the window has shut this one, which is what swapping her does. */
   closed = false
+  /** How many times the window has asked for her to be opened again. */
+  retries = 0
   private model = MODELS[0]!.id
   constructor(
     private say: (event: BridgeEvent) => void,
@@ -38,7 +55,17 @@ class Stand implements Conversation {
     this.say({ kind: 'thinks-with', models: MODELS, using: this.model })
   }
   giveUp() {
-    this.say({ kind: 'lost', why: 'She could not be woken up — no server' })
+    this.say({ kind: 'trouble', trouble: LOST })
+  }
+  /** Something in the way that left her session standing. */
+  getStuck() {
+    this.say({ kind: 'trouble', trouble: STUCK })
+  }
+  /** Opening her again. The real one says the trouble is over as it starts and
+   * announces her if it gets through — which is what the test does by hand. */
+  retry() {
+    this.retries++
+    this.say({ kind: 'trouble', trouble: null })
   }
   ask(prompt: string) {
     this.asked.push(prompt)
@@ -144,6 +171,9 @@ async function open() {
     // in, not the one whose session was closed behind her.
     wakeUp: () => settle(() => sessions[sessions.length - 1]!.wakeUp()),
     giveUp: () => settle(() => sessions[sessions.length - 1]!.giveUp()),
+    getStuck: () => settle(() => sessions[sessions.length - 1]!.getStuck()),
+    retry: () => settle(() => maid.retry()),
+    dismiss: () => settle(() => maid.dismiss()),
     setup,
   }
 }
@@ -197,17 +227,53 @@ test('an empty line is not held and not sent', async () => {
   expect(setup.captureCharFrame()).toContain('idle')
 })
 
-test('a session that never opens does not leave a sentence waiting for it', async () => {
-  const { her, say, giveUp, setup } = await open()
+test('nothing said to a session that never opened is posted into it', async () => {
+  const { her, say, giveUp, scene, setup } = await open()
 
   await say('are you there?')
   await giveUp()
-  await say('are you there?')
+  await say('never mind — are you there?')
 
   expect(her.asked).toEqual([])
-  // She is not coming, and the window says so rather than holding sentences
-  // for a session that will never open.
+  expect(scene().trouble).toEqual(LOST)
   expect(setup.captureCharFrame()).toContain('idle')
+})
+
+test('opening her again carries what was said to her into the session that opens', async () => {
+  const { her, say, giveUp, retry, wakeUp, scene } = await open()
+
+  await say('are you there?')
+  await giveUp()
+  await retry()
+
+  // The attempt is what says the trouble is over — the window sets nothing
+  // itself, or a retry that fails would look like it had worked.
+  expect(her.retries).toBe(1)
+  expect(scene().trouble).toBeNull()
+
+  await wakeUp()
+
+  // And the sentence that was waiting through all of it goes, without the
+  // window having been restarted.
+  expect(her.asked).toEqual(['are you there?'])
+  expect(scene().isReady).toBe(true)
+})
+
+test('trouble she is still standing behind is put away, and she goes on being spoken to', async () => {
+  const { her, wakeUp, getStuck, dismiss, say, scene } = await open()
+
+  await wakeUp()
+  await getStuck()
+  expect(scene().trouble).toEqual(STUCK)
+
+  await dismiss()
+  await say('good morning')
+
+  // Nothing was reopened: it is the same session, and the box is hers to be
+  // spoken to on again.
+  expect(scene().trouble).toBeNull()
+  expect(her.retries).toBe(0)
+  expect(her.asked).toEqual(['good morning'])
 })
 
 test('what she can think with turns up with her, and the one she is', async () => {
@@ -344,6 +410,19 @@ test('asking again for the one who is waiting brings her out once there is nothi
   expect(onShift().id).toBe('kurumi')
 })
 
+test('a session that has gone is not something the box can be taken back from', async () => {
+  const { giveUp, dismiss, scene } = await open()
+
+  await giveUp()
+  await dismiss()
+
+  // ESC is not offered for this one — but a key press is answered against the
+  // last screen drawn, so one aimed at a note that had just been replaced can
+  // still arrive. Putting it away would leave an input nothing can go out of
+  // and no key that brings the way back.
+  expect(scene().trouble).toEqual(LOST)
+})
+
 test('a session that never opened can be given to somebody else', async () => {
   const { sessions, giveUp, sendFor, scene } = await open()
 
@@ -353,7 +432,7 @@ test('a session that never opened can be given to somebody else', async () => {
   // Nothing to interrupt, the screen has been saying to start her again, and a
   // different girl is a different server — which may well come up.
   expect(sessions.map((one) => one.who.id)).toEqual(['kotone', 'kurumi'])
-  expect(scene().lost).toBeNull()
+  expect(scene().trouble).toBeNull()
 })
 
 test('a session closed to make room does not fail into the scene of the girl who replaced it', async () => {
@@ -365,7 +444,7 @@ test('a session closed to make room does not fail into the scene of the girl who
   await act(async () => her.giveUp())
   await wakeUp()
 
-  expect(scene().lost).toBeNull()
+  expect(scene().trouble).toBeNull()
   expect(scene().isReady).toBe(true)
 })
 

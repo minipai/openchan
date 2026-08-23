@@ -1,5 +1,23 @@
 import { expect, test } from 'bun:test'
-import { handedOver, hold, next, OPENING, type Scene } from './scene'
+import { handedOver, hold, next, OPENING, unspoken, type Scene } from './scene'
+import type { Trouble } from './protocol'
+
+/** Her server never came up. There is nobody to speak to until she is opened
+ * again, which is the one thing left to try. */
+const LOST: Trouble = {
+  title: 'She could not be woken up',
+  body: 'The opencode server behind her did not start.',
+  detail: 'spawn opencode ENOENT',
+  gone: true,
+}
+
+/** Something in the way of the model she is on, with her still standing there:
+ * the session is fine, and nothing said on that model will get through. */
+const STUCK: Trouble = {
+  title: 'She is not signed in to anthropic',
+  body: 'opencode has no credentials for anthropic.',
+  gone: false,
+}
 
 /** Mid-turn: she has been asked something and has not finished answering. */
 const working: Scene = { ...OPENING, isWorking: true, isReady: true }
@@ -133,20 +151,85 @@ test('what was typed while the last one was on its way is not lost with it', () 
   expect(scene.held).toBe('never mind — what time is it?')
 })
 
-test('a session that never opens lets go of what was held, and says why', () => {
+test('a session that never opens is said in words, and stops her being waited on', () => {
   const waiting = hold(OPENING, 'are you there?')
 
-  const scene = next(waiting, { kind: 'lost', why: 'She could not be woken up — no server' })
+  const scene = next(waiting, { kind: 'trouble', trouble: LOST })
 
-  expect(scene.held).toBeNull()
-  expect(scene.line).toBe('She could not be woken up — no server')
+  expect(scene.trouble).toEqual(LOST)
+  expect(scene.isWorking).toBe(false)
+  // Nobody to speak to: what is typed from here waits rather than being posted
+  // into a session that is not there.
+  expect(scene.isReady).toBe(false)
+})
+
+test('what was said to her outlives the session it was said to', () => {
+  const waiting = hold(OPENING, 'are you there?')
+
+  const scene = next(waiting, { kind: 'trouble', trouble: LOST })
+
+  // It used to be let go of here, because nothing could ever open. Opening her
+  // again is a key press away now, and a sentence that survives it is the whole
+  // point of having held it.
+  expect(scene.held).toBe('are you there?')
+})
+
+test('trouble she is still standing behind leaves her there to be spoken to', () => {
+  const scene = next(up, { kind: 'trouble', trouble: STUCK })
+
+  expect(scene.trouble).toEqual(STUCK)
+  expect(scene.isReady).toBe(true)
+})
+
+test('a question raised before it has nobody left to answer it', () => {
+  const asked = next(working, { kind: 'ask-permission', askId: 'ask-1', toolName: 'bash' })
+
+  const scene = next(asked, { kind: 'trouble', trouble: LOST })
+
+  expect(scene.permission).toBeNull()
   expect(scene.isWorking).toBe(false)
 })
 
-test('nothing is held for her once she is known not to be coming', () => {
-  const gone = next(OPENING, { kind: 'lost', why: 'She could not be woken up — no server' })
+test('a question on a session that is still standing waits behind the note', () => {
+  const asked = next(working, { kind: 'ask-permission', askId: 'ask-1', toolName: 'bash' })
 
-  expect(hold(gone, 'are you there?').held).toBeNull()
+  const scene = next(asked, { kind: 'trouble', trouble: STUCK })
+
+  // The server is still holding this one open. Letting go of it here would take
+  // the only thing that can answer it off the screen and leave the tool call
+  // waiting for good.
+  expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash' })
+})
+
+test('clearing it gives the scene back without anything being reopened', () => {
+  const stuck = next(up, { kind: 'trouble', trouble: STUCK })
+
+  const scene = next(stuck, { kind: 'trouble', trouble: null })
+
+  expect(scene.trouble).toBeNull()
+  expect(scene.isReady).toBe(true)
+})
+
+test('she can be opened again, and what was held goes to whoever opens', () => {
+  const lost = next(hold(OPENING, 'are you there?'), { kind: 'trouble', trouble: LOST })
+
+  // What a retry says, in order: the trouble is over, and there is a session.
+  const cleared = next(lost, { kind: 'trouble', trouble: null })
+  const scene = next(cleared, { kind: 'ready' })
+
+  expect(scene.trouble).toBeNull()
+  expect(scene.isReady).toBe(true)
+  expect(scene.held).toBe('are you there?')
+})
+
+test('a session that has gone can be given to somebody else mid-sentence', () => {
+  const said = next(working, { kind: 'says', line: 'Right away' })
+
+  // Nothing left to interrupt: there is no session under the conversation any
+  // more, and a different girl is a different server.
+  expect(unspoken(next(said, { kind: 'trouble', trouble: LOST }))).toBe(true)
+  // One she is still standing behind is a conversation like any other.
+  expect(unspoken(next(said, { kind: 'trouble', trouble: STUCK }))).toBe(false)
 })
 
 test('what she wrote arrives beside her line rather than instead of it', () => {

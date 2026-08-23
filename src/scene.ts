@@ -1,4 +1,4 @@
-import type { BridgeEvent, Model, Report } from './protocol'
+import type { BridgeEvent, Model, Report, Trouble } from './protocol'
 import type { Expression } from './cast'
 
 export type { Report } from './protocol'
@@ -25,8 +25,8 @@ export type Scene = {
   /** Something said to her before there was a session to say it to, waiting
    * for one. */
   held: string | null
-  /** Why she is not coming, once it is clear she is not. */
-  lost: string | null
+  /** What is in the way, once something is. */
+  trouble: Trouble | null
   /** Every model she could think with, as the agent behind her lists them. */
   models: Model[]
   /** The one she is thinking with, once she has said which. */
@@ -44,7 +44,7 @@ export const OPENING: Scene = {
   permission: null,
   isReady: false,
   held: null,
-  lost: null,
+  trouble: null,
   models: [],
   model: null,
 }
@@ -77,11 +77,24 @@ export function next(was: Scene, event: BridgeEvent): Scene {
     // nothing else on this screen, so nothing is hidden.
     case 'doing':
       return { ...was, narration: event.label }
-    // She is not coming. What was being held for her is let go of here rather
-    // than kept for a session that will never open, and the reason takes her
-    // line — a sentence disappearing without one is the whole of this bug.
-    case 'lost':
-      return { ...was, lost: event.why, held: null, isWorking: false, line: event.why }
+    // Something she cannot get past — or word that it is over. Whatever she was
+    // in the middle of is not going to finish, and a question raised by the
+    // thing that broke has nobody left to answer it, so both go with it. What
+    // was said to her is kept: opening her again is a live possibility from
+    // here, and a sentence that survives the retry is the point of holding it.
+    case 'trouble':
+      if (!event.trouble) return { ...was, trouble: null }
+      return {
+        ...was,
+        trouble: event.trouble,
+        isReady: event.trouble.gone ? false : was.isReady,
+        isWorking: false,
+        // A question is only let go of when there is nobody left to answer it.
+        // One raised on a session that is still standing is still open on the
+        // server, waiting — it is behind the note while that is up, and back to
+        // be answered the moment the note is put away.
+        permission: event.trouble.gone ? null : was.permission,
+      }
     // What she thinks with is hers to report rather than the picker's to keep
     // its own copy of: there is one answer and she is holding it.
     case 'thinks-with':
@@ -101,12 +114,13 @@ export function next(was: Scene, event: BridgeEvent): Scene {
  * conversation, so the girl standing in it can simply be a different one; once
  * anything has been said, she cannot.
  *
- * A session that never opened counts as nobody's: there is nothing to interrupt
- * and the screen has been telling him to start her again, so sending for one of
- * the others is one of the few things left that could work.
+ * A session that has gone counts as nobody's: there is nothing to interrupt and
+ * nobody left in it to interrupt, so sending for one of the others — a
+ * different girl is a different server — is one of the few things that could
+ * work from there.
  */
 export const unspoken = (scene: Scene) =>
-  scene.lost !== null || (scene.line === '' && scene.held === null && !scene.isWorking)
+  scene.trouble?.gone === true || (scene.line === '' && scene.held === null && !scene.isWorking)
 
 /**
  * A prompt, submitted. It waits on the scene rather than going anywhere: the
@@ -117,9 +131,7 @@ export const unspoken = (scene: Scene) =>
  * up is a correction, not a queue.
  */
 export function hold(was: Scene, prompt: string): Scene {
-  // Once she is known not to be coming, holding would be the old bug wearing a
-  // better hat: kept forever for a session that will never open.
-  if (!prompt.trim() || was.lost !== null) return was
+  if (!prompt.trim()) return was
   return { ...was, held: prompt }
 }
 

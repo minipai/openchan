@@ -6,6 +6,7 @@ import { KeysOverlay } from './KeysOverlay'
 import { PathBox } from './PathBox'
 import { Picker, type Choice } from './Picker'
 import { ReportReader } from './ReportReader'
+import { TroubleNote } from './TroubleNote'
 import { cornerFor, keyFor, pressed, shownAs, takes } from './keys'
 import { useMaid, type Scene } from './brain'
 import type { Character } from './cast'
@@ -21,7 +22,6 @@ const UNDER_THE_BOX = 1
  * she is not up yet for as long as she is not.
  */
 function invitation(scene: Scene): string {
-  if (scene.lost !== null) return 'She cannot be reached — start her again…'
   if (!scene.isReady) return 'Waking her up…'
   return scene.isWorking ? 'ESC to stop her…' : 'Say something to her…'
 }
@@ -47,7 +47,8 @@ export function App({ behind }: { behind: string | undefined }) {
   // Her box is coloured against the terminal, the same answer that keeps her
   // out of a black slab.
   const theme = paletteOver(behind)
-  const { scene, cast, onShift, nextShift, folder, been, ask, answer, stop, use, swapTo, moveTo } = useMaid()
+  const { scene, cast, onShift, nextShift, folder, been, ask, answer, stop, use, swapTo, moveTo, retry, dismiss } =
+    useMaid()
   const [typed, setTyped] = useState('')
   // Ctrl-B: draw her out of half-block characters even where the terminal
   // could take real pixels. It is the rougher picture, and it is a look.
@@ -78,6 +79,9 @@ export function App({ behind }: { behind: string | undefined }) {
     hasReport: scene.report !== null,
     isWorking: scene.isWorking,
     asked: scene.permission !== null,
+    // Which way out of it there is, which is the only thing about it the keys
+    // have any business knowing.
+    trouble: scene.trouble && (scene.trouble.gone ? ('gone' as const) : ('stuck' as const)),
   }
 
   // Which key does what, and which of them count from here, is the keys table's
@@ -109,6 +113,10 @@ export function App({ behind }: { behind: string | undefined }) {
         return answer(scene.permission!.askId, false)
       case 'stop':
         return stop()
+      case 'retry':
+        return retry()
+      case 'dismiss':
+        return dismiss()
       case 'blocks':
         return setBlocks((was) => !was)
       case 'models':
@@ -223,7 +231,12 @@ export function App({ behind }: { behind: string | undefined }) {
           isWorking={scene.isWorking}
           corner={cornerFor(where)}
           footer={
-            scene.permission ? (
+            // What is in the way comes first: a question she raised before it
+            // has nobody left to answer it, and the line is not worth offering
+            // while nothing said on it could arrive.
+            scene.trouble ? (
+              <TroubleNote theme={theme} trouble={scene.trouble} />
+            ) : scene.permission ? (
               <box flexDirection="row" gap={2}>
                 <text fg={theme.foreground}>{`She wants to use ${scene.permission.toolName}`}</text>
                 <text fg={theme.primary}>{`${shownAs(keyFor('allow').press)} ${keyFor('allow').says}`}</text>
