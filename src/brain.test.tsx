@@ -16,6 +16,9 @@ class Stand implements Conversation {
   wakeUp() {
     this.say({ kind: 'ready' })
   }
+  giveUp() {
+    this.say({ kind: 'lost', why: 'She could not be woken up — no server' })
+  }
   ask(prompt: string) {
     this.asked.push(prompt)
   }
@@ -56,6 +59,7 @@ async function open() {
     her: her!,
     say: (prompt: string) => settle(() => maid.ask(prompt)),
     wakeUp: () => settle(() => her.wakeUp()),
+    giveUp: () => settle(() => her.giveUp()),
     setup,
   }
 }
@@ -106,5 +110,18 @@ test('an empty line is not held and not sent', async () => {
   await say('   ')
 
   expect(her.asked).toEqual([])
+  expect(setup.captureCharFrame()).toContain('idle')
+})
+
+test('a session that never opens does not leave a sentence waiting for it', async () => {
+  const { her, say, giveUp, setup } = await open()
+
+  await say('are you there?')
+  await giveUp()
+  await say('are you there?')
+
+  expect(her.asked).toEqual([])
+  // She is not coming, and the window says so rather than holding sentences
+  // for a session that will never open.
   expect(setup.captureCharFrame()).toContain('idle')
 })

@@ -162,9 +162,9 @@ export class MaidSession implements Conversation {
       await this.open()
     } catch (trouble) {
       // A server that never came up is invisible from everywhere else — the
-      // window would sit at "waking her up…" for good, holding a sentence that
-      // has nowhere to go. There is one line on this screen; this goes on it.
-      this.onEvent({ kind: 'done', error: `she could not be woken up — ${trouble}` })
+      // window would sit at "waking her up…" for good, holding a sentence for a
+      // session that is never going to open.
+      this.onEvent({ kind: 'lost', why: `She could not be woken up — ${trouble}` })
     }
   }
 

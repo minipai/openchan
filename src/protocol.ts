@@ -18,6 +18,9 @@ export type BridgeEvent =
   /** 地の文 — what she is doing, while she is doing it. */
   | { kind: 'doing'; label: string }
   | { kind: 'ask-permission'; askId: string; toolName: string }
+  /** She is not coming: the server behind her never came up. There is nobody
+   * to speak to until the window is started again. */
+  | { kind: 'lost'; why: string }
   /** The turn, closed out. An error is hers to say out loud — there is one line
    * on this screen and swallowing it would leave her mute for no visible
    * reason. */

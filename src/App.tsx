@@ -16,6 +16,7 @@ const UNDER_THE_BOX = 1
  * she is not up yet for as long as she is not.
  */
 function invitation(scene: Scene): string {
+  if (scene.lost !== null) return 'She cannot be reached — start her again…'
   if (!scene.isReady) return 'Waking her up…'
   return scene.isWorking ? 'ESC to stop her…' : 'Say something to her…'
 }

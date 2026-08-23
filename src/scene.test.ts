@@ -132,3 +132,19 @@ test('what was typed while the last one was on its way is not lost with it', () 
   expect(scene.isWorking).toBe(true)
   expect(scene.held).toBe('never mind — what time is it?')
 })
+
+test('a session that never opens lets go of what was held, and says why', () => {
+  const waiting = hold(OPENING, 'are you there?')
+
+  const scene = next(waiting, { kind: 'lost', why: 'She could not be woken up — no server' })
+
+  expect(scene.held).toBeNull()
+  expect(scene.line).toBe('She could not be woken up — no server')
+  expect(scene.isWorking).toBe(false)
+})
+
+test('nothing is held for her once she is known not to be coming', () => {
+  const gone = next(OPENING, { kind: 'lost', why: 'She could not be woken up — no server' })
+
+  expect(hold(gone, 'are you there?').held).toBeNull()
+})

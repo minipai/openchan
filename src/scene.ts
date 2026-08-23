@@ -20,6 +20,8 @@ export type Scene = {
   /** Something said to her before there was a session to say it to, waiting
    * for one. */
   held: string | null
+  /** Why she is not coming, once it is clear she is not. */
+  lost: string | null
 }
 
 /** Before she has said anything. */
@@ -32,6 +34,7 @@ export const OPENING: Scene = {
   permission: null,
   isReady: false,
   held: null,
+  lost: null,
 }
 
 /**
@@ -58,6 +61,11 @@ export function next(was: Scene, event: BridgeEvent): Scene {
     // nothing else on this screen, so nothing is hidden.
     case 'doing':
       return { ...was, narration: event.label }
+    // She is not coming. What was being held for her is let go of here rather
+    // than kept for a session that will never open, and the reason takes her
+    // line — a sentence disappearing without one is the whole of this bug.
+    case 'lost':
+      return { ...was, lost: event.why, held: null, isWorking: false, line: event.why }
     case 'ask-permission':
       return { ...was, permission: { askId: event.askId, toolName: event.toolName } }
     case 'done':
@@ -74,7 +82,9 @@ export function next(was: Scene, event: BridgeEvent): Scene {
  * up is a correction, not a queue.
  */
 export function hold(was: Scene, prompt: string): Scene {
-  if (!prompt.trim()) return was
+  // Once she is known not to be coming, holding would be the old bug wearing a
+  // better hat: kept forever for a session that will never open.
+  if (!prompt.trim() || was.lost !== null) return was
   return { ...was, held: prompt }
 }
 
