@@ -148,3 +148,41 @@ test('nothing is held for her once she is known not to be coming', () => {
 
   expect(hold(gone, 'are you there?').held).toBeNull()
 })
+
+test('what she wrote arrives beside her line rather than instead of it', () => {
+  const spoken = next(working, { kind: 'says', line: 'Found it~' })
+
+  const scene = next(spoken, { kind: 'reports', report: { title: 'What was wrong', body: '## What was wrong\n\nthe parser' } })
+
+  expect(scene.line).toBe('Found it~')
+  expect(scene.report).toEqual({ title: 'What was wrong', body: '## What was wrong\n\nthe parser' })
+})
+
+test('the turn closing leaves what she wrote where it is', () => {
+  // Putting the reader away is the window simply not drawing it — so the report
+  // has to still be on the scene afterwards, and nothing between receiving it
+  // and the next prompt may take it.
+  const wrote = next(working, { kind: 'reports', report: { title: 'What was wrong', body: 'the parser' } })
+
+  const scene = next(next(wrote, { kind: 'says', line: 'Anything else?' }), { kind: 'done' })
+
+  expect(scene.report).toEqual({ title: 'What was wrong', body: 'the parser' })
+})
+
+test('the next thing she is asked takes last turn’s report with it', () => {
+  const wrote = next(up, { kind: 'reports', report: { title: 'What was wrong', body: 'the parser' } })
+
+  const scene = handedOver(hold(wrote, 'and the other one?'), 'and the other one?')
+
+  expect(scene.report).toBeNull()
+})
+
+test('a page she turned out not to be writing is taken off the scene again', () => {
+  // Where the writing starts is read off half-finished text: a `#` on its own
+  // is a heading until the next character makes it a hashtag. A page offered
+  // over that and never withdrawn would still be offered at the end of the
+  // turn with nothing in it.
+  const guessed = next(working, { kind: 'reports', report: { title: 'Here is the tag', body: '#' } })
+
+  expect(next(guessed, { kind: 'reports', report: null }).report).toBeNull()
+})
