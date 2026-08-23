@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { CAST, remember, remembered, type Character } from './cast'
 import { folders, OPENED_IN, rememberFolder, troubleWith } from './folder'
 import { MaidSession } from './opencode'
-import { handedOver, hold, next, OPENING, unspoken, type Scene } from './scene'
+import { handedOver, hold, hushed, next, OPENING, unspoken, type Scene } from './scene'
 import type { Conversation, OpenConversation } from './protocol'
 
 export type { Asked, Permission, Scene } from './scene'
@@ -236,6 +236,12 @@ export function useMaid(open: OpenConversation = openMaid) {
       // otherwise leave a window with an input nothing can go out of and no key
       // that does anything.
       setScene((was) => (was.trouble?.gone ? was : { ...was, trouble: null }))
+    },
+    /** One of the words beside her, taken back off once its moment is up. The
+     * row that put it there is the one that keeps the moment — it went up when
+     * the row did, and there is one of them per row. */
+    hush(id: number) {
+      setScene((was) => hushed(was, id))
     },
     answer(askId: string, allow: boolean) {
       session.current?.answer(askId, allow)

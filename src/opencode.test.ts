@@ -932,3 +932,44 @@ test('a tool nothing is known about is offered no standing yes at all', () => {
   expect(asking('webfetch', { url: 'not an address' }).standing).toBeUndefined()
   expect(asking('edit', { filepath: '' }).standing).toBeUndefined()
 })
+
+
+/** One tool part, as the server publishes it every time anything on it moves. */
+const toolPart = (call: string, state: Record<string, unknown>) => ({
+  type: 'message.part.updated',
+  properties: {
+    part: { id: `prt_${call}`, type: 'tool', callID: call, tool: 'bash', state: { input: { command: 'bun test' }, ...state } },
+  },
+})
+
+test('a tool put down is a word of its own, said once however often the part says so', async () => {
+  const { events, stream } = await opened()
+  const whispers = () => events.filter((event) => event.kind === 'whispers')
+
+  stream().say(toolPart('call_1', { status: 'running' }))
+  await until('said what she was doing', () => events.some((event) => event.kind === 'doing'))
+
+  // The part goes on announcing itself after it is over — twice here, and she
+  // finished it once.
+  stream().say(toolPart('call_1', { status: 'completed', title: 'bun test', output: 'ok' }))
+  stream().say(toolPart('call_1', { status: 'completed', title: 'bun test', output: 'ok' }))
+  await until('said she had put it down', () => whispers().length > 0)
+  await new Promise((tick) => setTimeout(tick, 10))
+
+  expect(whispers()).toHaveLength(1)
+  // In the past, because the 地の文 is still saying she is at it: one line says
+  // what she is doing and the other what came of it.
+  expect(whispers()[0]).toEqual({ kind: 'whispers', whisper: { text: 'ran bun test', kind: 'did' } })
+})
+
+test('a tool that came back wrong is not said to have been done', async () => {
+  const { events, stream } = await opened()
+  const whispers = () => events.filter((event) => event.kind === 'whispers')
+
+  stream().say(toolPart('call_2', { status: 'error', error: 'exit 1' }))
+  await until('said it came back wrong', () => whispers().length > 0)
+
+  // Still what she was at rather than what she did: a command refused at the
+  // box comes back this way too, and it never ran at all.
+  expect(whispers()[0]).toEqual({ kind: 'whispers', whisper: { text: 'running bun test', kind: 'failed' } })
+})

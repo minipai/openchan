@@ -234,6 +234,41 @@ function narrate(tool: string, input: Record<string, unknown>): string {
   }
 }
 
+/**
+ * The same thing once it is over, for the word that goes up as she puts the
+ * tool down.
+ *
+ * Said in the past because that is when it is said: the 地の文 is written while
+ * she is at it and stays until she speaks again, so a second line still saying
+ * she is reading something she has finished reading would read as her being
+ * stuck on it.
+ */
+function justDid(tool: string, input: Record<string, unknown>): string {
+  const file = typeof input.filePath === 'string' ? path.basename(input.filePath) : null
+  switch (tool) {
+    case 'read':
+      return file ? `read ${file}` : 'read'
+    case 'edit':
+    case 'write':
+      return file ? `wrote ${file}` : 'wrote'
+    case 'bash':
+      return typeof input.command === 'string' ? `ran ${input.command.split('\n')[0]}` : 'ran a command'
+    case 'grep':
+      return typeof input.pattern === 'string' ? `looked for ${input.pattern}` : 'searched'
+    case 'glob':
+    case 'list':
+      return 'went through the folder'
+    case 'webfetch':
+      return 'looked it up'
+    case 'todowrite':
+      return 'put things in order'
+    case 'question':
+      return 'asked'
+    default:
+      return tool
+  }
+}
+
 /** What the server says went wrong, as it names it. Only the names matter here
  * — one of them is trouble of its own and the rest are this turn's business. */
 type SessionError = { name?: string; data?: { providerID?: string; message?: string } }
@@ -503,6 +538,10 @@ export class MaidSession implements Conversation {
    * state moves — and one that had to wait to be allowed announces itself on
    * both sides of the wait — but she only picks it up once. */
   private narrated = new Set<string>()
+  /** Calls already whispered about, for the same reason: a part announces
+   * itself again every time anything on it moves, and it is finished exactly
+   * once however many times it says so. */
+  private putDown = new Set<string>()
   /** The list the server gave, kept so that changing model can be said the same
    * way it was first said. */
   private models: Model[] = []
@@ -770,9 +809,30 @@ export class MaidSession implements Conversation {
     if (kind === 'tool') {
       const state = part.state as { status: string; input?: Record<string, unknown> }
       const call = part.callID as string
-      if (state?.status !== 'running' || this.narrated.has(call)) return
-      this.narrated.add(call)
-      this.onEvent({ kind: 'doing', label: narrate(part.tool as string, state.input ?? {}) })
+      const tool = part.tool as string
+      if (state?.status === 'running' && !this.narrated.has(call)) {
+        this.narrated.add(call)
+        this.onEvent({ kind: 'doing', label: narrate(tool, state.input ?? {}) })
+      }
+      // Put down, one way or the other. It is worth a word of its own because
+      // the 地の文 cannot say it: that line says what she is doing and is still
+      // saying it when she has stopped, and whether a command came back wrong
+      // is the half of a turn she does not always mention out loud.
+      const over = state?.status === 'completed' || state?.status === 'error'
+      if (over && !this.putDown.has(call)) {
+        this.putDown.add(call)
+        // One that did not go through is said in the words it was being done
+        // in rather than in the past: she was writing that file, and "wrote"
+        // is a claim that it is written — which is the one thing that did not
+        // happen. A tool refused at the box counts as that too.
+        const wrong = state.status === 'error'
+        this.onEvent({
+          kind: 'whispers',
+          whisper: wrong
+            ? { text: narrate(tool, state.input ?? {}), kind: 'failed' }
+            : { text: justDid(tool, state.input ?? {}), kind: 'did' },
+        })
+      }
     }
   }
 
@@ -884,6 +944,7 @@ export class MaidSession implements Conversation {
     this.wrote = false
     this.parts.clear()
     this.narrated.clear()
+    this.putDown.clear()
     void this.client.session
       .promptAsync({
         path: { id: this.sessionId },
@@ -1045,6 +1106,7 @@ export class MaidSession implements Conversation {
     this.wrote = false
     this.parts.clear()
     this.narrated.clear()
+    this.putDown.clear()
   }
 
   /**
@@ -1137,6 +1199,7 @@ export class MaidSession implements Conversation {
     this.said = ''
     this.parts.clear()
     this.narrated.clear()
+    this.putDown.clear()
     this.asked.clear()
     this.choosing.clear()
     this.raise(null)

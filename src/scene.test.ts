@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { handedOver, hold, next, OPENING, unspoken, type Scene } from './scene'
+import { AT_MOST, handedOver, hold, hushed, next, OPENING, unspoken, type Scene } from './scene'
 import type { Trouble } from './protocol'
 
 /** Her server never came up. There is nobody to speak to until she is opened
@@ -57,6 +57,69 @@ test('speaking again puts the narration down', () => {
   const busy = next(working, { kind: 'doing', label: 'reading brain.ts' })
 
   expect(next(busy, { kind: 'says', line: 'Found it' }).narration).toBeNull()
+})
+
+/** A tool put down, as the session says it. */
+const put = (text: string, kind: 'did' | 'failed' = 'did') =>
+  ({ kind: 'whispers', whisper: { text, kind } }) as const
+
+test('a word about what she just did stands beside her line rather than on it', () => {
+  const said = next(working, { kind: 'says', line: 'Having a look…' })
+  const busy = next(said, { kind: 'doing', label: 'reading brain.ts' })
+
+  const scene = next(busy, put('read brain.ts'))
+
+  expect(scene.whispers.map((one) => one.text)).toEqual(['read brain.ts'])
+  // The two things on this screen that are read are untouched: what she is
+  // saying, and what she is in the middle of.
+  expect(scene.line).toBe('Having a look…')
+  expect(scene.narration).toBe('reading brain.ts')
+})
+
+test('several of them stand together, newest last, rather than overwriting each other', () => {
+  const one = next(working, put('read brain.ts'))
+  const two = next(one, put('wrote scene.ts'))
+
+  const scene = next(two, put('ran bun test', 'failed'))
+
+  expect(scene.whispers.map((one) => one.text)).toEqual(['read brain.ts', 'wrote scene.ts', 'ran bun test'])
+  expect(scene.whispers.at(-1)!.kind).toBe('failed')
+})
+
+test('the same few words twice running are two of them, each with its own moment', () => {
+  const twice = [put('read brain.ts'), put('read brain.ts')].reduce(next, working)
+
+  const [first, second] = twice.whispers
+  expect(twice.whispers).toHaveLength(2)
+  expect(first!.id).not.toBe(second!.id)
+  // The one whose moment is up is the one that goes, not both of them.
+  expect(hushed(twice, first!.id).whispers).toEqual([second!])
+})
+
+test('a burst of them never runs further down the screen than it is allowed', () => {
+  const burst = Array.from({ length: AT_MOST + 3 }, (_, at) => put(`read ${at}`))
+
+  const scene = burst.reduce(next, working)
+
+  expect(scene.whispers).toHaveLength(AT_MOST)
+  // The oldest go first: what is left is what just happened.
+  expect(scene.whispers.at(-1)!.text).toBe(`read ${burst.length - 1}`)
+})
+
+test('one pushed out early does not take a newer one with it when its moment is up', () => {
+  const burst = Array.from({ length: AT_MOST + 1 }, (_, at) => put(`read ${at}`))
+  const scene = burst.reduce(next, working)
+
+  // The first one is already off the screen, and its moment runs on regardless.
+  expect(hushed(scene, 1).whispers).toEqual(scene.whispers)
+})
+
+test('an earlier conversation picked up comes with none of the words the last one left', () => {
+  const busy = next(working, put('ran bun test', 'failed'))
+
+  const scene = next(busy, { kind: 'picks-up', line: 'we left off on the colours', report: null })
+
+  expect(scene.whispers).toEqual([])
 })
 
 test('a tool she may not use yet becomes a question on screen', () => {
