@@ -759,6 +759,22 @@ test('a session that went down can be opened again from the keyboard', async () 
   expect(frame()).not.toContain(LOST.title)
 })
 
+test('a list with nothing in it yet takes no letters, so opening her again still works from inside it', async () => {
+  // She went down before she ever said what she can think with, so the list
+  // opens empty. Nothing there to narrow — and r has to go on meaning the one
+  // way out, rather than being swallowed as a letter by a list that would not
+  // have taken it anyway.
+  const { her, giveUp, hold, press, frame } = await onScreen()
+  await giveUp()
+
+  await hold('p')
+  expect(frame()).toContain('Nothing to pick from yet')
+  expect(frame()).not.toContain('narrow it')
+
+  await press('r')
+  expect(her.retries).toBe(1)
+})
+
 test('what she had said stays on screen through the connection going and coming back', async () => {
   const { wakeUp, raise, giveUp, press, frame } = await onScreen()
   await wakeUp()
@@ -836,15 +852,64 @@ test('what she wrote and a list do not stand on each other', async () => {
 })
 
 test('nothing said reaches her line while something is over it', async () => {
-  const { wakeUp, hold, enter, type, frame } = await onScreen()
+  const { wakeUp, hold, escape, type, frame } = await onScreen()
   await wakeUp()
 
-  await hold('p')
+  // The list of who is on shift cannot be typed at, so the letters go nowhere.
+  await hold('g')
   await type('hello')
   expect(frame()).not.toContain('hello')
 
   // And the line has it back the moment the list is off the screen.
-  await enter()
+  await escape()
   await type('hello')
   expect(frame()).toContain('hello')
+})
+
+test('the list of models is narrowed by typing, and ESC takes the typing back before the list', async () => {
+  const { her, wakeUp, hold, escape, type, enter, frame } = await onScreen()
+  await wakeUp()
+
+  await hold('p')
+  await type('opus')
+  expect(frame()).toContain('› opus')
+  expect(frame()).toContain(MODELS[1]!.label)
+  expect(frame()).not.toContain(MODELS[0]!.label)
+
+  // The first ESC clears what was typed: the rows are back, the list is still
+  // up, open on the one in force.
+  await escape()
+  expect(frame()).toContain('What she thinks with')
+  expect(frame()).toContain(`▶ ● ${MODELS[0]!.label}`)
+  expect(frame()).not.toContain('› opus')
+
+  // The second puts it away, as it always did.
+  await escape()
+  expect(frame()).not.toContain('What she thinks with')
+
+  // Narrowed down to the one row, Enter takes it.
+  await hold('p')
+  await type('opus')
+  await enter()
+  expect(her.handed).toEqual([MODELS[1]!.id])
+  // Opened again, the list is the whole list: the last search is not a
+  // question anyone is still asking.
+  await hold('p')
+  expect(frame()).toContain(MODELS[0]!.label)
+  expect(frame()).not.toContain('› opus')
+})
+
+test('a letter typed at the list of models is not an answer to what she is waiting to be allowed', async () => {
+  const { her, hold, type, escape, press, frame } = await asking()
+
+  await hold('p')
+  await type('any')
+  expect(her.answered).toEqual([])
+  expect(frame()).toContain('› any')
+
+  // Her question is still there to be answered once the list is away.
+  await escape()
+  await escape()
+  await press('y')
+  expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
 })

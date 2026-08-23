@@ -10,6 +10,16 @@ const CHOICES: Choice[] = [
   { id: 'c/three', label: 'Gamma Three' },
 ]
 
+/** Rows the way the list of models has them: the provider and the model both,
+ * and more of them than fit. */
+const MODELS: Choice[] = [
+  { id: 'anthropic/opus', label: 'Anthropic · Claude Opus' },
+  { id: 'anthropic/sonnet', label: 'Anthropic · Claude Sonnet' },
+  { id: 'google/gemini', label: 'Google · Gemini' },
+  { id: 'opencode/free', label: 'opencode · Free' },
+  { id: 'openrouter/opus', label: 'OpenRouter · Claude Opus' },
+]
+
 /** Every list a test put on screen, taken down again after it. */
 const shown: { renderer: { destroy(): void } }[] = []
 afterEach(() => {
@@ -29,6 +39,7 @@ async function show(items: Choice[], chosen: string | null, multiple = false) {
       chosen={chosen}
       multiple={multiple}
       width={40}
+      room={20}
       onPick={(ids) => picked.push(ids)}
     />,
     { width: 44, height: 20 },
@@ -93,6 +104,7 @@ function Waiting({ hold, onPick }: { hold: (fill: (items: Choice[], chosen: stri
       items={rows.items}
       chosen={rows.chosen}
       width={40}
+      room={14}
       onPick={onPick}
     />
   )
@@ -233,6 +245,258 @@ test('rows with a line under them are capped by what is on screen, not by how ma
   expect(frame).not.toContain('Row 5')
   expect(frame).toContain('ESC never mind')
   expect(frame).toContain("Enter that's all")
+})
+
+/** A list that can be typed at, holding what was typed the way the window
+ * does — it is the window's, because ESC is. */
+function Narrowing({ chosen, onPick }: { chosen: string | null; onPick: (ids: string[]) => void }) {
+  const [typed, setTyped] = useState('')
+  return (
+    <Picker
+      theme={paletteOver(undefined)}
+      title="What she thinks with"
+      items={MODELS}
+      chosen={chosen}
+      narrowing={{ typed, onType: setTyped }}
+      width={40}
+      room={20}
+      onPick={onPick}
+    />
+  )
+}
+
+/** The list of models on screen, with a keyboard to type at it. Every key is
+ * settled before the screen is looked at: what is typed is held above the
+ * list, and it is a state change there that redraws the rows. */
+async function narrowing(chosen: string | null) {
+  const picked: string[][] = []
+  const setup = await testRender(<Narrowing chosen={chosen} onPick={(ids) => picked.push(ids)} />, {
+    width: 44,
+    height: 20,
+    kittyKeyboard: true,
+  })
+  shown.push(setup)
+  await setup.flush()
+  const settle = async (work: () => void | Promise<void>) => {
+    await act(async () => void (await work()))
+    await setup.flush()
+  }
+  return {
+    picked,
+    frame: () => setup.captureCharFrame(),
+    type: (text: string) => settle(() => setup.mockInput.typeText(text)),
+    backspace: () => settle(() => setup.mockInput.pressBackspace()),
+    enter: () => settle(() => setup.mockInput.pressEnter()),
+    arrow: (way: 'up' | 'down') => settle(() => setup.mockInput.pressArrow(way)),
+  }
+}
+
+test('a list told it can be typed at narrows as it is typed, and shows what was typed', async () => {
+  const { frame, type } = await narrowing('opencode/free')
+
+  expect(frame()).toContain('● opencode · Free')
+  expect(frame()).toContain('type to narrow it')
+
+  await type('opus')
+  expect(frame()).toContain('› opus')
+  expect(frame()).toContain('Anthropic · Claude Opus')
+  expect(frame()).toContain('OpenRouter · Claude Opus')
+  expect(frame()).not.toContain('Sonnet')
+  expect(frame()).not.toContain('Gemini')
+  expect(frame()).not.toContain('opencode · Free')
+})
+
+test('a row matches on the provider and the model both, in any order, case ignored', async () => {
+  const { frame, type, backspace } = await narrowing(null)
+
+  await type('OPUS anth')
+  expect(frame()).toContain('Anthropic · Claude Opus')
+  expect(frame()).not.toContain('OpenRouter')
+  expect(frame()).not.toContain('Sonnet')
+
+  // Backspace widens it again, a letter at a time.
+  for (const _ of 'anth') await backspace()
+  expect(frame()).toContain('› OPUS ')
+  expect(frame()).toContain('OpenRouter · Claude Opus')
+})
+
+test('narrowed, the highlight sits on the one in force if it is still there, and on the first row otherwise', async () => {
+  const { picked, frame, type, enter } = await narrowing('openrouter/opus')
+
+  await type('opus')
+  // Still among the rows, so still the one the list stands on.
+  expect(frame()).toContain('▶ ● OpenRouter · Claude Opus')
+  await type(' anthropic')
+  // Typed away, so the first of what is left.
+  expect(frame()).toContain('▶   Anthropic · Claude Opus')
+
+  await enter()
+  expect(picked).toEqual([['anthropic/opus']])
+})
+
+test('moving through narrowed rows moves through those rows and no others', async () => {
+  const { picked, frame, type, arrow, enter } = await narrowing(null)
+
+  await type('claude')
+  await arrow('down')
+  await arrow('down')
+  expect(frame()).toContain('▶   OpenRouter · Claude Opus')
+  await enter()
+  expect(picked).toEqual([['openrouter/opus']])
+})
+
+test('nothing matching says so, in different words from a list with nothing in it yet', async () => {
+  const { frame, type } = await narrowing(null)
+
+  await type('llama')
+  expect(frame()).toContain('Nothing is called that')
+  expect(frame()).not.toContain('Nothing to pick from yet')
+  // Nothing to move through or take — but typing is still how rows come back,
+  // and ESC is what takes the typing back.
+  expect(frame()).toContain('Type to narrow it')
+  expect(frame()).toContain('ESC start over')
+  expect(frame()).not.toContain('use it')
+  expect(frame()).not.toContain('the one above')
+})
+
+test('a list that can be typed at says so along its own edge, and what ESC does right now', async () => {
+  const { frame, type } = await narrowing(null)
+
+  expect(frame()).toContain('Type to narrow it')
+  expect(frame()).toContain('ESC never mind')
+
+  await type('o')
+  expect(frame()).toContain('Type to narrow it')
+  expect(frame()).toContain('ESC start over')
+  expect(frame()).not.toContain('never mind')
+})
+
+test('a space before the first letter is not taken', async () => {
+  const { frame, type } = await narrowing(null)
+
+  await type(' ')
+  expect(frame()).toContain('type to narrow it')
+  expect(frame()).toContain('ESC never mind')
+  // Between words it is what tells them apart.
+  await type('claude opus')
+  expect(frame()).toContain('› claude opus')
+  expect(frame()).not.toContain('Sonnet')
+})
+
+/** The list of models put on screen before she has said what they are, the
+ * way the window opens it while she is waking up. */
+function NarrowingLater({ hold }: { hold: (fill: (items: Choice[]) => void) => void }) {
+  const [items, setItems] = useState<Choice[]>([])
+  const [typed, setTyped] = useState('')
+  hold(setItems)
+  return (
+    <Picker
+      theme={paletteOver(undefined)}
+      title="What she thinks with"
+      items={items}
+      chosen={null}
+      narrowing={{ typed, onType: setTyped }}
+      width={40}
+      room={20}
+      onPick={() => {}}
+    />
+  )
+}
+
+test('a list with no rows yet takes no letters: there is nothing to narrow', async () => {
+  let fill!: (items: Choice[]) => void
+  const setup = await testRender(<NarrowingLater hold={(it) => (fill = it)} />, { width: 44, height: 20, kittyKeyboard: true })
+  shown.push(setup)
+  await setup.flush()
+  expect(setup.captureCharFrame()).toContain('Nothing to pick from yet')
+  // Neither the key along the edge nor the line to type on: there is nothing
+  // to narrow, and both would be an offer the list does not keep.
+  expect(setup.captureCharFrame()).not.toContain('Type to narrow it')
+  expect(setup.captureCharFrame()).not.toContain('type to narrow it')
+
+  await act(async () => void (await setup.mockInput.typeText('opus')))
+  await setup.flush()
+  expect(setup.captureCharFrame()).not.toContain('› opus')
+  expect(setup.captureCharFrame()).toContain('ESC never mind')
+
+  // Once the rows turn up, so does the typing.
+  await act(async () => fill(MODELS))
+  await setup.flush()
+  expect(setup.captureCharFrame()).toContain('Type to narrow it')
+  await act(async () => void (await setup.mockInput.typeText('gemini')))
+  await setup.flush()
+  expect(setup.captureCharFrame()).toContain('› gemini')
+  expect(setup.captureCharFrame()).toContain('Google · Gemini')
+  expect(setup.captureCharFrame()).not.toContain('Opus')
+})
+
+test('a list not told it can be typed at takes no letters, and prints no key for them', async () => {
+  const { picked, setup } = await show(CHOICES, 'b/two')
+
+  await act(async () => void (await setup.mockInput.typeText('gamma')))
+  await setup.flush()
+
+  const frame = setup.captureCharFrame()
+  expect(frame).not.toContain('gamma')
+  expect(frame).not.toContain('narrow')
+  expect(frame).toContain('Alpha One')
+  expect(frame).toContain('Beta Two')
+  expect(picked).toEqual([])
+})
+
+test('a list stands in a short terminal rather than running off it', async () => {
+  // Eighteen rows: the same list without a line to type on fits ten rows in
+  // one, and this one is three rows taller. Grown past the screen what it
+  // loses is its own bottom edge and the keys written along it — which is the
+  // way out of it.
+  const many: Choice[] = Array.from({ length: 40 }, (_, at) => ({ id: `m-${at}`, label: `Provider · Model ${at}` }))
+  const setup = await testRender(
+    <Picker
+      theme={paletteOver(undefined)}
+      title="What she thinks with"
+      items={many}
+      chosen="m-0"
+      narrowing={{ typed: '', onType: () => {} }}
+      width={54}
+      room={18}
+      onPick={() => {}}
+    />,
+    { width: 80, height: 18 },
+  )
+  shown.push(setup)
+  await setup.flush()
+
+  const frame = setup.captureCharFrame()
+  expect(frame).toContain('› type to narrow it')
+  expect(frame).toContain('ESC never mind')
+  // The frame is shut: the bottom edge is on screen under the keys.
+  expect(frame).toContain('╰')
+  // Fewer rows, rather than the same ten off the bottom of the screen.
+  expect(frame).toContain('Provider · Model 8')
+  expect(frame).not.toContain('Provider · Model 9')
+})
+
+test('a taller terminal is still ten rows, not as many as it would hold', async () => {
+  const many: Choice[] = Array.from({ length: 40 }, (_, at) => ({ id: `m-${at}`, label: `Provider · Model ${at}` }))
+  const setup = await testRender(
+    <Picker
+      theme={paletteOver(undefined)}
+      title="What she thinks with"
+      items={many}
+      chosen="m-0"
+      narrowing={{ typed: '', onType: () => {} }}
+      width={54}
+      room={40}
+      onPick={() => {}}
+    />,
+    { width: 80, height: 40 },
+  )
+  shown.push(setup)
+  await setup.flush()
+
+  const frame = setup.captureCharFrame()
+  expect(frame).toContain('Provider · Model 9')
+  expect(frame).not.toContain('Provider · Model 10')
 })
 
 test('a label too long for the row is cut where the row ends, and marked', async () => {

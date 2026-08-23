@@ -16,6 +16,8 @@ const idle: Where = {
   up: false,
   picking: false,
   ticking: false,
+  narrows: false,
+  narrowed: false,
   path: false,
   reading: false,
   hasReport: false,
@@ -30,6 +32,11 @@ const up = (where: Where): Where => ({ ...where, up: true })
 const picking = (where: Where): Where => ({ ...where, picking: true })
 /** Her question, when several rows answer it: the list with ticks on it. */
 const ticking = (where: Where): Where => ({ ...where, picking: true, ticking: true })
+/** The list of what she thinks with: the one that can be typed at, with
+ * nothing typed at it yet. */
+const narrows = (where: Where): Where => ({ ...where, picking: true, narrows: true })
+/** …and with something typed at it. */
+const narrowed = (where: Where): Where => ({ ...where, picking: true, narrows: true, narrowed: true })
 /** The folder list, one step further in: the rows are away and a path is being
  * written out in their place. */
 const typingPath = (where: Where): Where => ({ ...where, path: true })
@@ -298,16 +305,64 @@ test('a list that takes several rows ticks them, and Enter means done', () => {
   // What the list prints is the ticking keys and then the rest, with Enter
   // said once and saying the ticking thing — the same key listed twice doing
   // two things would be the keys table failing at the one thing it is for.
-  expect(listKeys(true).map((key) => [key.press, key.does])).toEqual([
+  expect(listKeys({ ticking: true }).map((key) => [key.press, key.does])).toEqual([
     ['space', 'tick'],
     ['return', 'choose'],
     ['up', 'previous'],
     ['down', 'next'],
     ['escape', 'cancel'],
   ])
-  expect(listKeys(true).find((key) => key.press === 'return')?.says).toBe("that's all")
+  expect(listKeys({ ticking: true }).find((key) => key.press === 'return')?.says).toBe("that's all")
   expect(headings(ticking(idle))).toEqual(['While a list is open', 'Whenever'])
   expect(offered(ticking(idle)).filter((does) => does === 'choose')).toHaveLength(1)
+})
+
+test('a list that can be typed at says so, and ESC clears what was typed before it puts the list away', () => {
+  // The letters never come to the window — the list takes them — so the only
+  // key of it the window answers is ESC, and only once there is something
+  // typed to take back.
+  expect(pressed(press('escape'), narrows(idle))).toBe('cancel')
+  expect(pressed(press('escape'), narrowed(idle))).toBe('clear')
+  expect(pressed(press('escape'), narrowed(working))).toBe('clear')
+  expect(pressed(press('escape'), narrowed(asked))).toBe('clear')
+  expect(takes('narrow')).toBe(false)
+  expect(takes('clear')).toBe(true)
+
+  // What the list prints: that it can be typed at, in front, and ESC saying
+  // whichever of its two things it does right now — in the same spot, so the
+  // keys do not shuffle as the first letter goes in.
+  expect(listKeys({ narrows: true }).map((key) => [key.press, key.does])).toEqual([
+    ['type', 'narrow'],
+    ['up', 'previous'],
+    ['down', 'next'],
+    ['return', 'choose'],
+    ['escape', 'cancel'],
+  ])
+  expect(listKeys({ narrows: true, narrowed: true }).map((key) => [key.press, key.does])).toEqual([
+    ['type', 'narrow'],
+    ['up', 'previous'],
+    ['down', 'next'],
+    ['return', 'choose'],
+    ['escape', 'clear'],
+  ])
+  expect(shownAs('type')).toBe('Type')
+  // The other lists print exactly what they printed before there was such a
+  // thing: they are four names, and cannot be typed at.
+  expect(listKeys().map((key) => key.press)).toEqual(['up', 'down', 'return', 'escape'])
+  expect(listKeys().some((key) => key.does === 'narrow')).toBe(false)
+})
+
+test('a letter typed at a list is not an answer to what she is waiting to be allowed', () => {
+  // The same rule as a path: y, n and r are letters, and "anthropic" has two
+  // of them. Her question is still there to be answered once the list is away.
+  expect(pressed(press('y'), picking(asked))).toBe('allow')
+  expect(pressed(press('y'), narrows(asked))).toBeNull()
+  expect(pressed(press('n'), narrows(asked))).toBeNull()
+  expect(pressed(press('r'), narrows(gone))).toBeNull()
+  expect(pressed(press('r'), picking(gone))).toBe('retry')
+  // And the corner under the list says what ESC does from here.
+  expect(cornerFor(narrows(idle))).toBe('ESC never mind')
+  expect(cornerFor(narrowed(idle))).toBe('ESC start over')
 })
 
 test('which of them is on shift is opened with a key of its own', () => {
@@ -472,6 +527,7 @@ const EVERY_PRESS = [
   'up',
   'down',
   'space',
+  'type',
   'ctrl+b',
   'ctrl+c',
 ]
@@ -479,10 +535,12 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
   // A list and a path being typed are one thing over the scene in two states:
   // taking the row that asks for a path is what puts the rows away.
   [
-    { picking: false, ticking: false, path: false },
-    { picking: true, ticking: false, path: false },
-    { picking: true, ticking: true, path: false },
-    { picking: false, ticking: false, path: true },
+    { picking: false, ticking: false, narrows: false, narrowed: false, path: false },
+    { picking: true, ticking: false, narrows: false, narrowed: false, path: false },
+    { picking: true, ticking: true, narrows: false, narrowed: false, path: false },
+    { picking: true, ticking: false, narrows: true, narrowed: false, path: false },
+    { picking: true, ticking: false, narrows: true, narrowed: true, path: false },
+    { picking: false, ticking: false, narrows: false, narrowed: false, path: true },
   ].flatMap((over) =>
     [false, true].flatMap((isWorking) =>
       [false, true].flatMap((asked) =>
