@@ -413,6 +413,24 @@ test('a session that went down can be opened again from the keyboard', async () 
   expect(frame()).not.toContain(LOST.title)
 })
 
+test('what she had said stays on screen through the connection going and coming back', async () => {
+  const { wakeUp, raise, giveUp, press, frame } = await onScreen()
+  await wakeUp()
+  await raise({ kind: 'says', line: 'The needle was in the second haystack.' })
+
+  await giveUp()
+  expect(frame()).toContain('The needle was in the second haystack.')
+
+  // Opened again into the same conversation: her last line is still the last
+  // thing she said, and the window has no reason to take it down.
+  await press('r')
+  await wakeUp()
+
+  expect(frame()).toContain('The needle was in the second haystack.')
+  expect(frame()).not.toContain(LOST.title)
+  expect(frame()).toContain('Say something to her…')
+})
+
 test('something in the way that left her standing is put away with ESC', async () => {
   const { wakeUp, getStuck, escape, frame } = await onScreen()
   await wakeUp()
