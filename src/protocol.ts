@@ -61,7 +61,10 @@ export type BridgeEvent =
   | { kind: 'reports'; report: Report | null }
   /** 地の文 — what she is doing, while she is doing it. */
   | { kind: 'doing'; label: string }
-  | { kind: 'ask-permission'; askId: string; toolName: string }
+  /** A tool she may not pick up until he says she can, with what she would do
+   * with it: one line of it for the box, which has room for one line, and the
+   * whole of it for whoever wants to read before saying yes. */
+  | { kind: 'ask-permission'; askId: string; toolName: string; summary?: string; detail?: string }
   /** Something is in the way — or, with nothing in it, that whatever was in
    * the way is not any more. Whether her session survived it is the trouble's
    * own to say: some of them leave her standing there, and some take the

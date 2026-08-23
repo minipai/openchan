@@ -17,6 +17,7 @@ export type Does =
   | 'stop'
   | 'allow'
   | 'refuse'
+  | 'details'
   | 'blocks'
   | 'keys'
   | 'close'
@@ -134,6 +135,9 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'asked', press: 'y', does: 'allow', says: 'let her' },
   { when: 'asked', press: 'n', does: 'refuse', says: "don't" },
   { when: 'asked', press: 'escape', does: 'refuse', says: "don't" },
+  // A look before deciding, and the same key again to stop looking. It answers
+  // nothing either way: y and n mean what they meant with it open.
+  { when: 'asked', press: 'tab', does: 'details', says: 'what exactly' },
 
   { when: 'working', press: 'escape', does: 'stop', says: 'stop her' },
 
@@ -305,7 +309,13 @@ export function shownAs(press: string): string {
   const held = press.startsWith('ctrl+')
   const name = held ? press.slice('ctrl+'.length) : press
   const shown =
-    name === 'escape' ? 'ESC' : name === 'return' ? 'Enter' : ARROWS[name] ?? name
+    name === 'escape'
+      ? 'ESC'
+      : name === 'return'
+        ? 'Enter'
+        : name === 'tab'
+          ? 'Tab'
+          : ARROWS[name] ?? name
   return held ? `Ctrl-${shown.toUpperCase()}` : shown
 }
 

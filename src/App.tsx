@@ -7,14 +7,48 @@ import { PathBox } from './PathBox'
 import { Picker, type Choice } from './Picker'
 import { ReportReader } from './ReportReader'
 import { TroubleNote } from './TroubleNote'
-import { cornerFor, keyFor, pressed, shownAs, takes } from './keys'
+import { Asking, columns } from './Asking'
+import { cornerFor, pressed, takes } from './keys'
 import { useMaid, type Scene } from './brain'
 import type { Character } from './cast'
 import { asPath, fitted, folderRows, shortened, troubleWith, TYPE_A_PATH } from './folder'
+import type { OpenConversation } from './protocol'
 import { paletteOver } from './theme'
 
 /** The strip the window leaves under the dialogue box. */
 const UNDER_THE_BOX = 1
+
+/**
+ * Everything the box is besides her line and the command she is asking to run:
+ * the strip under it, its frame, the mood under her line, the divider, and the
+ * two rows of the question itself.
+ */
+const BESIDES_THE_DETAIL = 12
+
+/**
+ * How much of a command or a diff there is room to open up.
+ *
+ * The box grows upwards out of the bottom of the screen, so a detail too tall
+ * for the terminal pushes her line and the top of the frame off it — she ends
+ * up in a box with no lid. What she last said is the part that varies: it
+ * wraps, and two sentences at eighty columns are four rows.
+ *
+ * How it wraps is guessed at rather than measured, and guessed high on purpose.
+ * The layout is not settled until it is drawn, and the two ways of being wrong
+ * are not the same: a row too few and the box opens one line shorter than it
+ * could have, a row too many and it loses its lid.
+ *
+ * She answers in paragraphs, and every one of them ends on a row of its own
+ * with room to spare — so they are counted one by one rather than as a single
+ * run of text, which is short by a row per break in a long answer.
+ */
+function roomToOpen(height: number, box: number, line: string): number {
+  const wrapped = line
+    .split('\n')
+    .reduce((rows, paragraph) => rows + Math.max(1, Math.ceil(columns(paragraph) / (box - 6))), 0)
+  const spoken = Math.max(2, wrapped + 1)
+  return Math.max(2, height - BESIDES_THE_DETAIL - spoken)
+}
 
 /**
  * What the empty input says. An input that looks ready to be spoken to is what
@@ -42,13 +76,18 @@ function above(scene: Scene, next: Character | null): string | null {
   return next && `${next.name} takes the next shift`
 }
 
-export function App({ behind }: { behind: string | undefined }) {
+/**
+ * The window. Which agent answers is handed in for the same reason the hook
+ * takes one — so the whole of what is on screen can be driven by something that
+ * is not a running opencode server.
+ */
+export function App({ behind, open: openMaid }: { behind: string | undefined; open?: OpenConversation }) {
   const { width, height } = useTerminalDimensions()
   // Her box is coloured against the terminal, the same answer that keeps her
   // out of a black slab.
   const theme = paletteOver(behind)
   const { scene, cast, onShift, nextShift, folder, been, ask, answer, stop, use, swapTo, moveTo, retry, dismiss } =
-    useMaid()
+    useMaid(openMaid)
   const [typed, setTyped] = useState('')
   // Ctrl-B: draw her out of half-block characters even where the terminal
   // could take real pixels. It is the rougher picture, and it is a look.
@@ -70,7 +109,12 @@ export function App({ behind }: { behind: string | undefined }) {
   // with it, and a reader left standing over nothing would go on swallowing ESC
   // with no page on screen to explain why.
   const open = reading && scene.report !== null
+  // Which question has been opened up, rather than whether one is: the next
+  // thing she asks for is a fresh question and starts shut, however the last
+  // one was left.
+  const [opened, setOpened] = useState<string | null>(null)
 
+  const asked = scene.permission
   const where = {
     up: keysUp,
     picking: picking !== null,
@@ -78,11 +122,12 @@ export function App({ behind }: { behind: string | undefined }) {
     reading: open,
     hasReport: scene.report !== null,
     isWorking: scene.isWorking,
-    asked: scene.permission !== null,
+    asked: asked !== null,
     // Which way out of it there is, which is the only thing about it the keys
     // have any business knowing.
     trouble: scene.trouble && (scene.trouble.gone ? ('gone' as const) : ('stuck' as const)),
   }
+  const showing = asked !== null && opened === asked.askId
 
   // Which key does what, and which of them count from here, is the keys table's
   // to say — including Ctrl-C, which is not answered here on purpose: the
@@ -108,9 +153,11 @@ export function App({ behind }: { behind: string | undefined }) {
         setReading(false)
         return setKeysUp(false)
       case 'allow':
-        return answer(scene.permission!.askId, true)
+        return answer(asked!.askId, true)
       case 'refuse':
-        return answer(scene.permission!.askId, false)
+        return answer(asked!.askId, false)
+      case 'details':
+        return setOpened(showing ? null : asked!.askId)
       case 'stop':
         return stop()
       case 'retry':
@@ -236,12 +283,14 @@ export function App({ behind }: { behind: string | undefined }) {
             // while nothing said on it could arrive.
             scene.trouble ? (
               <TroubleNote theme={theme} trouble={scene.trouble} />
-            ) : scene.permission ? (
-              <box flexDirection="row" gap={2}>
-                <text fg={theme.foreground}>{`She wants to use ${scene.permission.toolName}`}</text>
-                <text fg={theme.primary}>{`${shownAs(keyFor('allow').press)} ${keyFor('allow').says}`}</text>
-                <text fg={theme.muted}>{`${shownAs(keyFor('refuse').press)} ${keyFor('refuse').says}`}</text>
-              </box>
+            ) : asked ? (
+              <Asking
+                theme={theme}
+                permission={asked}
+                open={showing}
+                width={boxWidth}
+                rows={roomToOpen(height, boxWidth, scene.line)}
+              />
             ) : (
               <box flexDirection="row" gap={1}>
                 <text fg={theme.primary}>›</text>

@@ -3,7 +3,15 @@ import type { Expression } from './cast'
 
 export type { Report } from './protocol'
 
-export type Permission = { askId: string; toolName: string }
+export type Permission = {
+  askId: string
+  toolName: string
+  /** The one line the box shows next to the tool's name: the command, the file,
+   * the address. */
+  summary: string | null
+  /** The whole of what she would do, for when one line is not enough of it. */
+  detail: string | null
+}
 
 /** What is on the scene right now. */
 export type Scene = {
@@ -100,7 +108,15 @@ export function next(was: Scene, event: BridgeEvent): Scene {
     case 'thinks-with':
       return { ...was, models: event.models, model: event.using }
     case 'ask-permission':
-      return { ...was, permission: { askId: event.askId, toolName: event.toolName } }
+      return {
+        ...was,
+        permission: {
+          askId: event.askId,
+          toolName: event.toolName,
+          summary: event.summary ?? null,
+          detail: event.detail ?? null,
+        },
+      }
     case 'done':
       return { ...was, isWorking: false, permission: null, line: event.error ?? was.line }
   }
