@@ -1,8 +1,8 @@
 import { columns } from './Asking'
 import { STRIP_SPENDS } from './DialogueBox'
-import { fitted, shortened } from './folder'
+import { fitted, shortened } from '../folder'
 import { thinkingWith } from './model'
-import type { Model } from './protocol'
+import type { Model } from '../protocol'
 
 /**
  * How much of the line is kept for what she is doing — at most this, and never

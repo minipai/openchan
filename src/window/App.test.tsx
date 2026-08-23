@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { act } from 'react'
 import { testRender } from '@opentui/react/test-utils'
-import type { Expression } from './cast'
+import type { Expression } from '../her/cast'
 import { spriteColumns } from './SpriteLayer'
 
 /**
@@ -26,10 +26,10 @@ mock.module('./SpriteLayer', () => ({
 }))
 
 import { App, LINE_HOLDS } from './App'
-import { CAST, remember, remembered } from './cast'
-import { OPENED_IN, shortened } from './folder'
-import type { BridgeEvent } from './protocol'
-import { LOST, MODELS, Stand, STUCK, TALKS } from './stand'
+import { CAST, remember, remembered } from '../her/cast'
+import { OPENED_IN, shortened } from '../folder'
+import type { BridgeEvent } from '../protocol'
+import { LOST, MODELS, Stand, STUCK, TALKS } from '../opencode/stand'
 import { WHISPERED_FOR } from './Whispers'
 
 /** What a terminal is unless someone has resized it. */

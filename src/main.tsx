@@ -1,7 +1,7 @@
 import { createCliRenderer } from '@opentui/core'
 import { createRoot } from '@opentui/react'
-import { App } from './App'
-import { askTerminalBackground } from './behind'
+import { App } from './window/App'
+import { askTerminalBackground } from './window/behind'
 
 // Before the renderer takes the keyboard: the answer comes back on stdin.
 const behind = await askTerminalBackground()

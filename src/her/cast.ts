@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { KAOMOJI } from './expressions'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const home = path.resolve(here, '..')
+const home = path.resolve(here, '../..')
 
 /** One of them: the folder her artwork and her words are filed under, and the
  * name the screen calls her by. */

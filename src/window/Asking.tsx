@@ -1,5 +1,5 @@
 import { keyFor, shownAs } from './keys'
-import type { Permission } from './scene'
+import type { Permission } from '../scene'
 import type { Palette } from './theme'
 
 /**

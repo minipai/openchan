@@ -5,10 +5,10 @@ import path from 'node:path'
 import { act } from 'react'
 import { testRender } from '@opentui/react/test-utils'
 import { useMaid } from './brain'
-import { briefFor, CAST, remember, remembered } from './cast'
+import { briefFor, CAST, remember, remembered } from './her/cast'
 import { OPENED_IN } from './folder'
 import type { BridgeEvent, OpenConversation } from './protocol'
-import { LOST, MODELS, Stand, STUCK, TALKS } from './stand'
+import { LOST, MODELS, Stand, STUCK, TALKS } from './opencode/stand'
 
 /** The window, reduced to the two things this cares about. */
 function Window({ open, hold }: { open: OpenConversation; hold: (maid: Maid) => void }) {

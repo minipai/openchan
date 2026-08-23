@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
-import type { BridgeEvent } from './protocol'
+import type { BridgeEvent } from '../protocol'
 
 /**
  * opencode, with nothing behind it.
@@ -230,7 +230,7 @@ import {
   type PastSession,
   type ProviderModels,
 } from './opencode'
-import { CAST } from './cast'
+import { CAST } from '../her/cast'
 import path from 'node:path'
 
 beforeEach(() => {

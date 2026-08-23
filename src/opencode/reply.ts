@@ -1,4 +1,4 @@
-import { faceFor, type Expression } from './expressions'
+import { faceFor, type Expression } from '../her/expressions'
 
 /**
  * What she wrote, read back: the 【…】 she signs a line with, and the line she

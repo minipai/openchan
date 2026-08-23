@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NativeImage } from '@opentui/core'
 import { useRenderer, useTerminalDimensions } from '@opentui/react'
-import { ARTWORK, SPRITE_SHARE, spriteFor, type Character, type Expression } from './cast'
+import { ARTWORK, SPRITE_SHARE, spriteFor, type Character, type Expression } from '../her/cast'
 import { useColourBehindHer } from './behind'
 
 /** Decoded artwork, kept between faces — she wears the same handful all

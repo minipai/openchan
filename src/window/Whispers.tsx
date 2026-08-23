@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { cut } from './Asking'
-import type { Whispered } from './scene'
+import type { Whispered } from '../scene'
 import type { Palette } from './theme'
 
 /**
