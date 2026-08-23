@@ -14,6 +14,7 @@ import {
 
 const idle: Where = {
   up: false,
+  standing: false,
   picking: false,
   ticking: false,
   narrows: false,
@@ -28,6 +29,9 @@ const idle: Where = {
 }
 const working: Where = { ...idle, isWorking: true }
 const asked: Where = { ...working, asked: true }
+/** Waiting to be allowed something narrow enough to be allowed for the rest of
+ * the session — a command, a file, a host. */
+const narrow: Where = { ...asked, standing: true }
 const up = (where: Where): Where => ({ ...where, up: true })
 const picking = (where: Where): Where => ({ ...where, picking: true })
 /** Her question, when several rows answer it: the list with ticks on it. */
@@ -535,6 +539,7 @@ const EVERY_PRESS = [
   'ctrl+y',
   'y',
   'n',
+  'a',
   'r',
   'tab',
   'return',
@@ -558,6 +563,7 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
   ].flatMap((over) =>
     [false, true].flatMap((isWorking) =>
       [false, true].flatMap((asked) =>
+      [false, true].flatMap((standing) =>
         // Only the three the window can actually be in: it never opens a
         // report it does not have.
         [
@@ -570,6 +576,7 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
               up,
               isWorking,
               asked,
+              standing,
               trouble,
               said,
               ...over,
@@ -578,6 +585,28 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
           ),
         ),
       ),
+      ),
     ),
   ),
 )
+
+test('what she can be allowed for the whole session says so where the width is there to say it', () => {
+  // The box has room for the key and what it would cover and not a word more,
+  // so how long it lasts is said in the heading these are listed under.
+  expect(offered(asked)).not.toContain('always')
+  expect(offered(narrow)).toContain('always')
+  expect(headings(narrow)).toEqual([
+    'While she is waiting to be allowed',
+    'For as long as this session lasts',
+    'Whenever',
+  ])
+})
+
+test('a standing yes is not given away by a letter typed somewhere else', () => {
+  // The same trap r falls into: a is a letter in a path and a letter at a list
+  // that can be narrowed by typing at it.
+  expect(pressed(press('a'), narrow)).toBe('always')
+  expect(pressed(press('a'), { ...narrow, path: true })).toBeNull()
+  expect(pressed(press('a'), { ...narrow, picking: true, narrows: true })).toBeNull()
+  expect(pressed(press('a'), { ...narrow, trouble: 'stuck' })).toBeNull()
+})

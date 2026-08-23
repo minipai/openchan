@@ -5,7 +5,7 @@ import net from 'node:net'
 import { createOpencodeClient, createOpencodeServer, type OpencodeClient } from '@opencode-ai/sdk'
 import { createOpencodeClient as createAnswering, type OpencodeClient as Answering } from '@opencode-ai/sdk/v2/client'
 import { briefFor, type Character } from './cast'
-import type { BridgeEvent, Conversation, Model, Question, Talk, Trouble } from './protocol'
+import type { BridgeEvent, Conversation, Model, Question, Standing, Talk, Trouble } from './protocol'
 import { readMood, splitReport } from './reply'
 
 /**
@@ -326,18 +326,118 @@ type AskedPermission = {
  * shows to whatever is left after the keys, and the long way round is how the
  * rest of it gets read.
  */
-function asking(metadata: Record<string, unknown>): { summary?: string; detail?: string } {
+export function asking(
+  toolName: string | undefined,
+  metadata: Record<string, unknown>,
+): { summary?: string; detail?: string; standing?: Standing } {
+  // A tool the server did not name cannot be given a standing yes: the scope
+  // would be the same scope every other tool it forgot to name is remembered
+  // under, and a yes to one of them would be a yes to all of them.
+  const stands = (what: string, covers: string): Standing | undefined =>
+    toolName ? { scope: `${toolName} ${what}`, covers } : undefined
   const { command, filepath, diff, url } = metadata as Record<string, string | undefined>
-  if (typeof command === 'string') return { summary: command.split('\n')[0], detail: command }
-  if (typeof filepath === 'string') {
-    const near = path.relative(process.cwd(), filepath)
+  if (typeof command === 'string') {
+    // The program, not the command: yes to `git status` is yes to git, and it
+    // is not yes to whatever else she thinks of next.
+    const program = oneProgram(command)
     return {
-      summary: near && !near.startsWith('..') ? near : filepath,
-      detail: typeof diff === 'string' ? hunks(diff) : undefined,
+      summary: command.split('\n')[0],
+      detail: command,
+      standing: program ? stands(program, `run ${program}`) : undefined,
     }
   }
-  if (typeof url === 'string') return { summary: url, detail: url }
+  if (typeof filepath === 'string') {
+    const near = path.relative(process.cwd(), filepath)
+    const shown = near && !near.startsWith('..') ? near : filepath
+    return {
+      summary: shown,
+      detail: typeof diff === 'string' ? hunks(diff) : undefined,
+      // The one file, by the path the server named it by — the file she is
+      // asking about is the whole of what he can see, so it is the whole of
+      // what he can be taken to have said yes to.
+      standing: filepath ? stands(filepath, `${toolName} ${shown}`) : undefined,
+    }
+  }
+  if (typeof url === 'string') {
+    const from = originOf(url)
+    return {
+      summary: url,
+      detail: url,
+      standing: from ? stands(from, `fetch ${from}`) : undefined,
+    }
+  }
   return {}
+}
+
+/** Anything that makes a command line more than one program running: another
+ * command after it, a pipe into one, a substitution that is one, a file it
+ * writes over. */
+const SHELL = /[;&|<>$`(){}\n\\]/
+/** A program, as opposed to `FOO=1` in front of one. */
+const PROGRAM = /^[\w.\-/]+$/
+/**
+ * The programs whose whole job is to run another one. What actually runs is in
+ * their arguments, so the name at the front of the line says nothing about it:
+ * `bash -c 'rm -rf ~'` is a yes to bash, and a yes to bash is a yes to
+ * anything at all. The same second thing hidden in one line that the shell
+ * characters hide, wearing a program's name instead.
+ */
+const RUNS_ANYTHING = new Set([
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'dash',
+  'ksh',
+  'csh',
+  'tcsh',
+  'env',
+  'sudo',
+  'doas',
+  'su',
+  'xargs',
+  'nohup',
+  'timeout',
+  'time',
+  'nice',
+  'watch',
+  'command',
+  'exec',
+  'eval',
+  'ssh',
+])
+
+/**
+ * The one program a command line runs, for a standing yes to be against.
+ * Nothing, unless that is all the line is: `git status && rm -rf dist` starts
+ * with git and ends somewhere else entirely, and a yes shown as "run git" would
+ * carry the second half of it along for the rest of the session. So anything
+ * with shell in it is asked about every time, and so is anything that runs
+ * whatever it is handed — which is the same answer a command with a name it
+ * cannot read gets.
+ */
+function oneProgram(command: string): string | null {
+  if (SHELL.test(command)) return null
+  const program = command.trim().split(/\s+/)[0]
+  if (!program || !PROGRAM.test(program)) return null
+  // By the name at the end of the path: `/bin/bash` is bash.
+  return RUNS_ANYTHING.has(program.split('/').pop()!) ? null : program
+}
+
+/**
+ * Who an address is asking, for a standing yes to be against — a page is one of
+ * thousands on a host, and the host is the thing worth naming. With the scheme
+ * on it: `http://internal.corp` is not the site he said yes to when he said yes
+ * to `https://internal.corp`. Nothing, for an address that will not parse or
+ * has nobody on the other end of it — then there is nobody to say yes to.
+ */
+function originOf(url: string): string | null {
+  try {
+    const { origin } = new URL(url)
+    return origin && origin !== 'null' ? origin : null
+  } catch {
+    return null
+  }
 }
 
 /** A unified diff with its preamble off. The server writes the path three
@@ -714,11 +814,15 @@ export class MaidSession implements Conversation {
 
   private readPermission(asked: AskedPermission) {
     this.asked.add(asked.id)
+    // Whatever the server called it — and nothing, where it called it nothing:
+    // the box can say "a tool", but nothing can be remembered under a name that
+    // is not one.
+    const named = asked.permission ?? asked.type ?? asked.title
     this.onEvent({
       kind: 'ask-permission',
       askId: asked.id,
-      toolName: asked.permission ?? asked.type ?? asked.title ?? 'a tool',
-      ...asking(asked.metadata ?? {}),
+      toolName: named ?? 'a tool',
+      ...asking(named, asked.metadata ?? {}),
     })
   }
 

@@ -3,7 +3,7 @@ import { act } from 'react'
 import { testRender } from '@opentui/react/test-utils'
 import { App } from './App'
 import type { Character } from './cast'
-import type { BridgeEvent, Conversation } from './protocol'
+import type { BridgeEvent, Conversation, Standing } from './protocol'
 
 /** Her, with nobody behind her: it wakes up at once, lets the test raise the
  * permission questions, and records how they were answered. */
@@ -43,7 +43,7 @@ const TERMINAL = { width: 80, height: 24 }
 
 /** The whole window over a stand-in, with her question already on screen. */
 async function asking(
-  question: Partial<{ toolName: string; summary: string; detail: string }> = {},
+  question: Partial<{ toolName: string; summary: string; detail: string; standing: Standing }> = {},
   said = '',
 ) {
   let her!: Stand
@@ -236,4 +236,144 @@ test('a character from beyond the first plane is still two cells wide', async ()
   const { frame } = await asking({ toolName: 'edit', summary: `${'𠀀'.repeat(30)}TAIL` })
 
   expect(frame()).not.toContain('TAIL')
+})
+
+/** What a standing yes to the command in the question would cover. */
+const GIT: Standing = { scope: 'bash git', covers: 'run git' }
+
+test('a tool narrow enough for a standing yes offers one, in the words of what it would cover', async () => {
+  const { frame } = await asking({ standing: GIT, summary: 'git status --short' })
+
+  // "always" on its own is a word he would have to take on trust — what it
+  // comes to is written into the key.
+  expect(frame()).toContain('a always let her: run git')
+})
+
+test('a tool nothing is known about is not offered a standing yes, and the key does nothing', async () => {
+  const { frame, press, her } = await asking({ summary: undefined, detail: undefined })
+
+  expect(frame()).toContain('She wants to use bash')
+  expect(frame()).not.toContain('always let her')
+
+  const was = frame()
+  await press('a')
+  expect(frame()).toBe(was)
+  expect(her.answers).toEqual([])
+})
+
+test('what he has let her always do is not asked again, and is answered the same way', async () => {
+  const { her, frame, raise, press } = await asking({ standing: GIT, summary: 'git status --short' })
+
+  await press('a')
+  expect(her.answers).toEqual([['ask-1', true]])
+  expect(frame()).not.toContain('She wants to use bash')
+
+  await raise({ askId: 'ask-2', standing: GIT, summary: 'git commit' })
+
+  // Answered where it arrived: it never reached the screen, and it went back
+  // as the same yes the y key sends.
+  expect(her.answers).toEqual([
+    ['ask-1', true],
+    ['ask-2', true],
+  ])
+  expect(frame()).not.toContain('She wants to use bash')
+})
+
+test('a standing yes covers what it said and nothing beside it', async () => {
+  const { her, frame, raise, press } = await asking({ standing: GIT, summary: 'git status --short' })
+
+  await press('a')
+  await raise({ askId: 'ask-2', standing: { scope: 'bash rm', covers: 'run rm' }, summary: 'rm -rf dist' })
+
+  // Another program is another question, whatever he said about git.
+  expect(frame()).toContain('She wants to use bash: rm -rf dist')
+  expect(her.answers).toEqual([['ask-1', true]])
+})
+
+test('a file he let her always change is that file, not every file', async () => {
+  const { her, frame, raise, press } = await asking({
+    toolName: 'edit',
+    summary: 'keys.ts',
+    standing: { scope: 'edit /repo/src/keys.ts', covers: 'edit keys.ts' },
+  })
+
+  expect(frame()).toContain('a always let her: edit keys.ts')
+  await press('a')
+
+  await raise({
+    askId: 'ask-2',
+    toolName: 'edit',
+    summary: 'theme.ts',
+    standing: { scope: 'edit /repo/src/theme.ts', covers: 'edit theme.ts' },
+  })
+
+  expect(frame()).toContain('She wants to use edit: theme.ts')
+  expect(her.answers).toEqual([['ask-1', true]])
+})
+
+test('a standing yes belongs to the window it was given in and is not written down anywhere', async () => {
+  const first = await asking({ standing: GIT, summary: 'git status --short' })
+  await first.press('a')
+
+  // A window opened afterwards is the next process as far as this is concerned:
+  // nothing about the answer left the one it was given in.
+  const second = await asking({ standing: GIT, summary: 'git status --short' })
+  expect(second.frame()).toContain('She wants to use bash: git status --short')
+  expect(second.her.answers).toEqual([])
+})
+
+test('a scope with no room left on the key row is written out under it, whole', async () => {
+  const { frame } = await asking({
+    toolName: 'edit',
+    summary: 'src/somewhere/quite/deep/expressions.ts',
+    standing: {
+      scope: 'edit /repo/src/somewhere/quite/deep/expressions.ts',
+      covers: 'edit src/somewhere/quite/deep/expressions.ts',
+    },
+  })
+
+  // The keys keep their row and the offer gets one of its own: shortened to
+  // what was left over from them, the path came out as an ellipsis and the key
+  // read as "always" with nothing after it — which is the one thing it must
+  // never read as.
+  expect(frame()).toContain("y let her  n don't  Tab what exactly")
+  expect(frame()).toContain('a always let her: edit src/somewhere/quite/deep/expressions.ts')
+})
+
+test('the offer is drawn under the keys rather than among them', async () => {
+  const { frame } = await asking({ standing: GIT, summary: 'git status --short' })
+
+  const rows = frame().split('\n')
+  const keys = rows.findIndex((row) => row.includes("y let her  n don't"))
+  const offer = rows.findIndex((row) => row.includes('a always let her: run git'))
+  expect(keys).toBeGreaterThan(-1)
+  expect(offer).toBe(keys + 1)
+})
+
+test('the offer under the keys is one row the opened detail does not get to use', async () => {
+  const many = Array.from({ length: 60 }, (_, at) => `echo line-${at}`).join('\n')
+  const { her, frame, tab } = await asking({ detail: many, standing: GIT })
+
+  await tab()
+
+  // Counted, or the box grows one row past the top of the screen and loses the
+  // lid of her own frame.
+  expect(frame()).toContain(her.who.name)
+  expect(frame()).toContain('echo line-0')
+  expect(frame()).toContain('a always let her: run git')
+})
+
+test('a scope too long even for its own row keeps the end that says which file it is', async () => {
+  const deep = '/Users/someone/Dev/openchan/packages/characters/kotone/expressions/apron/neutral.png'
+  const { frame } = await asking({
+    toolName: 'edit',
+    summary: deep,
+    standing: { scope: `edit ${deep}`, covers: `edit ${deep}` },
+  })
+
+  // Cut the usual way round, two files in that folder are the same line. The
+  // front of the path is on the row above, so between them the whole of it is
+  // on screen.
+  expect(frame()).toContain('apron/neutral.png')
+  expect(frame()).toContain('She wants to use edit: /Users/someone/Dev')
 })

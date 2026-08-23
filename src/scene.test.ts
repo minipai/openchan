@@ -73,6 +73,7 @@ test('a tool she may not use yet becomes a question on screen', () => {
     toolName: 'bash',
     summary: 'rm -rf dist',
     detail: 'set -e\nrm -rf dist',
+    standing: null,
   })
 })
 
@@ -82,7 +83,7 @@ test('a tool that came with nothing but its name is still a question', () => {
   // show if it had it.
   const scene = next(working, { kind: 'ask-permission', askId: 'ask-1', toolName: 'bash' })
 
-  expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash', summary: null, detail: null })
+  expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash', summary: null, detail: null, standing: null })
 })
 
 /** Something she wants picked rather than typed. */
@@ -254,7 +255,7 @@ test('a question on a session that is still standing waits behind the note', () 
   // The server is still holding this one open. Letting go of it here would take
   // the only thing that can answer it off the screen and leave the tool call
   // waiting for good.
-  expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash', summary: null, detail: null })
+  expect(scene.permission).toEqual({ askId: 'ask-1', toolName: 'bash', summary: null, detail: null, standing: null })
 })
 
 test('clearing it gives the scene back without anything being reopened', () => {

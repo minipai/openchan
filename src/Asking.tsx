@@ -34,6 +34,19 @@ export function Asking({
   const [allow, refuse, details] = (['allow', 'refuse', 'details'] as const)
     .map(keyFor)
     .map((key) => `${shownAs(key.press)} ${key.says}`)
+  // What a standing yes would cover is written into the key: "always" on its
+  // own is a word he would have to take on trust, and what it comes to is
+  // different every time she asks. After a colon rather than as the rest of the
+  // sentence — the server names some of its permissions with nouns, and "always
+  // let her external_directory" is not English.
+  const offer = `${shownAs(keyFor('always').press)} ${keyFor('always').says}: `
+  // Cut from the front, where every other line here is cut from the end: what
+  // runs over is the front of a path, and the front of it is what the line
+  // above is already showing. Two files under one long folder are told apart by
+  // their ends, and their ends are what he is agreeing to.
+  const always = permission.standing
+    ? offer + cutFront(permission.standing.covers, room - columns(offer))
+    : null
   const wants = permission.summary
     ? `She wants to use ${permission.toolName}: ${permission.summary}`
     : `She wants to use ${permission.toolName}`
@@ -63,8 +76,35 @@ export function Asking({
         <text fg={theme.muted}>{refuse}</text>
         {permission.detail !== null && <text fg={theme.faint}>{details}</text>}
       </box>
+      {/* A row of its own, because what it covers is the whole point of it and
+          the keys above have left nothing of the width to say it in: shortened
+          to what was over from them, a path came out as an ellipsis and the key
+          read as "always" with nothing after it. */}
+      {always !== null && <text fg={theme.muted}>{always}</text>}
     </box>
   )
+}
+
+/**
+ * The end of a line, cut to the room there is for it, with the cut marked at
+ * the front. The one place it is wanted is the standing offer: a path too long
+ * for the row loses the half that says which file it is if it is cut the usual
+ * way round, and saying yes to the wrong file for a whole session is the thing
+ * this must not make easy.
+ */
+export function cutFront(text: string, room: number): string {
+  if (columns(text) <= room) return text
+  const glyphs = [...text]
+  let kept = ''
+  let wide = 0
+  for (let at = glyphs.length - 1; at >= 0; at--) {
+    const glyph = glyphs[at]!
+    const next = wide + (WIDE.test(glyph) ? 2 : 1)
+    if (next > room - 1) break
+    kept = glyph + kept
+    wide = next
+  }
+  return `…${kept}`
 }
 
 /**

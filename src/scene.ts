@@ -1,7 +1,7 @@
-import type { BridgeEvent, Model, Question, Report, Talk, Trouble } from './protocol'
+import type { BridgeEvent, Model, Question, Report, Standing, Talk, Trouble } from './protocol'
 import type { Expression } from './cast'
 
-export type { Question, Report } from './protocol'
+export type { Question, Report, Standing } from './protocol'
 
 /** What she wants picked, and the id the answer goes back under. */
 export type Asked = { askId: string; questions: Question[] }
@@ -14,6 +14,10 @@ export type Permission = {
   summary: string | null
   /** The whole of what she would do, for when one line is not enough of it. */
   detail: string | null
+  /** What letting her go on doing this for the rest of the session would cover.
+   * Nothing, for a tool narrow enough words cannot be written for — then there
+   * is only yes and no, and she asks again next time. */
+  standing: Standing | null
 }
 
 /** What is on the scene right now. */
@@ -152,6 +156,7 @@ export function next(was: Scene, event: BridgeEvent): Scene {
           toolName: event.toolName,
           summary: event.summary ?? null,
           detail: event.detail ?? null,
+          standing: event.standing ?? null,
         },
       }
     case 'ask-choice':

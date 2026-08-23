@@ -41,6 +41,19 @@ export type Question = {
 }
 
 /**
+ * What a standing yes covers, for a tool she is asking to use: the scope it is
+ * remembered under for the rest of the session, and the words the box offers it
+ * in.
+ *
+ * The scope is as narrow as the thing that was asked for — the one file, the
+ * one program, the one host — because a standing yes is given against what is
+ * on screen and nothing wider was on screen. Absent, for a tool nothing is
+ * known about: there is no honest scope to write for it, so it is asked every
+ * time.
+ */
+export type Standing = { scope: string; covers: string }
+
+/**
  * Something in the way that she cannot get past on her own, said in words
  * rather than left as an error string nobody reads.
  *
@@ -91,8 +104,19 @@ export type BridgeEvent =
   | { kind: 'doing'; label: string }
   /** A tool she may not pick up until he says she can, with what she would do
    * with it: one line of it for the box, which has room for one line, and the
-   * whole of it for whoever wants to read before saying yes. */
-  | { kind: 'ask-permission'; askId: string; toolName: string; summary?: string; detail?: string }
+   * whole of it for whoever wants to read before saying yes — and what saying
+   * yes to it for the rest of the session would cover, where that is narrow
+   * enough to be worth offering. */
+  | {
+      kind: 'ask-permission'
+      askId: string
+      toolName: string
+      summary?: string
+      detail?: string
+      /** What allowing it for the rest of the session would cover, when that
+       * can be said narrowly enough to offer. */
+      standing?: Standing
+    }
   /** Something she wants picked rather than typed. Several at once is one
    * event rather than several: the agent asks them together and wants them
    * back together, answered or not answered as one. */
