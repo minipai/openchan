@@ -38,6 +38,8 @@ function planted(id: string, title: string, when: number, said: string, parentID
 }
 /** Every prompt posted, by the session it went into. */
 const prompted: string[] = []
+/** The model each of them went out under, in order. */
+const promptedOn: (string | null)[] = []
 const streams: Stream[] = []
 let sessions = 0
 /** Whether the next server asked for refuses to start. */
@@ -51,6 +53,16 @@ let lookupSays: { name: string } | null = null
 let wontRead = false
 /** Whether the next list of the folder's conversations throws. */
 let wontList = false
+/** While this is set, opening a session waits on it: the moment between a new
+ * conversation being asked for and the server opening it, held open. */
+let opening: Promise<void> | null = null
+let letOpen: (() => void) | null = null
+const holdOpens = () => void (opening = new Promise<void>((go) => (letOpen = go)))
+const letOpensThrough = () => {
+  letOpen?.()
+  opening = null
+  letOpen = null
+}
 /** While this is set, reading a conversation back waits on it: the moment
  * between a row being taken and the server answering, held open. */
 let reading: Promise<void> | null = null
@@ -60,9 +72,15 @@ const letReadsThrough = () => {
   letRead?.()
   reading = null
   letRead = null
+  opening = null
+  letOpen = null
 }
 /** Every permission answered over HTTP, in order. */
 const refused: { id: string; permissionID: string; response: string }[] = []
+/** Every conversation stopped mid-turn, in order. */
+const aborted: string[] = []
+/** Whether the next session asked for cannot be opened. */
+let wontOpen = false
 
 /** The event stream: nothing, until the test says something over it or cuts
  * it. */
@@ -112,6 +130,11 @@ mock.module('@opencode-ai/sdk', () => ({
   createOpencodeClient: () => ({
     session: {
       create: async () => {
+        if (opening) await opening
+        if (wontOpen) {
+          wontOpen = false
+          throw new Error('the server went away')
+        }
         const id = `ses_${++sessions}`
         // Freshly opened and never spoken in: created and last touched at the
         // same moment, which is how the real one comes back too.
@@ -148,8 +171,16 @@ mock.module('@opencode-ai/sdk', () => ({
           ? { data: onDisk.get(path.id)!.messages }
           : { error: { name: 'NotFoundError' } }
       },
-      promptAsync: async ({ path }: { path: { id: string } }) => {
+      promptAsync: async ({
+        path,
+        body,
+      }: {
+        path: { id: string }
+        body?: { model?: { providerID: string; modelID: string } }
+      }) => {
         prompted.push(path.id)
+        const model = body?.model
+        promptedOn.push(model ? `${model.providerID}/${model.modelID}` : null)
         // The real server touches a session whenever anything lands in it,
         // which is how one that was only ever opened is told from one that was
         // talked in.
@@ -157,7 +188,10 @@ mock.module('@opencode-ai/sdk', () => ({
         if (one) one.time.updated = NOW + prompted.length
         return {}
       },
-      abort: async () => ({}),
+      abort: async ({ path }: { path: { id: string } }) => {
+        aborted.push(path.id)
+        return {}
+      },
     },
     event: {
       subscribe: async () => {
@@ -203,6 +237,7 @@ beforeEach(() => {
   servers.length = 0
   onDisk.clear()
   prompted.length = 0
+  promptedOn.length = 0
   streams.length = 0
   sessions = 0
   wontStart = false
@@ -213,6 +248,8 @@ beforeEach(() => {
   letRead = null
   lookupSays = null
   refused.length = 0
+  aborted.length = 0
+  wontOpen = false
 })
 
 /** Until something is true of what she has said, or it has had long enough. */
@@ -544,6 +581,127 @@ test('a conversation that is not there any more says so, and leaves her where sh
   expect(prompted).toEqual(['ses_1', 'ses_1'])
   expect(events.some((event) => event.kind === 'picks-up')).toBe(false)
   expect(troubles().at(-1)?.gone).toBe(false)
+})
+
+test('a new conversation is a fresh session on the same server, and nothing is stopped for it', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events } = await opened()
+
+  her.begin()
+  await until('opened a new conversation', () => events.some((event) => event.kind === 'picks-up'))
+  her.ask('good morning')
+
+  // One server throughout, and nobody interrupted: the girl is fixed to the
+  // server and the folder to the client, so a new conversation is one more
+  // session on what is already standing there.
+  expect(servers).toHaveLength(1)
+  expect(aborted).toEqual([])
+  expect(prompted).toEqual(['ses_2'])
+  // Nothing said in it yet, which is the whole of where it was left.
+  expect(events.find((event) => event.kind === 'picks-up')?.line).toBe('')
+  // And the list says she is in it, so it opens marking the right row.
+  expect(events.filter((event) => event.kind === 'talks').at(-1)?.current).toBe('ses_2')
+})
+
+test('a turn still running is stopped when a new conversation is started over it', async () => {
+  const { her, events } = await opened()
+  her.ask('what colour is the sky?')
+
+  her.begin()
+  await until('opened a new conversation', () => events.some((event) => event.kind === 'picks-up'))
+  her.ask('good morning')
+
+  // Nobody asking for a new conversation is coming back for the answer to the
+  // last thing they asked, and a turn left running goes on being paid for.
+  expect(aborted).toEqual(['ses_1'])
+  expect(prompted).toEqual(['ses_1', 'ses_2'])
+})
+
+test('a sentence sent while the new conversation is being opened is left running', async () => {
+  const { her, events } = await opened()
+  her.ask('what colour is the sky?')
+
+  // The key pressed while she is working, and another sentence typed into the
+  // conversation still on screen before the server has opened the new one.
+  holdOpens()
+  her.begin()
+  her.ask('and the sea?')
+  letOpensThrough()
+  await until('opened a new conversation', () => events.some((event) => event.kind === 'picks-up'))
+
+  // The turn this was pressed over is long gone; what is running is the one
+  // that was meant for the conversation being left, and it is left to finish
+  // there.
+  expect(aborted).toEqual([])
+  expect(prompted).toEqual(['ses_1', 'ses_1'])
+})
+
+test('a tool she was waiting to be allowed is refused when a new conversation is started', async () => {
+  const { her, events, stream } = await opened()
+  stream().say({
+    type: 'permission.asked',
+    properties: { id: 'ask-1', sessionID: 'ses_1', permission: 'bash', metadata: { command: 'ls' } },
+  })
+  await until('put the question up', () => events.some((event) => event.kind === 'ask-permission'))
+
+  her.begin()
+  await until('opened a new conversation', () => events.some((event) => event.kind === 'picks-up'))
+
+  // The question is off the screen with the conversation it belongs to, and
+  // left alone it would hold that turn open on the server for ever.
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-1', response: 'reject' }])
+})
+
+test('a new conversation the server will not open leaves her in the one she was in, and says so', async () => {
+  const { her, events, troubles } = await opened()
+  her.ask('good morning')
+
+  wontOpen = true
+  her.begin()
+  await until('said it could not start one', () => troubles().length > 0)
+  her.ask('are you still there?')
+
+  // Nothing was given up until there was somewhere to go: she is still working
+  // in the conversation she was in, and that is where the next thing said goes.
+  expect(aborted).toEqual([])
+  expect(prompted).toEqual(['ses_1', 'ses_1'])
+  expect(events.some((event) => event.kind === 'picks-up')).toBe(false)
+  expect(troubles().at(-1)?.gone).toBe(false)
+})
+
+test('a new conversation is thought with whatever the last one was', async () => {
+  const { her, events } = await opened()
+  her.use('anthropic/opus')
+
+  her.begin()
+  await until('opened a new conversation', () => events.some((event) => event.kind === 'picks-up'))
+  her.ask('good morning')
+
+  // The model travels with each prompt rather than sitting on the session, so
+  // there is nothing about a new one for it to be lost to.
+  expect(promptedOn).toEqual(['anthropic/opus'])
+})
+
+test('a new conversation that could not be opened leaves one still being read back alone', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, troubles } = await opened()
+
+  // A row taken, and a new conversation asked for before the server has said
+  // what was in it.
+  holdReads()
+  her.resume('ses_old')
+  wontOpen = true
+  her.begin()
+  await until('said it could not start one', () => troubles().length > 0)
+  letReadsThrough()
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+  her.ask('and which haystack was that?')
+
+  // The pick is still the live one. Given up on here, the screen would have
+  // stayed on the conversation being left while everything said went into the
+  // one being opened — and the note would have said she was still in neither.
+  expect(events.find((event) => event.kind === 'picks-up')?.line).toBe('It was in the second haystack.')
+  expect(prompted).toEqual(['ses_old'])
 })
 
 test('a conversation is named after the first line of what was said in it', () => {

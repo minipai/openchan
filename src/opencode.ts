@@ -478,6 +478,10 @@ export class MaidSession implements Conversation {
   /** Whether a turn is still open, so a stream that goes quiet twice only
    * closes it once. */
   private working = false
+  /** How many turns have been started in her, ever. Only the difference
+   * between two moments is worth anything, and there is one thing it is
+   * asked: whether the turn running now is the one that was running then. */
+  private turns = 0
 
   /** What kind of part each id turned out to be, and the words held for it. */
   private parts = new Map<string, { kind: string; held: string }>()
@@ -874,6 +878,7 @@ export class MaidSession implements Conversation {
       void this.name(this.client, this.sessionId, prompt, mine)
     }
     this.working = true
+    this.turns++
     this.said = ''
     this.saying = null
     this.wrote = false
@@ -950,16 +955,96 @@ export class MaidSession implements Conversation {
     // meant for the conversation that was picked, and posting it into the one
     // being left would lose it and her answer to it with no sign of either.
     this.sessionId = id
-    // Everything half-said goes with the conversation it was half-said in: the
-    // parts held for it belong to a turn this window is no longer watching.
+    this.forget()
+    if (before) this.letGo(client, before)
+    void this.pickUp(client, id, before, ++this.picking, this.opening)
+  }
+
+  /**
+   * A new conversation, opened on the same server.
+   *
+   * Nothing is torn down here either. The girl is fixed to the server and the
+   * folder to the client, and the model travels with each prompt — so a new
+   * conversation is one more session on a server that already holds every
+   * session this folder has ever had, and all three of them come along
+   * untouched.
+   *
+   * Whatever she was in the middle of is stopped on the way out, which is where
+   * this parts company with picking an earlier conversation up: that answer is
+   * still worth having when the conversation is opened again, and this one is
+   * being walked away from — left running, it would go on being paid for and
+   * arrive in a conversation nobody is going to read.
+   */
+  begin() {
+    const client = this.client
+    if (!client) return
+    // Which turn is being stopped, if one is: the one that was running when the
+    // key was pressed, and not whatever is running when the server answers. A
+    // sentence sent in between was meant for the conversation still on screen,
+    // and the turn it starts is not this one's to kill.
+    void this.openFresh(client, this.working ? this.turns : null, this.picking, this.opening)
+  }
+
+  /**
+   * The new conversation, opened, and only then moved into.
+   *
+   * The other way round, the screen would be cleared over a session that does
+   * not exist yet: for as long as there is nowhere else to be, a sentence typed
+   * belongs to the conversation that is on screen, and that is still this one.
+   * So a server that will not open one leaves everything exactly as it was, and
+   * says so.
+   */
+  private async openFresh(client: OpencodeClient, stopping: number | null, mine: number, attempt: number) {
+    const opened = await client.session.create({}).catch(() => null)
+    // Or an earlier conversation was taken off the list over the top of this,
+    // and the conversation being opened here is one nobody asked for any more.
+    if (this.spent(attempt) || mine !== this.picking) return
+    const id = opened?.data?.id
+    if (!id) {
+      // Nothing has been given up for this: a conversation still being read
+      // back is still the one she is being moved into, and this says she is
+      // where she is because she is.
+      return this.raise({
+        title: 'A new conversation could not be started',
+        body: 'The server behind her would not open one. She is still in the one she was already in, and what is said next goes into that.',
+        detail: opened?.error ? said(opened.error) : 'the server did not answer',
+        gone: false,
+      })
+    }
+    // Only now is this the conversation being opened, and any other still
+    // being read back given up on. Claimed here rather than at the key press,
+    // so that one that could not be opened leaves that one alone.
+    this.picking++
+    const before = this.sessionId
+    if (before) {
+      // Her turn is stopped where it stands, and whatever it was waiting on is
+      // refused: after this there is nobody left who could answer it, and a
+      // question nobody answers holds that turn open on the server for ever.
+      if (stopping !== null && stopping === this.turns) {
+        void client.session.abort({ path: { id: before } }).catch(() => null)
+      }
+      this.letGo(client, before)
+    }
+    this.sessionId = id
+    // Named by the first thing said in it, the same as the one the window
+    // opened with.
+    this.unnamed = id
+    this.forget()
+    // Nothing said in it yet, which is the whole of where it was left.
+    this.onEvent({ kind: 'picks-up', line: '', report: null })
+    await this.tellTalks(client, attempt)
+  }
+
+  /** Everything half-said, let go of: the words of a turn this window has
+   * stopped watching, and what they were being read as. They belong to the
+   * conversation they were being said into, and she is not in it any more. */
+  private forget() {
     this.working = false
     this.said = ''
     this.saying = null
     this.wrote = false
     this.parts.clear()
     this.narrated.clear()
-    if (before) this.letGo(client, before)
-    void this.pickUp(client, id, before, ++this.picking, this.opening)
   }
 
   /**

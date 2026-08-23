@@ -66,6 +66,17 @@ const A_BREAK = '↵'
 export const LINE_HOLDS = 100_000
 
 /**
+ * The row on the list of conversations that is not one of them: taking it
+ * starts a new one instead of going back into an old one. Every other row's id
+ * is a session id, so nothing can be mistaken for it.
+ *
+ * At the top of the list rather than the bottom, unlike the row that asks for a
+ * folder: the folders are eight at most, and this is every conversation the
+ * folder has ever had — a row under those is a row to be scrolled to.
+ */
+const A_NEW_ONE: Choice = { id: 'a new conversation', label: 'Start a new conversation' }
+
+/**
  * What can stand over the scene: the keyboard help, one of the four lists, the
  * line a folder is typed out on, or what she wrote this turn.
  *
@@ -226,6 +237,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     swapTo,
     moveTo,
     resumeTo,
+    startFresh,
     retry,
     dismiss,
   } = useMaid(openMaid)
@@ -413,6 +425,11 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         // share the letters.
         if (standing !== 'talks') setNarrowedTo('')
         return setOver('talks')
+      // Whatever is standing over the scene goes with the conversation it was
+      // opened in front of — including the list this can also be taken off.
+      case 'fresh':
+        setOver(null)
+        return startFresh()
       case 'who':
         return setOver('shift')
       case 'where':
@@ -503,9 +520,15 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         : picking === 'talks'
           ? {
               title: 'What you talked about before',
-              items: rows.current,
+              // The one row that is not a conversation starts one. It is not
+              // held with the others — the rows are frozen while the list is
+              // open and this one has nothing to freeze — and it is not there
+              // at all until they are: a list with one row that only offers
+              // itself is not a list, and everything the list knows how to do
+              // it works out from having rows.
+              items: rows.current.length ? [A_NEW_ONE, ...rows.current] : [],
               chosen: scene.talk,
-              take: resumeTo,
+              take: (id: string) => (id === A_NEW_ONE.id ? startFresh() : resumeTo(id)),
               narrowing: { typed: narrowedTo, onType: setNarrowedTo },
             }
           : picking === 'shift'

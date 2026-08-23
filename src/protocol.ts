@@ -131,8 +131,9 @@ export type BridgeEvent =
    * picked up — asked for once rather than when the list is opened, because a
    * list that fetches its own contents opens onto an empty box. */
   | { kind: 'talks'; talks: Talk[]; current: string }
-  /** An earlier conversation, picked up: the last thing she said in it, and
-   * the page under it if she wrote one.
+  /** Another conversation on screen: the last thing she said in it, and the
+   * page under it if she wrote one — nothing at all, for one that has just
+   * been started.
    *
    * It replaces the scene rather than adding to it. Everything on screen
    * belonged to the conversation being left — her line, what she was in the
@@ -152,7 +153,7 @@ export type BridgeEvent =
 /**
  * Her brain, from the face's side of the bridge.
  *
- * Ten things is all the window ever does to her, and it does them the same
+ * Eleven things is all the window ever does to her, and it does them the same
  * way whichever agent is underneath — so this is the whole of what something
  * has to be able to do to stand in for opencode.
  */
@@ -189,6 +190,20 @@ export interface Conversation {
    * The one she is already in is dropped rather than reopened.
    */
   resume(id: string): void
+  /**
+   * A new conversation, in the same folder, with the same girl and the same
+   * model.
+   *
+   * The one thing the list of earlier conversations cannot otherwise get back
+   * to: the blank conversation a window opens with drops off that list the
+   * moment it is left, because nothing was ever said in it.
+   *
+   * Whatever she is in the middle of is stopped rather than left running, which
+   * is where this parts company with picking an earlier conversation up: that
+   * answer is still worth having when the conversation is opened again, and
+   * this one is being walked away from.
+   */
+  begin(): void
   /** Open her again, after something took the session down. What is on screen
    * is cleared as the attempt starts — pressing it has to look like something
    * happening — and a new trouble raised if this one does not get through

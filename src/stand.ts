@@ -31,6 +31,8 @@ export class Stand implements Conversation {
   retries = 0
   /** Every earlier conversation she has been sent back into, in order. */
   readonly resumed: string[] = []
+  /** How many new conversations have been started from the window. */
+  begun = 0
   private model = MODELS[0]!.id
   private talk = TALKS[0]!.id
   constructor(
@@ -81,6 +83,18 @@ export class Stand implements Conversation {
     this.talk = id
     this.say({ kind: 'talks', talks: TALKS, current: id })
     this.say({ kind: 'picks-up', line: `we left off on ${found.title}`, report: null })
+  }
+  /** A new conversation, the way the real one does it: the list says the one
+   * she is in now, and the scene is replaced with where it was left — which for
+   * one nothing has been said in is nothing. */
+  begin() {
+    this.talk = `ses_new_${++this.begun}`
+    this.say({
+      kind: 'talks',
+      talks: [{ id: this.talk, title: 'Nothing said in it yet', when: Date.now() }, ...TALKS],
+      current: this.talk,
+    })
+    this.say({ kind: 'picks-up', line: '', report: null })
   }
   answer(askId: string, allow: boolean) {
     if (this.waiting.delete(askId)) this.answered.push({ askId, allow })
