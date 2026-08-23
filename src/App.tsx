@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
@@ -17,6 +17,52 @@ import { paletteOver } from './theme'
 
 /** The strip the window leaves under the dialogue box. */
 const UNDER_THE_BOX = 1
+
+/**
+ * What can stand over the scene: the keyboard help, one of the three lists, the
+ * line a folder is typed out on, or what she wrote this turn.
+ *
+ * One value rather than a flag each, because only ever one of them is up. Held
+ * apart, that rule had to be spelled out by every key that opened one — and
+ * forgetting a single line left two of them on screen, both answering Enter.
+ */
+type Over = 'keys' | 'models' | 'shift' | 'folder' | 'path' | 'report' | null
+
+/**
+ * The frame whatever is over the scene stands in: the whole window, with the
+ * one thing in the middle of it.
+ *
+ * Middle by the terminal's arithmetic rather than a guessed offset — these are
+ * different heights depending on what she is in the middle of, and a guess put
+ * the keys over the question they were opened to explain.
+ *
+ * Over the box she speaks from and over her; nothing says which of these is
+ * over which, because there is never a second one of them on screen to be over.
+ */
+function OverTheScene({
+  width,
+  height,
+  children,
+}: {
+  width: number
+  height: number
+  children: ReactNode
+}) {
+  return (
+    <box
+      position="absolute"
+      top={0}
+      left={0}
+      width={width}
+      height={height}
+      alignItems="center"
+      justifyContent="center"
+      zIndex={8}
+    >
+      {children}
+    </box>
+  )
+}
 
 /**
  * Everything the box is besides her line and the command she is asking to run:
@@ -92,34 +138,34 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // Ctrl-B: draw her out of half-block characters even where the terminal
   // could take real pixels. It is the rougher picture, and it is a look.
   const [blocks, setBlocks] = useState(false)
-  const [keysUp, setKeysUp] = useState(false)
-  // Ctrl-P and Ctrl-G: what she could think with, and which of them is standing
-  // there. What each list is picked from is held elsewhere, so all the window
-  // keeps is which of them is open.
-  const [picking, setPicking] = useState<'models' | 'shift' | 'folder' | null>(null)
-  // The one row of the folder list that is not a folder, taken: the rows go
-  // away and a line to type a path on takes their place, along with whatever
-  // was wrong with the last one typed.
-  const [typingPath, setTypingPath] = useState(false)
+  // The one thing over the scene, whichever it is. What is in each of them is
+  // held elsewhere — the rows of a list, the page she wrote — so all the window
+  // keeps is which one is open, and opening one is what puts away the last.
+  const [over, setOver] = useState<Over>(null)
+  // Whatever was wrong with the last folder typed out, kept beside the line it
+  // is typed on.
   const [trouble, setTrouble] = useState<string | null>(null)
-  // Ctrl-R: what she wrote this turn, open over the scene. What is in it is the
-  // scene's — this is only whether it is being looked at.
-  const [reading, setReading] = useState(false)
-  // Only ever open over something: the next thing she is asked takes the report
-  // with it, and a reader left standing over nothing would go on swallowing ESC
-  // with no page on screen to explain why.
-  const open = reading && scene.report !== null
   // Which question has been opened up, rather than whether one is: the next
   // thing she asks for is a fresh question and starts shut, however the last
   // one was left.
   const [opened, setOpened] = useState<string | null>(null)
+  // What she wrote is the one of them that can be taken out from under itself:
+  // the next thing she is asked takes the report with it, and a reader left
+  // standing over nothing would go on swallowing ESC with no page on screen to
+  // explain why. So what is standing there is not quite what was opened.
+  const standing: Over = over === 'report' && scene.report === null ? null : over
+  // Which list it is, when it is one of them. The frame, the keys and putting
+  // it away are the same for all three — only the rows and where a chosen one
+  // goes differ.
+  const picking =
+    standing === 'models' || standing === 'shift' || standing === 'folder' ? standing : null
 
   const asked = scene.permission
   const where = {
-    up: keysUp,
+    up: standing === 'keys',
     picking: picking !== null,
-    path: typingPath,
-    reading: open,
+    path: standing === 'path',
+    reading: standing === 'report',
     hasReport: scene.report !== null,
     isWorking: scene.isWorking,
     asked: asked !== null,
@@ -142,16 +188,9 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     if (does && takes(does)) key.preventDefault()
     switch (does) {
       case 'keys':
-        // One thing over the scene at a time: a list left open underneath would
-        // go on taking Enter behind these keys, and swap what she thinks with
-        // while the master is reading about it.
-        setPicking(null)
-        setTypingPath(false)
-        setReading(false)
-        return setKeysUp(true)
+        return setOver('keys')
       case 'close':
-        setReading(false)
-        return setKeysUp(false)
+        return setOver(null)
       case 'allow':
         return answer(asked!.askId, true)
       case 'refuse':
@@ -167,33 +206,18 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
       case 'blocks':
         return setBlocks((was) => !was)
       case 'models':
-        setKeysUp(false)
-        setReading(false)
-        setTypingPath(false)
-        return setPicking('models')
+        return setOver('models')
       case 'who':
-        setKeysUp(false)
-        setReading(false)
-        setTypingPath(false)
-        return setPicking('shift')
+        return setOver('shift')
       case 'where':
-        setKeysUp(false)
-        setReading(false)
-        setTypingPath(false)
-        return setPicking('folder')
-      // The same one-thing-at-a-time rule, and nothing is lost by it: what she
-      // wrote waits on the scene whether or not it is being looked at.
+        return setOver('folder')
       case 'report':
-        setKeysUp(false)
-        setPicking(null)
-        setTypingPath(false)
-        return setReading(true)
+        return setOver('report')
       // Nothing else happens: what she thinks with, who is standing there and
       // where she works are only ever changed by taking a row off the list — or,
       // for a folder she has never been in, by typing it out in full.
       case 'cancel':
-        setTypingPath(false)
-        return setPicking(null)
+        return setOver(null)
     }
   })
 
@@ -205,8 +229,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   )
 
   // What the list open right now is a list of, and nothing at all when none is
-  // open. The frame, the keys and putting it away are the same either way —
-  // only the rows and where a chosen one goes differ.
+  // open.
   const list =
     picking === null
       ? null
@@ -224,7 +247,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
               take: (id: string) => {
                 if (id === TYPE_A_PATH) {
                   setTrouble(null)
-                  return setTypingPath(true)
+                  return setOver('path')
                 }
                 // A row written down for a folder that has been moved or
                 // deleted since. Closing the list on it would look exactly
@@ -233,7 +256,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
                 const why = troubleWith(id)
                 setTrouble(why)
                 if (why === null) moveTo(id)
-                else setTypingPath(true)
+                else setOver('path')
               },
             }
 
@@ -295,7 +318,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
               <box flexDirection="row" gap={1}>
                 <text fg={theme.primary}>›</text>
                 <input
-                  focused={!keysUp && picking === null && !typingPath && !open}
+                  focused={standing === null}
                   value={typed}
                   placeholder={invitation(scene)}
                   flexGrow={1}
@@ -313,16 +336,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
       {/* Over the box rather than beside it, and above her: a list is the thing
           being answered while it is open. */}
       {list && (
-        <box
-          position="absolute"
-          top={0}
-          left={0}
-          width={width}
-          height={height}
-          alignItems="center"
-          justifyContent="center"
-          zIndex={8}
-        >
+        <OverTheScene width={width} height={height}>
           <Picker
             // One list per thing being picked: the other key opens the other
             // list while this one is up, and a list that stayed put would keep
@@ -333,27 +347,21 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
             items={list.items}
             chosen={list.chosen}
             width={Math.min(60, width - 6)}
+            // Off the list once the row has been taken — unless taking it
+            // put something else there: the one row that is not a folder asks
+            // for one instead, and it is the line to type it on that stays.
             onPick={(id) => {
               list.take(id)
-              setPicking(null)
+              setOver((was) => (was === picking ? null : was))
             }}
           />
-        </box>
+        </OverTheScene>
       )}
 
       {/* Where the list was, because it is the same list one step further in:
           the rows have been put away and the folder is being written out. */}
-      {typingPath && (
-        <box
-          position="absolute"
-          top={0}
-          left={0}
-          width={width}
-          height={height}
-          alignItems="center"
-          justifyContent="center"
-          zIndex={8}
-        >
+      {standing === 'path' && (
+        <OverTheScene width={width} height={height}>
           <PathBox
             theme={theme}
             from={shortened(folder)}
@@ -368,53 +376,31 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
               setTrouble(why)
               if (why !== null) return
               moveTo(going)
-              setTypingPath(false)
+              setOver(null)
             }}
           />
-        </box>
+        </OverTheScene>
       )}
 
       {/* Nearly the whole window: a report is as long as it is, and the point
-          of moving it off her line is to give it room. Under the keys overlay
-          rather than over it — that one is the sheet of paper held up in front
-          of everything. */}
-      {open && scene.report && (
-        <box
-          position="absolute"
-          top={0}
-          left={0}
-          width={width}
-          height={height}
-          alignItems="center"
-          justifyContent="center"
-          zIndex={8}
-        >
+          of moving it off her line is to give it room. */}
+      {standing === 'report' && scene.report && (
+        <OverTheScene width={width} height={height}>
           <ReportReader
             theme={theme}
             report={scene.report}
             width={Math.min(90, width - 6)}
             height={Math.min(height, Math.max(9, height - 6))}
           />
-        </box>
+        </OverTheScene>
       )}
 
-      {/* Middle of the screen, and let the terminal work out where that is:
-          the list is a different height depending on what she is in the middle
-          of, and a guessed offset put it over the question it was opened to
-          explain. */}
-      {keysUp && (
-        <box
-          position="absolute"
-          top={0}
-          left={0}
-          width={width}
-          height={height}
-          alignItems="center"
-          justifyContent="center"
-          zIndex={10}
-        >
+      {/* A sheet of paper held up in front of everything: what is underneath is
+          still waiting and still answerable, and these say so. */}
+      {standing === 'keys' && (
+        <OverTheScene width={width} height={height}>
           <KeysOverlay theme={theme} where={where} width={Math.min(46, width - 6)} />
-        </box>
+        </OverTheScene>
       )}
     </box>
   )
