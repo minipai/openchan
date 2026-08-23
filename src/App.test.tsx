@@ -118,10 +118,17 @@ async function onScreen() {
      * that opens her again. */
     press: (key: string) => settle(() => keys.pressKey(key)),
     type: (text: string) => settle(() => keys.typeText(text)),
+    /** Put in all at once, the way a terminal hands over a paste it has
+     * wrapped: one event carrying the whole of it. */
+    paste: (text: string) => settle(() => keys.pasteBracketedText(text)),
+    /** Put in all at once by a terminal that does not wrap pastes: the bytes
+     * arrive as one chunk and are read as keys, a newline among them as
+     * Enter. */
+    drop: (text: string) => settle(() => keys.pressKeys([text])),
     enter: () => settle(() => keys.pressEnter()),
     escape: () => settle(() => keys.pressEscape()),
     tab: () => settle(() => keys.pressTab()),
-    arrow: (way: 'up' | 'down') => settle(() => keys.pressArrow(way)),
+    arrow: (way: 'up' | 'down' | 'left') => settle(() => keys.pressArrow(way)),
   }
 }
 
@@ -157,6 +164,46 @@ test('a sentence typed and sent reaches her, and she is put to work', async () =
   expect(frame()).toContain('is thinking…')
   expect(frame()).toContain('ESC stop her')
   expect(frame()).not.toContain('good morning')
+})
+
+test('a sentence pasted in is sent by Enter, the same as one typed', async () => {
+  const { her, wakeUp, paste, enter, frame } = await onScreen()
+  await wakeUp()
+
+  await paste('good morning')
+  await enter()
+
+  expect(her.asked).toEqual(['good morning'])
+  expect(frame()).not.toContain('good morning')
+})
+
+test('a paste landing in the middle of what was typed keeps both', async () => {
+  const { her, wakeUp, type, paste, arrow, enter } = await onScreen()
+  await wakeUp()
+
+  await type('good evening')
+  for (let i = 0; i < 'evening'.length; i++) await arrow('left')
+  await paste('morning, not ')
+  await enter()
+
+  expect(her.asked).toEqual(['good morning, not evening'])
+})
+
+test('a sentence dropped in with its newline, by a terminal that does not wrap pastes, is sent', async () => {
+  const { her, wakeUp, drop, type, enter, frame } = await onScreen()
+  await wakeUp()
+
+  // Every byte of it lands before the window has drawn once: the sentence and
+  // the Enter at the end of it in the same breath.
+  await drop('good morning\n')
+
+  expect(her.asked).toEqual(['good morning'])
+  // And the line is empty for the next thing, not still holding a sentence she
+  // already has.
+  expect(frame()).not.toContain('good morning')
+  await type('and again')
+  await enter()
+  expect(her.asked).toEqual(['good morning', 'and again'])
 })
 
 test('ESC stops her, and the line is hers to be spoken to on again', async () => {
@@ -225,6 +272,25 @@ test('a tool she is waiting to be allowed is let her from the keyboard, and the 
   expect(frame()).not.toContain('She wants to use bash')
   // And she is still at it: answering the question is not the end of the turn.
   expect(frame()).toContain('ESC stop her')
+})
+
+test('a half-written sentence is still on the line once her question has been answered', async () => {
+  const { her, wakeUp, type, enter, raise, press, frame } = await onScreen()
+  await wakeUp()
+  await type('tidy up')
+  await enter()
+
+  // Typed ahead while she works, and then her question takes the line's place
+  // in the box. The line comes back with the sentence on it, not empty.
+  await type('half written')
+  await raise({ kind: 'ask-permission', askId: 'ask-1', toolName: 'bash', summary: 'ls', detail: '' })
+  expect(frame()).not.toContain('half written')
+  await press('y')
+
+  expect(frame()).toContain('half written')
+  await type(' and sent')
+  await enter()
+  expect(her.asked).toEqual(['tidy up', 'half written and sent'])
 })
 
 test('a tool she is waiting to be allowed is refused from the keyboard', async () => {

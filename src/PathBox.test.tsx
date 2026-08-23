@@ -39,6 +39,17 @@ test('a path typed out and taken is handed over as it was typed', async () => {
   expect(gone).toEqual(['~/Dev/claudecafe'])
 })
 
+test('a path dropped in with its newline, by a terminal that does not wrap pastes, is handed over', async () => {
+  const { gone, setup } = await show()
+
+  // The path and its Enter in one chunk, every byte of it taken in before the
+  // box has rendered once.
+  setup.mockInput.pressKeys(['~/Dev/claudecafe\n'])
+  await setup.flush()
+
+  expect(gone).toEqual(['~/Dev/claudecafe'])
+})
+
 test('a path written out and then thought better of hands nothing back', async () => {
   // Putting it away is the window's — the box is simply not drawn any more — so
   // what matters here is that escape is not a way of taking what is in it.
