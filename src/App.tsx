@@ -191,6 +191,10 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // Whatever was wrong with the last folder typed out, kept beside the line it
   // is typed on.
   const [trouble, setTrouble] = useState<string | null>(null)
+  // What the list of models has been narrowed to by typing at it. Held here
+  // rather than by the list, because ESC is the window's key and what it does
+  // depends on whether there is anything typed to clear.
+  const [narrowedTo, setNarrowedTo] = useState('')
   // Which question has been opened up, rather than whether one is: the next
   // thing she asks for is a fresh question and starts shut, however the last
   // one was left.
@@ -266,6 +270,13 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     up: standing === 'keys',
     picking: picking !== null || answering,
     ticking: answering && question.multiple,
+    // The one list that can be typed at: hundreds of models, as against four
+    // names on either of the others — and only once there are rows to narrow.
+    // A list with nothing in it takes no letters, and a key nothing takes must
+    // go on meaning what it meant: opened while she is down, r is still the
+    // one way to open her again.
+    narrows: picking === 'models' && scene.models.length > 0,
+    narrowed: picking === 'models' && narrowedTo !== '',
     path: standing === 'path',
     reading: standing === 'report',
     hasReport: scene.report !== null,
@@ -309,6 +320,9 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
       case 'blocks':
         return setBlocks((was) => !was)
       case 'models':
+        // Opened afresh: what was typed at it last time is not a question
+        // anyone is still asking.
+        if (standing !== 'models') setNarrowedTo('')
         return setOver('models')
       case 'who':
         return setOver('shift')
@@ -322,6 +336,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         return copy(scene.line, 'her line')
       case 'copy-page':
         return copy(scene.report!.body, 'the page')
+      case 'clear':
+        return setNarrowedTo('')
       // Nothing else happens: what she thinks with, who is standing there and
       // where she works are only ever changed by taking a row off the list — or,
       // for a folder she has never been in, by typing it out in full. Her own
@@ -348,13 +364,20 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     picking === null
       ? null
       : picking === 'models'
-        ? { title: 'What she thinks with', items: scene.models, chosen: scene.model, take: use }
+        ? {
+            title: 'What she thinks with',
+            items: scene.models,
+            chosen: scene.model,
+            take: use,
+            narrowing: { typed: narrowedTo, onType: setNarrowedTo },
+          }
         : picking === 'shift'
-          ? { title: 'Who is on shift', items: shifts, chosen: nextShift.id, take: swapTo }
+          ? { title: 'Who is on shift', items: shifts, chosen: nextShift.id, take: swapTo, narrowing: undefined }
           : {
               title: 'Where she works',
               items: folderRows(folder, been),
               chosen: folder,
+              narrowing: undefined,
               // The one row that is not a folder asks for one instead: the
               // folder wanted is very often one she has never been in, and the
               // list can only offer the ones she has.
@@ -461,7 +484,9 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
             title={list.title}
             items={list.items}
             chosen={list.chosen}
+            narrowing={list.narrowing}
             width={Math.min(60, width - 6)}
+            room={height}
             // Off the list once the row has been taken — unless taking it
             // put something else there: the one row that is not a folder asks
             // for one instead, and it is the line to type it on that stays.
@@ -491,6 +516,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
             multiple={question.multiple}
             focused={answering}
             width={Math.min(60, width - 6)}
+            room={height}
             onPick={(labels) => {
               const all = [...answers, labels]
               // The last one answered hands the whole of it back, and what

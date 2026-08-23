@@ -9,9 +9,10 @@
  */
 
 /** What pressing it does. Not all of them are the window's to do: `send` is the
- * input's own, moving through a list and choosing off it belong to the list,
- * and `leave` belongs to the renderer, which is the one that knows how to put
- * the terminal back. They are here to be listed. */
+ * input's own, moving through a list and choosing off it belong to the list —
+ * and so does narrowing it, which is every letter typed at it rather than one
+ * key — and `leave` belongs to the renderer, which is the one that knows how to
+ * put the terminal back. They are here to be listed. */
 export type Does =
   | 'send'
   | 'stop'
@@ -32,6 +33,8 @@ export type Does =
   | 'next'
   | 'choose'
   | 'tick'
+  | 'narrow'
+  | 'clear'
   | 'go'
   | 'cancel'
   | 'retry'
@@ -45,7 +48,7 @@ export type Does =
  * open list and an open report take the arrows, the list takes Enter, and the
  * renderer takes Ctrl-C.
  */
-const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'tick', 'go', 'leave', 'scroll-up', 'scroll-down']
+const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'tick', 'narrow', 'go', 'leave', 'scroll-up', 'scroll-down']
 
 /** Whether pressing it is the window's own to act on — and so to keep from
  * reaching what is drawn under it. */
@@ -55,9 +58,10 @@ export const takes = (does: Does) => !THEIRS.includes(does)
  * while she has said something, while she is working, while she is waiting to
  * be allowed, while something is in the way of her working at all — with or
  * without her session left standing — while a list is open, while the open
- * list takes several rows rather than one, while a path is being typed into
- * one, while there is something she wrote to read, while it is open, or while
- * these keys are on screen. */
+ * list takes several rows rather than one, while the open list can be narrowed
+ * by typing at it, while it has been, while a path is being typed into one,
+ * while there is something she wrote to read, while it is open, or while these
+ * keys are on screen. */
 type When =
   | 'always'
   | 'typing'
@@ -68,6 +72,8 @@ type When =
   | 'troubled'
   | 'picking'
   | 'ticking'
+  | 'narrows'
+  | 'narrowed'
   | 'path'
   | 'reported'
   | 'reading'
@@ -93,6 +99,12 @@ export type Where = {
   /** Whether the open list takes several rows rather than one: her question,
    * when she has said more than one answer will do. */
   ticking: boolean
+  /** Whether the open list can be narrowed by typing at it: what she thinks
+   * with, which runs to hundreds of rows. Letters are letters there. */
+  narrows: boolean
+  /** Whether something has been typed at it — so there is something for ESC
+   * to clear before it puts the list away. */
+  narrowed: boolean
   /** Whether a folder is being typed out rather than picked off a list. */
   path: boolean
   /** Whether what she wrote is open and being read. */
@@ -133,6 +145,12 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'path', press: 'return', does: 'go', says: 'work there' },
   { when: 'path', press: 'escape', does: 'cancel', says: 'never mind' },
 
+  // A list that can be typed at is the same list with every letter on it. No
+  // key is called `type`, so nothing pressed ever comes to this — the list
+  // takes the letters itself — but it is the list's to print, and the only
+  // place it can be written down is here with the rest.
+  { when: 'narrows', press: 'type', does: 'narrow', says: 'to narrow it' },
+
   // A list that takes several rows is the same list with one more key on it:
   // the one that ticks a row without leaving, so that Enter can mean done. It
   // is a question she asked, which is why Enter says what it says — "use it"
@@ -143,6 +161,11 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'picking', press: 'up', does: 'previous', says: 'the one above' },
   { when: 'picking', press: 'down', does: 'next', says: 'the one below' },
   { when: 'picking', press: 'return', does: 'choose', says: 'use it' },
+  // Once something has been typed at the list, ESC takes that back first and
+  // the list away second: the rows that went away are the nearer thing to
+  // undo. Next to the ESC it stands in for, so the list prints them in the
+  // same spot whichever one it is.
+  { when: 'narrowed', press: 'escape', does: 'clear', says: 'start over' },
   { when: 'picking', press: 'escape', does: 'cancel', says: 'never mind' },
 
   // Something in the way takes the box the line she is spoken to on lives in,
@@ -184,6 +207,8 @@ const HEADINGS: Record<When, string> = {
   reading: 'While what she wrote is open',
   picking: 'While a list is open',
   ticking: 'While a list is open',
+  narrows: 'While a list is open',
+  narrowed: 'While a list is open',
   path: 'While a path is being typed',
   gone: 'While she cannot be reached',
   troubled: 'While something is in the way',
@@ -217,8 +242,12 @@ const holds = (when: When, where: Where) =>
   (when === 'reading' && where.reading) ||
   (when === 'picking' && where.picking) ||
   (when === 'ticking' && where.picking && where.ticking) ||
+  (when === 'narrows' && where.picking && where.narrows) ||
+  (when === 'narrowed' && where.picking && where.narrowed) ||
   (when === 'path' && where.path) ||
-  (when === 'gone' && where.trouble === 'gone') ||
+  // Not while a list that takes letters is open: r is a letter, and the list
+  // is what is being typed at.
+  (when === 'gone' && where.trouble === 'gone' && !where.narrows) ||
   (when === 'troubled' && where.trouble === 'stuck') ||
   // Not while it is already open: the key that opens it is not worth offering
   // from inside it. Something in the way does not take it away — what she wrote
@@ -239,12 +268,12 @@ const holds = (when: When, where: Where) =>
     !where.path &&
     !where.reading &&
     where.trouble === null) ||
-  // Not while a path is being written out: y and n are letters in a path, and a
-  // folder under `~/Sync` would otherwise answer her question halfway through
-  // being typed. And her question is behind the note the same way the line she
-  // is spoken to on is: still open on the server, not on screen, and so not
-  // answerable until the note is put away.
-  (when === 'asked' && where.asked && !where.path && where.trouble === null) ||
+  // Not while a path is being written out, or a list is being typed at: y and
+  // n are letters in a path, and a folder under `~/Sync` would otherwise answer
+  // her question halfway through being typed. And her question is behind the
+  // note the same way the line she is spoken to on is: still open on the
+  // server, not on screen, and so not answerable until the note is put away.
+  (when === 'asked' && where.asked && !where.path && !where.narrows && where.trouble === null) ||
   (when === 'working' && where.isWorking && !where.asked)
 
 /**
@@ -262,6 +291,8 @@ export function keysNow(where: Where): Group[] {
     'up',
     'reading',
     'path',
+    'narrows',
+    'narrowed',
     'ticking',
     'picking',
     'gone',
@@ -310,15 +341,23 @@ const ARROWS: Record<string, string> = { up: '↑', down: '↓' }
 /**
  * What an open list answers to, for the list to print along its own bottom
  * edge — with the keys for ticking several rows in front, for a list that
- * takes several, and Enter meaning what it means there rather than twice.
+ * takes several, and Enter meaning what it means there rather than twice; and
+ * for a list that can be typed at, that it can be, with ESC meaning what it
+ * means once something has been.
  *
  * It prints them itself because the overlay never gets the chance to: bringing
  * the overlay up puts the list away, so the two are never on screen together
  * and the list's keys would otherwise be written down nowhere anybody looks.
  */
-export function listKeys(ticking = false): Shortcut[] {
+export function listKeys(list: { ticking?: boolean; narrows?: boolean; narrowed?: boolean } = {}): Shortcut[] {
   const taken = new Set<string>()
-  return KEYS.filter((one) => one.when === 'picking' || (ticking && one.when === 'ticking'))
+  return KEYS.filter(
+    (one) =>
+      one.when === 'picking' ||
+      (list.ticking && one.when === 'ticking') ||
+      (list.narrows && one.when === 'narrows') ||
+      (list.narrowed && one.when === 'narrowed'),
+  )
     .filter((one) => !taken.has(one.press) && taken.add(one.press))
     .map(({ when: _, ...key }) => key)
 }
@@ -355,7 +394,9 @@ export function shownAs(press: string): string {
           ? 'Tab'
           : name === 'space'
             ? 'Space'
-            : ARROWS[name] ?? name
+            : name === 'type'
+              ? 'Type'
+              : ARROWS[name] ?? name
   return held ? `Ctrl-${shown.toUpperCase()}` : shown
 }
 
