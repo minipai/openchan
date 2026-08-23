@@ -18,3 +18,25 @@ export type BridgeEvent =
    * on this screen and swallowing it would leave her mute for no visible
    * reason. */
   | { kind: 'done'; error?: string }
+
+/**
+ * Her brain, from the face's side of the bridge.
+ *
+ * Five things is all the window ever does to her, and it does them the same way
+ * whichever agent is underneath — so this is the whole of what something has to
+ * be able to do to stand in for opencode.
+ */
+export interface Conversation {
+  /** Open it. She says nothing until this has settled. */
+  start(): Promise<void>
+  ask(prompt: string): void
+  /** An answer to an `ask-permission`. An id she is no longer waiting on is
+   * dropped rather than sent. */
+  answer(askId: string, allow: boolean): void
+  /** Stop her, mid-turn. */
+  interrupt(): void
+  close(): void
+}
+
+/** How one is opened: hand her the way to speak, and she is yours. */
+export type OpenConversation = (say: (event: BridgeEvent) => void) => Conversation
