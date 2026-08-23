@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run src/main.tsx",
+    "test": "bun test",
     "check": "tsc --noEmit"
   },
   "dependencies": {
@@ -14,6 +15,7 @@
     "react": "^19.1.0"
   },
   "devDependencies": {
+    "@types/bun": "^1.4.0",
     "@types/node": "^26.2.0",
     "@types/react": "^19.1.0",
     "typescript": "^5.7.0"

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import net from 'node:net'
 import { createOpencode } from '@opencode-ai/sdk'
 import { faceFor, type Expression } from './expressions'
-import type { BridgeEvent } from './protocol'
+import type { BridgeEvent, Conversation } from './protocol'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const project = path.resolve(here, '..')
@@ -133,7 +133,7 @@ function readMood(raw: string) {
  * so anything that arrives before its part is announced is held rather than
  * spoken — otherwise she reads her own private notes out loud.
  */
-export class MaidSession {
+export class MaidSession implements Conversation {
   private client: Awaited<ReturnType<typeof createOpencode>>['client'] | null = null
   private server: Awaited<ReturnType<typeof createOpencode>>['server'] | null = null
   private sessionId: string | null = null
