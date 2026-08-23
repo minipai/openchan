@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { thinkingWith } from './model'
-import type { Model } from '../protocol'
+import type { Model } from '../../between/protocol'
 
 /** What she could think with, as an agent lists them: the label carries
  * whoever serves it as well as the model, which is what makes it long. */

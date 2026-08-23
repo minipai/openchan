@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from 'bun:test'
 import { testRender } from '@opentui/react/test-utils'
-import { readingKeys, shownAs } from './keys'
+import { readingKeys, shownAs } from '../keys'
 import { ReportReader } from './ReportReader'
-import type { Report } from '../scene'
-import { paletteOver } from './theme'
+import type { Report } from '../../between/scene'
+import { paletteOver } from '../theme'
 
 /** Long enough not to fit the page it is drawn on, which is the whole reason
  * this frame exists. */

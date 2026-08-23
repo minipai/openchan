@@ -1,6 +1,6 @@
-import { keyFor, shownAs } from './keys'
-import type { Trouble } from '../protocol'
-import type { Palette } from './theme'
+import { keyFor, shownAs } from '../keys'
+import type { Trouble } from '../../between/protocol'
+import type { Palette } from '../theme'
 
 /**
  * What is in the way, written where the line she is spoken to on would be.

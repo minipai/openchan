@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
 import { testRender } from '@opentui/react/test-utils'
 import { PathBox } from './PathBox'
-import { paletteOver } from './theme'
+import { paletteOver } from '../theme'
 
 /** Every box a test put on screen, taken down again after it. */
 const shown: { renderer: { destroy(): void } }[] = []

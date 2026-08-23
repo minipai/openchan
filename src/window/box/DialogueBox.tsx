@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { Palette } from './theme'
+import type { Palette } from '../theme'
 
 /** How far the strip above the frame holds its writing off the frame's edges. */
 const OFF_THE_EDGE = 2

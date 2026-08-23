@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import type { InputRenderable } from '@opentui/core'
-import { pathKeys, shownAs } from './keys'
-import type { Palette } from './theme'
+import { pathKeys, shownAs } from '../keys'
+import type { Palette } from '../theme'
 
 /**
  * A folder written out rather than picked off the list.

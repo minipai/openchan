@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { useKeyboard } from '@opentui/react'
-import { cut } from './Asking'
-import { listKeys, shownAs } from './keys'
-import type { Palette } from './theme'
+import { cut } from '../box/Asking'
+import { listKeys, shownAs } from '../keys'
+import type { Palette } from '../theme'
 
 /** One row of a list: what picking it hands back, what it reads as, and — when
  * whoever wrote the row had more to say about it — a line under it. */

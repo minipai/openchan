@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { act, useState } from 'react'
 import { testRender } from '@opentui/react/test-utils'
 import { Picker, type Choice } from './Picker'
-import { paletteOver } from './theme'
+import { paletteOver } from '../theme'
 
 const CHOICES: Choice[] = [
   { id: 'a/one', label: 'Alpha One' },

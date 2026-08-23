@@ -1,6 +1,6 @@
-import { keyFor, shownAs } from './keys'
-import type { Permission } from '../scene'
-import type { Palette } from './theme'
+import { keyFor, shownAs } from '../keys'
+import type { Permission } from '../../between/scene'
+import type { Palette } from '../theme'
 
 /**
  * Her question, along the bottom of the box: what she wants to use and what she

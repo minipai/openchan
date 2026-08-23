@@ -1,5 +1,5 @@
 import type { Character } from '../her/cast'
-import type { BridgeEvent, Conversation, Model, Talk, Trouble } from '../protocol'
+import type { BridgeEvent, Conversation, Model, Talk, Trouble } from '../between/protocol'
 
 /**
  * Her, with nobody behind her.

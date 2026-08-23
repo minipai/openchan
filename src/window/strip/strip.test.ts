@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 import os from 'node:os'
 import path from 'node:path'
-import { columns } from './Asking'
-import { STRIP_SPENDS } from './DialogueBox'
+import { columns } from '../box/Asking'
+import { STRIP_SPENDS } from '../box/DialogueBox'
 import { shareOut } from './strip'
-import type { Model } from '../protocol'
+import type { Model } from '../../between/protocol'
 
 /** Somewhere with a name long enough to have to be cut: twenty-one columns of
  * it, written the way the strip writes it. */
