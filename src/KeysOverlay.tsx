@@ -19,7 +19,7 @@ export function KeysOverlay({
 }) {
   const groups = keysNow(where)
   // Every key printed the same width, so what they do lines up down the page.
-  const column = Math.max(...groups.flatMap((group) => group.keys.map((key) => shownAs(key.press).length)))
+  const column = Math.max(0, ...groups.flatMap((group) => group.keys.map((key) => shownAs(key.press).length)))
 
   return (
     <box

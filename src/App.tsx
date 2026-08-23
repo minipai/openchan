@@ -3,7 +3,7 @@ import { useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
 import { KeysOverlay } from './KeysOverlay'
-import { keyFor, pressed, shownAs } from './keys'
+import { cornerFor, keyFor, pressed, shownAs } from './keys'
 import { useMaid } from './brain'
 import { paletteOver } from './theme'
 
@@ -29,7 +29,14 @@ export function App({ behind }: { behind: string | undefined }) {
   // renderer takes it, and it is the one that knows how to put the terminal
   // back. Killing the process first leaves her standing on the master's shell.
   useKeyboard((key) => {
-    switch (pressed(key, where)) {
+    const does = pressed(key, where)
+    // A key the window has taken is not the input's to act on as well. Ctrl-K
+    // is delete-to-end-of-line in there, so bringing these up would take the
+    // half-written sentence with it; Ctrl-B moves the cursor. Leaving is left
+    // alone — that one is the renderer's, and it is the one that knows how to
+    // put the terminal back.
+    if (does && does !== 'send' && does !== 'leave') key.preventDefault()
+    switch (does) {
       case 'keys':
         return setKeysUp(true)
       case 'close':
@@ -79,6 +86,7 @@ export function App({ behind }: { behind: string | undefined }) {
           narration={scene.narration}
           mood={scene.mood}
           isWorking={scene.isWorking}
+          corner={cornerFor(where)}
           footer={
             scene.permission ? (
               <box flexDirection="row" gap={2}>
@@ -98,20 +106,26 @@ export function App({ behind }: { behind: string | undefined }) {
                   onInput={setTyped}
                   onSubmit={send}
                 />
-                {/* The one key nobody would guess at, kept where the eye already
-                    is — it is what the rest of them are behind. */}
-                <text fg={theme.faint}>{`${shownAs(keyFor('keys').press)} ${keyFor('keys').says}`}</text>
+
               </box>
             )
           }
         />
       </box>
 
+      {/* Middle of the screen, and let the terminal work out where that is:
+          the list is a different height depending on what she is in the middle
+          of, and a guessed offset put it over the question it was opened to
+          explain. */}
       {keysUp && (
         <box
           position="absolute"
-          top={Math.max(1, Math.round(height / 2) - 8)}
-          left={Math.round((width - Math.min(46, width - 6)) / 2)}
+          top={0}
+          left={0}
+          width={width}
+          height={height}
+          alignItems="center"
+          justifyContent="center"
           zIndex={10}
         >
           <KeysOverlay theme={theme} where={where} width={Math.min(46, width - 6)} />

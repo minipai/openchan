@@ -18,6 +18,7 @@ export function DialogueBox({
   narration,
   mood,
   isWorking,
+  corner,
   footer,
   width,
 }: {
@@ -26,6 +27,9 @@ export function DialogueBox({
   narration: string | null
   mood: string | null
   isWorking: boolean
+  /** The key worth knowing about from here, in the corner the window keeps for
+   * them. Which one that is belongs to the keys, not to the box. */
+  corner: string
   footer: ReactNode
   width: number
   theme: Palette
@@ -65,7 +69,7 @@ export function DialogueBox({
             <text fg={theme.muted}>
               {isWorking ? said : (mood ?? '')}
             </text>
-            <text fg={theme.faint}>{isWorking ? 'ESC' : ''}</text>
+            <text fg={theme.faint}>{corner}</text>
           </box>
         </box>
 

@@ -13,9 +13,10 @@
  * how to put the terminal back. They are here to be listed. */
 export type Does = 'send' | 'stop' | 'allow' | 'refuse' | 'blocks' | 'keys' | 'close' | 'leave'
 
-/** When a key is worth anything: whenever, while she is working, while she is
- * waiting to be allowed, or while these keys are on screen. */
-type When = 'always' | 'working' | 'asked' | 'up'
+/** When a key is worth anything: whenever, while there is a line to type into,
+ * while she is working, while she is waiting to be allowed, or while these keys
+ * are on screen. */
+type When = 'always' | 'typing' | 'working' | 'asked' | 'up'
 
 export type Shortcut = {
   /** As the terminal names it: the key, with `ctrl+` in front if it is held. */
@@ -50,7 +51,8 @@ const KEYS: (Shortcut & { when: When })[] = [
 
   { when: 'working', press: 'escape', does: 'stop', says: 'stop her' },
 
-  { when: 'always', press: 'return', does: 'send', says: 'say it' },
+  { when: 'typing', press: 'return', does: 'send', says: 'say it' },
+
   { when: 'always', press: 'ctrl+k', does: 'keys', says: 'these keys' },
   { when: 'always', press: 'ctrl+b', does: 'blocks', says: 'draw her rougher' },
   { when: 'always', press: 'ctrl+c', does: 'leave', says: 'leave' },
@@ -61,17 +63,31 @@ const HEADINGS: Record<When, string> = {
   up: 'While these are up',
   asked: 'While she is waiting to be allowed',
   working: 'While she is working',
+  // Two of them, because what can be typed and what can be pressed read as one
+  // thing to whoever is looking — they are shown under the one heading.
+  typing: 'Whenever',
   always: 'Whenever',
 }
 
 export type Group = { heading: string; keys: Shortcut[] }
 
-/** Whether a group of keys is worth anything from where the window is. */
+/**
+ * Whether a group of keys is worth anything from where the window is.
+ *
+ * Having these keys on screen is not a state she is in — it is a sheet of paper
+ * held up in front of one — so it takes ESC and the key that brought it, and
+ * nothing else. Everything she was already waiting on is still waiting, and
+ * still answerable: the most likely moment to want this list is while she is
+ * asking to be allowed something.
+ */
 const holds = (when: When, where: Where) =>
   when === 'always' ||
   (when === 'up' && where.up) ||
-  (when === 'asked' && where.asked && !where.up) ||
-  (when === 'working' && where.isWorking && !where.asked && !where.up)
+  // The line she is spoken to on is behind these keys while they are up, and a
+  // blurred input does not take Enter — so it is not offered while they are.
+  (when === 'typing' && !where.up) ||
+  (when === 'asked' && where.asked) ||
+  (when === 'working' && where.isWorking && !where.asked)
 
 /**
  * The keys that mean something right now, under what they belong to.
@@ -84,13 +100,18 @@ const holds = (when: When, where: Where) =>
 export function keysNow(where: Where): Group[] {
   const groups: Group[] = []
   const taken = new Set<string>()
-  for (const when of ['up', 'asked', 'working', 'always'] as const) {
+  for (const when of ['up', 'asked', 'working', 'typing', 'always'] as const) {
     if (!holds(when, where)) continue
-    const keys = KEYS.filter((key) => key.when === when && !taken.has(key.press)).map(
-      ({ when: _, ...key }) => key,
-    )
-    for (const key of keys) taken.add(key.press)
-    if (keys.length) groups.push({ heading: HEADINGS[when], keys })
+    const keys: Shortcut[] = []
+    for (const { when: _, ...key } of KEYS.filter((one) => one.when === when)) {
+      if (taken.has(key.press)) continue
+      taken.add(key.press)
+      keys.push(key)
+    }
+    if (!keys.length) continue
+    const under = groups.find((group) => group.heading === HEADINGS[when])
+    if (under) under.keys.push(...keys)
+    else groups.push({ heading: HEADINGS[when], keys })
   }
   return groups
 }
@@ -118,4 +139,23 @@ export function shownAs(press: string): string {
   const name = held ? press.slice('ctrl+'.length) : press
   const shown = name === 'escape' ? 'ESC' : name === 'return' ? 'Enter' : name
   return held ? `Ctrl-${shown.toUpperCase()}` : shown
+}
+
+/** The one key nobody would guess at, and what the corner falls back to: with
+ * nothing else worth saying there, it is what the rest of them are behind. */
+const HINT = `${shownAs('ctrl+k')} ${keyFor('keys').says}`
+
+/**
+ * What the box says in its bottom corner, which is where this window has always
+ * put the key that matters from here.
+ *
+ * Asked rather than told: ESC is three different things depending on what she
+ * is in the middle of, and the corner used to say so whether or not it was
+ * true. With these keys up it says nothing — they are the corner's own subject,
+ * and they are on screen saying it better.
+ */
+export function cornerFor(where: Where): string {
+  if (where.up) return ''
+  const escapes = pressed({ name: 'escape' }, where)
+  return escapes ? `${shownAs('escape')} ${keyFor(escapes).says}` : HINT
 }
