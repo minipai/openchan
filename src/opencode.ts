@@ -148,6 +148,19 @@ function said(trouble: unknown) {
   return words.length > 200 ? `${words.slice(0, 200)}…` : words
 }
 
+/**
+ * What is said when she is up again but the conversation is not: the server
+ * that came up has no record of the session the last one went down under. She
+ * is standing there and can be spoken to, so this is the kind that is put away
+ * rather than retried — it is only here so that a reconnect never quietly turns
+ * into a conversation with someone who remembers none of it.
+ */
+const FRESH_START: Trouble = {
+  title: 'She is starting over',
+  body: 'The conversation that was interrupted could not be reopened — the server behind her has no record of it. She is up, but nothing said before the connection dropped is in her memory.',
+  gone: false,
+}
+
 /** A tool she may not use until he says so. The server names the tool under
  * `permission`, and older ones under `type` or `title`; what it would be used
  * for is under `metadata`, shaped by the tool. */
@@ -248,6 +261,11 @@ export class MaidSession implements Conversation {
   /** What is dropped when an attempt is done with — the event stream, which
    * otherwise goes on reaching for a server that is not there. */
   private stopListening = new AbortController()
+  /** Whether a conversation was lost and it has not been said yet. Kept on her
+   * rather than worked out inside the attempt: an attempt that opened the new
+   * session and then died before announcing her leaves a session the next
+   * attempt finds and reopens, and the note would go with the attempt. */
+  private startedOver = false
 
   /** Both of the things a session is fixed to are settled here: the persona
    * goes into the server as it starts and the folder goes into the session as
@@ -315,10 +333,29 @@ export class MaidSession implements Conversation {
     this.server = started
     this.stopListening = stopListening
 
-    const opened = await client.session.create({ body: { title: 'claudecafe' } })
+    // The conversation that was going, picked up again rather than replaced.
+    // opencode keeps its sessions on disk and not in the server that made them,
+    // so the one the last server went down under is still there for this one to
+    // open — with everything said in it, on both sides — and it only has to be
+    // asked for by id. A server that does not know the id any more is the one
+    // case there is nothing to pick up, and then she starts over and says so.
+    const before = this.sessionId
+    const found = before === null ? null : await client.session.get({ path: { id: before } })
     if (this.spent(mine)) return drop()
-    this.sessionId = (opened as { data?: { id: string } }).data?.id ?? null
-    if (!this.sessionId) throw new Error('the server opened no session')
+    if (found?.error) {
+      // Only not being known is a reason to start over. Anything else the
+      // server says about the id is this attempt failing, and is said as that:
+      // the conversation may well still be there for the next one.
+      if ((found.error as { name?: string }).name !== 'NotFoundError') throw new Error(said(found.error))
+      this.startedOver = true
+    }
+    if (found?.data?.id !== before) {
+      const opened = await client.session.create({ body: { title: 'claudecafe' } })
+      if (this.spent(mine)) return drop()
+      const id = opened.data?.id
+      if (!id) throw new Error('the server opened no session')
+      this.sessionId = id
+    }
 
     // Listening is waited for rather than left running, and she is only
     // announced once it has taken: whoever was waiting to speak to her speaks
@@ -330,6 +367,14 @@ export class MaidSession implements Conversation {
     })
     if (this.spent(mine)) return drop()
     void this.listen(stream.stream, mine)
+    // Said before she is announced rather than after: what was said to her
+    // while she was down goes the moment she is, and it should go with the
+    // note already up — not into what looks, for a frame, like the conversation
+    // it was typed into.
+    if (this.startedOver) {
+      this.startedOver = false
+      this.raise(FRESH_START)
+    }
     this.onEvent({ kind: 'ready' })
 
     // What she could think with, asked for once and after she is announced: the
@@ -548,10 +593,14 @@ export class MaidSession implements Conversation {
 
   /**
    * Open her again, from wherever the last attempt got to. What that attempt
-   * left behind goes first — a half-started server, a session id pointing at
-   * nothing, the leavings of a turn that will never finish — and the trouble
-   * comes off the screen as this starts, so pressing it is visibly something
-   * happening rather than a key that does nothing.
+   * left behind goes first — a half-started server, the leavings of a turn that
+   * will never finish — and the trouble comes off the screen as this starts, so
+   * pressing it is visibly something happening rather than a key that does
+   * nothing.
+   *
+   * The session id is the one thing kept: it is what the next attempt reopens
+   * the conversation by, and letting go of it here is what would make every
+   * reconnect a fresh start.
    */
   retry() {
     if (this.closed) return
@@ -559,7 +608,6 @@ export class MaidSession implements Conversation {
     this.server?.close()
     this.client = null
     this.server = null
-    this.sessionId = null
     this.working = false
     this.said = ''
     this.parts.clear()
