@@ -1,5 +1,5 @@
-import { keysNow, shownAs, type Where } from './keys'
-import type { Palette } from './theme'
+import { keysNow, shownAs, type Where } from '../keys'
+import type { Palette } from '../theme'
 
 /**
  * What the keys do, laid over the scene.

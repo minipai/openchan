@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { cut } from './Asking'
-import type { Whispered } from '../scene'
-import type { Palette } from './theme'
+import type { Whispered } from '../../between/scene'
+import type { Palette } from '../theme'
 
 /**
  * How long one of them stays up.

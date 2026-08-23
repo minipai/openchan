@@ -56,11 +56,11 @@ up never quietly spends money.
 | | |
 |---|---|
 | `src/opencode/opencode.ts` | the only file that knows opencode exists — it turns the server's event stream into her vocabulary |
-| `src/protocol.ts` | that vocabulary: she said something, she picked something up, she wants permission, she wants something picked, she is done — and what the screen may ask of her in return |
-| `src/scene.ts` | what an event leaves on the scene: the latest of each, and nothing decided |
-| `src/brain.ts` | holds her open for as long as the window is, and hands the screen one scene |
+| `src/between/protocol.ts` | that vocabulary: she said something, she picked something up, she wants permission, she wants something picked, she is done — and what the screen may ask of her in return |
+| `src/between/scene.ts` | what an event leaves on the scene: the latest of each, and nothing decided |
+| `src/between/brain.ts` | holds her open for as long as the window is, and hands the screen one scene |
 | `src/window/keys.ts` | every key the window answers to, written down once — the overlay and the screen both read it off here |
-| `src/window/App.tsx` + `SpriteLayer` / `DialogueBox` / `KeysOverlay` | the screen |
+| `src/window/App.tsx` + `box/` / `strip/` / `over/` | the screen: her box and what goes in it, the line above it, and what can stand over the whole scene |
 | `src/her/expressions.ts` | the 26 faces, and the mood marker that names them |
 | `src/her/cast.ts` | who can be sent for: whoever is both written and drawn |
 | `persona/` | who each of them is, appended to opencode's own instructions rather than replacing them |

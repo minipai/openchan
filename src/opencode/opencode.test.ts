@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
-import type { BridgeEvent } from '../protocol'
+import type { BridgeEvent } from '../between/protocol'
 
 /**
  * opencode, with nothing behind it.

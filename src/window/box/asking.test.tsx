@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
 import { act } from 'react'
 import { testRender } from '@opentui/react/test-utils'
-import { App } from './App'
-import type { Character } from '../her/cast'
-import type { BridgeEvent, Conversation, Standing } from '../protocol'
+import { App } from '../App'
+import type { Character } from '../../her/cast'
+import type { BridgeEvent, Conversation, Standing } from '../../between/protocol'
 
 /** Her, with nobody behind her: it wakes up at once, lets the test raise the
  * permission questions, and records how they were answered. */

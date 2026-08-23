@@ -5,7 +5,7 @@ import net from 'node:net'
 import { createOpencodeClient, createOpencodeServer, type OpencodeClient } from '@opencode-ai/sdk'
 import { createOpencodeClient as createAnswering, type OpencodeClient as Answering } from '@opencode-ai/sdk/v2/client'
 import { briefFor, type Character } from '../her/cast'
-import type { BridgeEvent, Conversation, Model, Question, Standing, Talk, Trouble } from '../protocol'
+import type { BridgeEvent, Conversation, Model, Question, Standing, Talk, Trouble } from '../between/protocol'
 import { readMood, splitReport } from './reply'
 
 /**
