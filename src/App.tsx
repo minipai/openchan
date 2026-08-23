@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
-import type { InputRenderable } from '@opentui/core'
-import { useKeyboard, useTerminalDimensions } from '@opentui/react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react'
+import { CliRenderEvents, type InputRenderable, type Selection } from '@opentui/core'
+import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
 import { KeysOverlay } from './KeysOverlay'
@@ -18,6 +18,17 @@ import { paletteOver } from './theme'
 
 /** The strip the window leaves under the dialogue box. */
 const UNDER_THE_BOX = 1
+
+/** How long a word about what just happened stays under the box. */
+const SAID_FOR = 2000
+
+/**
+ * What the window says when a clipboard write comes to nothing. The renderer
+ * asks the terminal what it can take and the terminal answered that it cannot
+ * take this — it is said, because a copy that quietly did nothing looks exactly
+ * like one that worked until it is pasted.
+ */
+const WILL_NOT_TAKE = 'this terminal will not take a clipboard write'
 
 /**
  * What can stand over the scene: the keyboard help, one of the three lists, the
@@ -136,6 +147,7 @@ function above(scene: Scene, next: Character | null): string | null {
  */
 export function App({ behind, open: openMaid }: { behind: string | undefined; open?: OpenConversation }) {
   const { width, height } = useTerminalDimensions()
+  const renderer = useRenderer()
   // Her box is coloured against the terminal, the same answer that keeps her
   // out of a black slab.
   const theme = paletteOver(behind)
@@ -183,6 +195,40 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // thing she asks for is a fresh question and starts shut, however the last
   // one was left.
   const [opened, setOpened] = useState<string | null>(null)
+  // A word about what the window just did, for a moment. Wrapped rather than
+  // bare so that the same word twice running is two words, each with its own
+  // moment — the second copy would otherwise inherit what was left of the
+  // first's.
+  const [note, setNote] = useState<{ text: string } | null>(null)
+  useEffect(() => {
+    if (note === null) return
+    const gone = setTimeout(() => setNote(null), SAID_FOR)
+    return () => clearTimeout(gone)
+  }, [note])
+  // Out through the terminal's own clipboard escape (OSC 52): the window has
+  // no hands of its own and the terminal is the one thing between it and the
+  // master's clipboard. Either way it says what happened — the renderer knows
+  // when the terminal has said no, and a copy that did nothing and said
+  // nothing looks like one that worked.
+  const copy = (text: string, what: string) => {
+    const taken = renderer.copyToClipboardOSC52(text)
+    setNote({ text: taken ? `copied ${what}` : WILL_NOT_TAKE })
+  }
+  // The renderer tracks a drag over any text on screen and draws it, and says
+  // so when it is let go of — and that was the whole of it: what was selected
+  // was then dropped. This is the other half. A click is let go of too, and
+  // selects nothing; nothing is said about nothing.
+  //
+  // An event rather than a closure: the listener is hung on the renderer once
+  // and stays, and what it calls has to be what this render would have called.
+  const letGo = useEffectEvent((selection: Selection) => {
+    const text = selection.getSelectedText()
+    if (text) copy(text, 'the selection')
+  })
+  useEffect(() => {
+    renderer.on(CliRenderEvents.SELECTION, letGo)
+    return () => void renderer.off(CliRenderEvents.SELECTION, letGo)
+  }, [renderer])
   // What has been picked so far of a question she asked in several parts, and
   // which question it was picked for: the next thing she asks is a fresh one
   // and starts from nothing, the same as the one before it being opened up.
@@ -223,6 +269,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     path: standing === 'path',
     reading: standing === 'report',
     hasReport: scene.report !== null,
+    said: scene.line !== '',
     isWorking: scene.isWorking,
     asked: asked !== null,
     // Which way out of it there is, which is the only thing about it the keys
@@ -269,6 +316,12 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         return setOver('folder')
       case 'report':
         return setOver('report')
+      // Her words and only her words: the line as she said it, not as the box
+      // wrapped it, and the page as she wrote it.
+      case 'copy-line':
+        return copy(scene.line, 'her line')
+      case 'copy-page':
+        return copy(scene.report!.body, 'the page')
       // Nothing else happens: what she thinks with, who is standing there and
       // where she works are only ever changed by taking a row off the list — or,
       // for a folder she has never been in, by typing it out in full. Her own
@@ -494,6 +547,25 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         <OverTheScene width={width} height={height}>
           <KeysOverlay theme={theme} where={where} width={Math.min(46, width - 6)} />
         </OverTheScene>
+      )}
+
+      {/* A word about what the window just did, in the strip under the box
+          and over everything: a copy can be made from under any of the things
+          that stand over the scene — the keys list the key, a page is dragged
+          over — and a word half hidden behind one of them reads as a word cut
+          off. The strip is the one row none of them reach. */}
+      {note && (
+        <box
+          position="absolute"
+          bottom={0}
+          left={Math.round((width - boxWidth) / 2)}
+          width={boxWidth}
+          height={UNDER_THE_BOX}
+          paddingX={2}
+          zIndex={9}
+        >
+          <text fg={theme.muted}>{note.text}</text>
+        </box>
       )}
     </box>
   )

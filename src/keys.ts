@@ -36,6 +36,8 @@ export type Does =
   | 'cancel'
   | 'retry'
   | 'dismiss'
+  | 'copy-line'
+  | 'copy-page'
 
 /**
  * The ones the window does not do itself, and so does not take the key away
@@ -50,14 +52,16 @@ const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'tick', 'go', 'lea
 export const takes = (does: Does) => !THEIRS.includes(does)
 
 /** When a key is worth anything: whenever, while there is a line to type into,
- * while she is working, while she is waiting to be allowed, while something is
- * in the way of her working at all — with or without her session left standing
- * — while a list is open, while the open list takes several rows rather than
- * one, while a path is being typed into one, while there is something she
- * wrote to read, while it is open, or while these keys are on screen. */
+ * while she has said something, while she is working, while she is waiting to
+ * be allowed, while something is in the way of her working at all — with or
+ * without her session left standing — while a list is open, while the open
+ * list takes several rows rather than one, while a path is being typed into
+ * one, while there is something she wrote to read, while it is open, or while
+ * these keys are on screen. */
 type When =
   | 'always'
   | 'typing'
+  | 'said'
   | 'working'
   | 'asked'
   | 'gone'
@@ -95,6 +99,8 @@ export type Where = {
   reading: boolean
   /** Whether she has written something there is a report to open at all. */
   hasReport: boolean
+  /** Whether there is a line of hers in the box to be copied. */
+  said: boolean
   /** What is in the way, if anything is: something she is still standing
    * behind, or something that took her session with it. */
   trouble: 'stuck' | 'gone' | null
@@ -115,6 +121,9 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'reading', press: 'escape', does: 'close', says: 'put it away' },
   { when: 'reading', press: 'up', does: 'scroll-up', says: 'back up a bit' },
   { when: 'reading', press: 'down', does: 'scroll-down', says: 'on down a bit' },
+  // The same key that takes her line takes the page while the page is what is
+  // open: what is on screen is what is copied.
+  { when: 'reading', press: 'ctrl+y', does: 'copy-page', says: 'copy it' },
 
   // A list takes the keys that move through it and the one that takes what it
   // is on, and it takes ESC before she does: the list is what is being answered
@@ -155,6 +164,10 @@ const KEYS: (Shortcut & { when: When })[] = [
 
   { when: 'typing', press: 'return', does: 'send', says: 'say it' },
 
+  // Her words and nothing else — not the frame around them, and not what was
+  // typed to her. Ctrl-Y because the keys that read as "copy" are spoken for:
+  // Ctrl-C is the way out, and the line she is spoken to on has the rest.
+  { when: 'said', press: 'ctrl+y', does: 'copy-line', says: 'copy her line' },
   { when: 'reported', press: 'ctrl+r', does: 'report', says: 'read what she wrote' },
 
   { when: 'always', press: 'ctrl+k', does: 'keys', says: 'these keys' },
@@ -179,9 +192,10 @@ const HEADINGS: Record<When, string> = {
   // Two of them, because what can be typed and what can be pressed read as one
   // thing to whoever is looking — they are shown under the one heading.
   typing: 'Whenever',
-  // Under the same heading as the rest: having written something is not a state
-  // she is in, it is one more thing that can be opened from wherever the window
-  // happens to be.
+  // Under the same heading as the rest: having said or written something is
+  // not a state she is in, it is one more thing that can be taken from wherever
+  // the window happens to be.
+  said: 'Whenever',
   reported: 'Whenever',
   always: 'Whenever',
 }
@@ -211,6 +225,10 @@ const holds = (when: When, where: Where) =>
   // is on the scene either way, and a page already written is still readable
   // once she is not.
   (when === 'reported' && where.hasReport && !where.reading) ||
+  // An empty box has nothing in it to copy, and a key that copied nothing and
+  // said so would be worse than one not offered. The open page takes the same
+  // key first, and is written down ahead of this.
+  (when === 'said' && where.said) ||
   // The line she is spoken to on is behind these keys while they are up, behind
   // a list or a path being typed or an open report while one of those is, and
   // not drawn at all while something is in the way; a blurred input does not
@@ -251,6 +269,7 @@ export function keysNow(where: Where): Group[] {
     'asked',
     'working',
     'typing',
+    'said',
     'reported',
     'always',
   ] as const) {

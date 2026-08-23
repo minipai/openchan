@@ -103,10 +103,32 @@ async function onScreen() {
   // Whoever is standing there now: after a swap or a move that is the girl who
   // walked in, not the one whose session was closed behind her.
   const now = () => sessions[sessions.length - 1]!
+  // Everything the window handed the terminal for its clipboard, in order.
+  // The mock terminal has no clipboard to read back; what is checked is what
+  // went out through the one door there is.
+  const clipboard: string[] = []
+  setup.renderer.copyToClipboardOSC52 = (text: string) => {
+    clipboard.push(text)
+    return true
+  }
   return {
     her: sessions[0]!,
     sessions,
+    clipboard,
+    /** The terminal saying it will not take a clipboard write. */
+    refuseClipboard: () => {
+      setup.renderer.copyToClipboardOSC52 = () => false
+    },
     frame: () => setup.captureCharFrame(),
+    /** A drag with the mouse over some words on screen, let go of just past
+     * the end of them: the renderer takes the cell it is let go of on as the
+     * edge of the selection rather than part of it. */
+    dragOver: (words: string) => {
+      const rows = setup.captureCharFrame().split('\n')
+      const y = rows.findIndex((row) => row.includes(words))
+      const x = rows[y]!.indexOf(words)
+      return settle(() => setup.mockMouse.drag(x, y, x + words.length, y))
+    },
     wakeUp: () => settle(() => now().wakeUp()),
     giveUp: () => settle(() => now().giveUp()),
     getStuck: () => settle(() => now().getStuck()),
@@ -243,6 +265,89 @@ test('her line, and the face and mood she signed it with, land in the box', asyn
   expect(frame()).toContain('her face is happy')
   expect(frame()).not.toContain('her face is neutral')
   expect(frame()).not.toContain('is thinking…')
+})
+
+test('a selection made with the mouse reaches the clipboard when it is let go of', async () => {
+  const { wakeUp, raise, dragOver, clipboard, frame } = await onScreen()
+  await wakeUp()
+  await raise({ kind: 'says', line: 'The needle was in the second haystack.' })
+  await raise({ kind: 'done' })
+
+  await dragOver('needle was in the second')
+  // The words dragged over and nothing else — not the rest of her line, and
+  // not the cell the drag was let go of on.
+  expect(clipboard).toEqual(['needle was in the second'])
+  expect(frame()).toContain('copied the selection')
+})
+
+test('her whole line is copied from the keyboard, as she said it', async () => {
+  const { wakeUp, raise, hold, clipboard, frame } = await onScreen()
+  await wakeUp()
+  // Nothing to copy yet, so nothing is copied and nothing is said about it.
+  await hold('y')
+  expect(clipboard).toEqual([])
+  expect(frame()).not.toContain('copied')
+
+  await raise({ kind: 'says', line: 'Good morning, master.\nThe needle was in the second haystack.' })
+  await raise({ kind: 'done' })
+  await hold('y')
+  // As she said it, with the break between her two lines — not as the box
+  // wrapped it.
+  expect(clipboard).toEqual(['Good morning, master.\nThe needle was in the second haystack.'])
+  expect(frame()).toContain('copied her line')
+})
+
+test('while what she wrote is open, the same key copies the page', async () => {
+  const { wakeUp, raise, hold, clipboard, frame } = await onScreen()
+  await wakeUp()
+  await raise({ kind: 'says', line: 'I found it.' })
+  await raise({ kind: 'reports', report: REPORT })
+  await raise({ kind: 'done' })
+
+  await hold('r')
+  await hold('y')
+  expect(clipboard).toEqual([REPORT.body])
+  // Said under the page rather than behind it.
+  expect(frame()).toContain('copied the page')
+  expect(frame()).toContain('ESC put it away')
+})
+
+test('a terminal that will not take a clipboard write is said to have refused', async () => {
+  const { wakeUp, raise, hold, refuseClipboard, frame } = await onScreen()
+  await wakeUp()
+  await raise({ kind: 'says', line: 'I found it.' })
+  await raise({ kind: 'done' })
+
+  refuseClipboard()
+  await hold('y')
+  expect(frame()).not.toContain('copied')
+  expect(frame()).toContain('this terminal will not take a clipboard write')
+})
+
+test('the key that copies her line is listed, and takes nothing from the line she is spoken to on', async () => {
+  const { wakeUp, raise, hold, type, escape, frame } = await onScreen()
+  await wakeUp()
+  await hold('k')
+  expect(frame()).not.toContain('copy her line')
+  await escape()
+
+  await raise({ kind: 'says', line: 'I found it.' })
+  await raise({ kind: 'done' })
+  await hold('k')
+  expect(frame()).toContain('Ctrl-Y')
+  expect(frame()).toContain('copy her line')
+  // Pressed from there, with the keys still up: what it says is in the strip
+  // under the box, whole, rather than half behind the keys.
+  await hold('y')
+  expect(frame()).toContain('copied her line')
+  expect(frame()).toContain('Ctrl-Y')
+  await escape()
+
+  // Half a sentence, the key, and the rest of it: nothing typed is lost to it.
+  await type('where was')
+  await hold('y')
+  await type(' it?')
+  expect(frame()).toContain('where was it?')
 })
 
 /** Her, mid-turn, asking to be allowed something. */
