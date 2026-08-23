@@ -5,82 +5,10 @@ import path from 'node:path'
 import { act } from 'react'
 import { testRender } from '@opentui/react/test-utils'
 import { useMaid } from './brain'
-import { briefFor, CAST, remember, remembered, type Character } from './cast'
+import { briefFor, CAST, remember, remembered } from './cast'
 import { OPENED_IN } from './folder'
-import type { BridgeEvent, Conversation, Model, OpenConversation, Trouble } from './protocol'
-
-/** Her server never came up, or went away: nobody left to speak to until she is
- * opened again. */
-const LOST: Trouble = {
-  title: 'She could not be woken up',
-  body: 'The opencode server behind her did not start.',
-  gone: true,
-}
-
-/** Something in the way of the model she is on, with her still standing there. */
-const STUCK: Trouble = {
-  title: 'She is not signed in to anthropic',
-  body: 'opencode has no credentials for anthropic.',
-  gone: false,
-}
-
-/** What the stand-in says she could think with. */
-const MODELS: Model[] = [
-  { id: 'opencode/free', label: 'opencode · Free' },
-  { id: 'anthropic/opus', label: 'Anthropic · Opus' },
-]
-
-/**
- * Her, with nobody behind her: it records what it was asked and wakes up when
- * the test says so, which is the whole of what a slow opencode server does
- * differently from a fast one.
- */
-class Stand implements Conversation {
-  readonly asked: string[] = []
-  /** Every model she has been handed, in order. */
-  readonly handed: string[] = []
-  /** Whether the window has shut this one, which is what swapping her does. */
-  closed = false
-  /** How many times the window has asked for her to be opened again. */
-  retries = 0
-  private model = MODELS[0]!.id
-  constructor(
-    private say: (event: BridgeEvent) => void,
-    readonly who: Character,
-    readonly folder: string,
-  ) {}
-  async start() {}
-  wakeUp() {
-    this.say({ kind: 'ready' })
-    this.say({ kind: 'thinks-with', models: MODELS, using: this.model })
-  }
-  giveUp() {
-    this.say({ kind: 'trouble', trouble: LOST })
-  }
-  /** Something in the way that left her session standing. */
-  getStuck() {
-    this.say({ kind: 'trouble', trouble: STUCK })
-  }
-  /** Opening her again. The real one says the trouble is over as it starts and
-   * announces her if it gets through — which is what the test does by hand. */
-  retry() {
-    this.retries++
-    this.say({ kind: 'trouble', trouble: null })
-  }
-  ask(prompt: string) {
-    this.asked.push(prompt)
-  }
-  use(model: string) {
-    this.handed.push(model)
-    this.model = model
-    this.say({ kind: 'thinks-with', models: MODELS, using: model })
-  }
-  answer() {}
-  interrupt() {}
-  close() {
-    this.closed = true
-  }
-}
+import type { OpenConversation } from './protocol'
+import { LOST, MODELS, Stand, STUCK } from './stand'
 
 /** The window, reduced to the two things this cares about. */
 function Window({ open, hold }: { open: OpenConversation; hold: (maid: Maid) => void }) {
