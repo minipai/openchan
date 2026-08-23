@@ -152,6 +152,18 @@ export function useMaid(open: OpenConversation = openMaid) {
       setFolder(where)
     },
     /**
+     * Back into one of the conversations she has already had in this folder.
+     *
+     * Unlike moving her or sending for one of the others, nothing is closed:
+     * every session the folder has ever had is on the same server, so this is
+     * her turning to a different page rather than a new girl walking in. The
+     * scene is not touched from here either — the session is the one that knows
+     * where that conversation was left, and it says so.
+     */
+    resumeTo(id: string) {
+      session.current?.resume(id)
+    },
+    /**
      * Open her again, after something took her session down.
      *
      * Nothing is set from here: the attempt is the one that knows how it went,

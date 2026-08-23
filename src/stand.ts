@@ -1,5 +1,5 @@
 import type { Character } from './cast'
-import type { BridgeEvent, Conversation, Model, Trouble } from './protocol'
+import type { BridgeEvent, Conversation, Model, Talk, Trouble } from './protocol'
 
 /**
  * Her, with nobody behind her.
@@ -29,7 +29,10 @@ export class Stand implements Conversation {
   closed = false
   /** How many times the window has asked for her to be opened again. */
   retries = 0
+  /** Every earlier conversation she has been sent back into, in order. */
+  readonly resumed: string[] = []
   private model = MODELS[0]!.id
+  private talk = TALKS[0]!.id
   constructor(
     private say: (event: BridgeEvent) => void,
     readonly who: Character,
@@ -46,6 +49,7 @@ export class Stand implements Conversation {
   wakeUp() {
     this.say({ kind: 'ready' })
     this.say({ kind: 'thinks-with', models: MODELS, using: this.model })
+    this.say({ kind: 'talks', talks: TALKS, current: this.talk })
   }
   giveUp() {
     this.say({ kind: 'trouble', trouble: LOST })
@@ -68,6 +72,16 @@ export class Stand implements Conversation {
     this.model = model
     this.say({ kind: 'thinks-with', models: MODELS, using: model })
   }
+  /** Back into an earlier conversation, the way the real one does it: the list
+   * says which one is open now, and she says where it was left. */
+  resume(id: string) {
+    const found = TALKS.find((one) => one.id === id)
+    if (!found || id === this.talk) return
+    this.resumed.push(id)
+    this.talk = id
+    this.say({ kind: 'talks', talks: TALKS, current: id })
+    this.say({ kind: 'picks-up', line: `we left off on ${found.title}`, report: null })
+  }
   answer(askId: string, allow: boolean) {
     if (this.waiting.delete(askId)) this.answered.push({ askId, allow })
   }
@@ -84,6 +98,17 @@ export class Stand implements Conversation {
     this.closed = true
   }
 }
+
+/** How far back the conversations the stand-in offers are, so that what the
+ * window writes under each row is something to check. */
+const HOURS = 60 * 60 * 1000
+
+/** What the stand-in says has been talked about in this folder, most recently
+ * spoken in first — the order the real one puts them in. */
+export const TALKS: Talk[] = [
+  { id: 'ses_now', title: 'The colours of the sky', when: Date.now() - HOURS },
+  { id: 'ses_before', title: 'Where the needle was', when: Date.now() - 5 * HOURS },
+]
 
 /** What the stand-in says she could think with. */
 export const MODELS: Model[] = [

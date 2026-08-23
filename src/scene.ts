@@ -1,4 +1,4 @@
-import type { BridgeEvent, Model, Question, Report, Trouble } from './protocol'
+import type { BridgeEvent, Model, Question, Report, Talk, Trouble } from './protocol'
 import type { Expression } from './cast'
 
 export type { Question, Report } from './protocol'
@@ -44,6 +44,10 @@ export type Scene = {
   models: Model[]
   /** The one she is thinking with, once she has said which. */
   model: string | null
+  /** Every conversation there has been in this folder, for the list to offer. */
+  talks: Talk[]
+  /** The one she is in, once the session has said which. */
+  talk: string | null
 }
 
 /** Before she has said anything. */
@@ -61,6 +65,8 @@ export const OPENING: Scene = {
   trouble: null,
   models: [],
   model: null,
+  talks: [],
+  talk: null,
 }
 
 /**
@@ -114,6 +120,30 @@ export function next(was: Scene, event: BridgeEvent): Scene {
     // its own copy of: there is one answer and she is holding it.
     case 'thinks-with':
       return { ...was, models: event.models, model: event.using }
+    // The same, for the conversations she has had here: the session is holding
+    // which one is open, and the list marks what it says rather than what was
+    // pressed.
+    case 'talks':
+      return { ...was, talks: event.talks, talk: event.current }
+    // One of them, picked up. Everything this turn's goes, because none of it
+    // is this conversation's: her line and the face she said it with, whatever
+    // she was doing, whatever she was waiting on, and whatever was in the way —
+    // a note about the conversation she has just been taken out of would sit
+    // over the one she has been put into, and the box stays hers to be spoken
+    // on. What is left is where the conversation being opened was left.
+    case 'picks-up':
+      return {
+        ...was,
+        line: event.line,
+        expression: event.expression ?? 'neutral',
+        mood: event.mood ?? null,
+        narration: null,
+        report: event.report,
+        isWorking: false,
+        permission: null,
+        asked: null,
+        trouble: null,
+      }
     case 'ask-permission':
       return {
         ...was,

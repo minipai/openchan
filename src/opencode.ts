@@ -5,7 +5,7 @@ import net from 'node:net'
 import { createOpencodeClient, createOpencodeServer, type OpencodeClient } from '@opencode-ai/sdk'
 import { createOpencodeClient as createAnswering, type OpencodeClient as Answering } from '@opencode-ai/sdk/v2/client'
 import { briefFor, type Character } from './cast'
-import type { BridgeEvent, Conversation, Model, Question, Trouble } from './protocol'
+import type { BridgeEvent, Conversation, Model, Question, Talk, Trouble } from './protocol'
 import { readMood, splitReport } from './reply'
 
 /**
@@ -55,6 +55,117 @@ export type ProviderModels = {
   id: string
   name: string
   models: Record<string, { id: string; name: string }>
+}
+
+/**
+ * How much of the first sentence a conversation is named after: long enough to
+ * know it by, short enough to stand in one row of a list. A paste is a whole
+ * paragraph and would be neither.
+ */
+const NAME_AT_MOST = 60
+
+/**
+ * What a conversation comes to be called: the first thing said in it, on one
+ * line.
+ *
+ * It has to be named from up here. opencode leaves a session called
+ * `New session - <the moment it was opened>` for good — it names nothing
+ * itself — and a list of those is one row printed over and over. What was
+ * typed is the better name anyway: whoever is looking for a conversation is
+ * looking for the one he remembers having, and what he said in it is what he
+ * remembers.
+ */
+export function nameFor(prompt: string): string {
+  const first = prompt.split('\n').map((one) => one.trim()).find(Boolean) ?? ''
+  const letters = [...first]
+  if (letters.length <= NAME_AT_MOST) return first
+  return `${letters.slice(0, NAME_AT_MOST - 1).join('').trimEnd()}…`
+}
+
+/** As much of a session on disk as the list of conversations needs. */
+export type PastSession = {
+  id: string
+  title: string
+  /** Whose subagent this is, for the ones that are one. */
+  parentID?: string
+  time: { created: number; updated: number }
+}
+
+/**
+ * The conversations worth going back to, out of every session the server holds
+ * for this folder — most recently spoken in first, which is very nearly always
+ * the order they are wanted in.
+ *
+ * Two kinds are left out. A session with a parent is a subagent's scratchpad,
+ * opened by a tool she picked up and never spoken to by anyone; a folder worked
+ * in for a week has more of those than real conversations. And a session
+ * nothing was ever said in is not a conversation either — every window that
+ * opened here and was closed again left one behind.
+ *
+ * The one she is in now is kept whichever of those it looks like: the list
+ * marks where it stands, and a mark on a row that is not there is no mark.
+ */
+export function talksIn(sessions: PastSession[], current: string): Talk[] {
+  return sessions
+    .filter((one) => one.id === current || (!one.parentID && !unspoken(one)))
+    .map((one) => ({
+      id: one.id,
+      // One nothing has been said in has nothing to be named after, and
+      // opencode's own name for it is the moment it was opened written out in
+      // full. It is only ever the one she is standing in.
+      title: unspoken(one) ? 'Nothing said in it yet' : one.title,
+      when: one.time.updated,
+    }))
+    .sort((one, other) => other.when - one.when)
+}
+
+/** Whether nothing was ever said in a session: opencode touches it whenever
+ * anything lands in it, so one last touched when it was opened is empty. */
+const unspoken = (one: PastSession) => one.time.updated === one.time.created
+
+/** As much of a message as picking a conversation up needs: whose it was, and
+ * the text in it. */
+export type PastMessage = { info: { role: string }; parts: { type: string; text?: string }[] }
+
+/**
+ * How much of a conversation is read back to find where it was left. The server
+ * gives the last of them, and one message is a whole turn of hers — tools and
+ * all — so this is the last few turns, which is as far back as the last words
+ * she said can be.
+ *
+ * Bounded because a conversation is as long as it is: a week-old one is
+ * megabytes of tool output, and all of it would be read on the key press that
+ * opens it.
+ */
+const READ_BACK = 4
+
+/**
+ * Where a conversation was left: the last thing she said in it, read back the
+ * same way it was read as she said it — the 【…】 off the end of it, and the
+ * page split from the line.
+ *
+ * The last of her messages that has words in it, rather than simply the last:
+ * a turn cut off mid-tool leaves one with nothing said in it, and an empty box
+ * is exactly what a resume that did nothing looks like. Its text parts are
+ * joined the way they were spoken, a paragraph apart — she says something,
+ * picks up a tool, and writes once she knows the answer, and glued end to end
+ * those run into one sentence.
+ */
+export function lastSaid(messages: PastMessage[]) {
+  const text = messages
+    .filter((one) => one.info.role === 'assistant')
+    .map((one) =>
+      one.parts
+        .filter((part) => part.type === 'text' && part.text)
+        .map((part) => part.text!)
+        .join('\n\n')
+        .trim(),
+    )
+    .filter(Boolean)
+    .at(-1)
+  const { line, expression, marker } = readMood(text ?? '')
+  const { line: spoken, report } = splitReport(line)
+  return { line: spoken, expression: expression ?? undefined, mood: marker ?? undefined, report }
 }
 
 /**
@@ -299,6 +410,14 @@ export class MaidSession implements Conversation {
   /** What is dropped when an attempt is done with — the event stream, which
    * otherwise goes on reaching for a server that is not there. */
   private stopListening = new AbortController()
+  /** Which pick of an earlier conversation is the live one. Two rows taken
+   * before the first has been read back is the second one's conversation she is
+   * in, and the first's answer is about one nobody is standing in. */
+  private picking = 0
+  /** The conversation this window opened and nobody has said anything in yet,
+   * waiting to be named after the first thing that is. Nothing, once it has
+   * been — a conversation is named once, by how it started. */
+  private unnamed: string | null = null
   /** Whether a conversation was lost and it has not been said yet. Kept on her
    * rather than worked out inside the attempt: an attempt that opened the new
    * session and then died before announcing her leaves a session the next
@@ -367,8 +486,6 @@ export class MaidSession implements Conversation {
     // would leave her working perfectly and silently — nothing she said, nothing
     // she picked up and nothing she wanted permission for would ever arrive.
     const client = createOpencodeClient({ baseUrl: started.url, directory: this.folder })
-    this.client = client
-    this.answering = createAnswering({ baseUrl: started.url, directory: this.folder })
     this.server = started
     this.stopListening = stopListening
 
@@ -389,12 +506,23 @@ export class MaidSession implements Conversation {
       this.startedOver = true
     }
     if (found?.data?.id !== before) {
-      const opened = await client.session.create({ body: { title: 'claudecafe' } })
+      const opened = await client.session.create({})
       if (this.spent(mine)) return drop()
       const id = opened.data?.id
       if (!id) throw new Error('the server opened no session')
       this.sessionId = id
+      // Left to be named by the first thing said in it, which is the only thing
+      // there is to name it after.
+      this.unnamed = id
     }
+    // Only now is there anything to speak to. Installed after the session is
+    // settled rather than as the client is made: everything that reaches for
+    // this asks which conversation it is in, and for the seconds an attempt
+    // spends opening one there is no answer — an earlier conversation picked up
+    // in that window would be opened and then written straight over by the
+    // session this attempt goes on to open.
+    this.client = client
+    this.answering = createAnswering({ baseUrl: started.url, directory: this.folder })
 
     // Listening is waited for rather than left running, and she is only
     // announced once it has taken: whoever was waiting to speak to her speaks
@@ -425,6 +553,32 @@ export class MaidSession implements Conversation {
     const listed = await client.config.providers().catch(() => null)
     if (this.spent(mine)) return drop()
     this.tellModel(modelsIn(listed?.data?.providers ?? []))
+
+    // And what has been talked about here before, for the same reasons: asked
+    // for once rather than when the list is opened, and swallowed if the server
+    // will not say — not being able to offer the old conversations is no reason
+    // to say she never woke up.
+    await this.tellTalks(client, mine)
+  }
+
+  /**
+   * Every conversation there has been in this folder, said out loud, and which
+   * of them she is in.
+   *
+   * The client carries the folder, and opencode holds a server's folders apart
+   * all the way down — so this is the folder's conversations and no others,
+   * which is the whole of what makes the list worth opening.
+   */
+  private async tellTalks(client: OpencodeClient, mine: number) {
+    const current = this.sessionId
+    if (!current) return
+    const listed = await client.session.list().catch(() => null)
+    // A server that would not say is not a folder with nothing in it. Said as
+    // nothing, it would empty a list that is on screen and correct — and this
+    // is asked again at the end of every turn, so it would keep doing it.
+    if (!listed?.data) return
+    if (this.spent(mine) || this.sessionId !== current) return
+    this.onEvent({ kind: 'talks', talks: talksIn(listed.data, current), current })
   }
 
   /** What she thinks with, said out loud. The screen marks the one in force off
@@ -596,6 +750,12 @@ export class MaidSession implements Conversation {
    * on screen — the stream carried them — so there is nothing left to say but
    * that she has stopped, and why, if it was not her idea. */
   private finish(error?: string) {
+    // The turn just moved this conversation to the top of the list and changed
+    // how long ago it was last spoken in. Said before the turn is closed out
+    // rather than after, and whether or not this window was watching it: a turn
+    // started before an earlier conversation was picked up and back out of is
+    // still a turn that ended in it.
+    if (this.client) void this.tellTalks(this.client, this.opening)
     if (!this.working) return
     this.working = false
     this.onEvent({ kind: 'done', error })
@@ -604,6 +764,11 @@ export class MaidSession implements Conversation {
   ask(prompt: string) {
     if (!this.client || !this.sessionId) return
     const mine = this.opening
+    // The first thing said in a conversation is what it is called from then on.
+    if (this.unnamed === this.sessionId) {
+      this.unnamed = null
+      void this.name(this.client, this.sessionId, prompt, mine)
+    }
     this.working = true
     this.said = ''
     this.saying = null
@@ -629,6 +794,16 @@ export class MaidSession implements Conversation {
     this.tellModel()
   }
 
+  /** A conversation, named — and the list said again, so that the row for the
+   * one being talked in stops reading as the blank it was opened as. Swallowed
+   * if the server will not have it: a conversation under a poor name is worth
+   * more than a sentence that did not go. */
+  private async name(client: OpencodeClient, id: string, prompt: string, mine: number) {
+    await client.session.update({ path: { id }, body: { title: nameFor(prompt) } }).catch(() => null)
+    if (this.spent(mine)) return
+    await this.tellTalks(client, mine)
+  }
+
   answer(askId: string, allow: boolean) {
     if (!this.client || !this.sessionId || !this.asked.delete(askId)) return
     void this.client.postSessionIdPermissionsPermissionId({
@@ -647,6 +822,108 @@ export class MaidSession implements Conversation {
   decline(askId: string) {
     if (!this.answering || !this.choosing.delete(askId)) return
     void this.answering.question.reject({ requestID: askId })
+  }
+
+  /**
+   * One of the earlier conversations, picked up.
+   *
+   * Nothing is torn down and nothing is restarted: the server behind her holds
+   * every session it has ever had in this folder, so going back into one is a
+   * matter of which id the next prompt goes into.
+   *
+   * Whatever she was in the middle of is left running where it is. It belongs
+   * to the conversation being left, not to this one — and it finishes there and
+   * is waiting in it whenever it is opened again, which is a better answer than
+   * throwing the answer away because somebody looked at something else.
+   */
+  resume(id: string) {
+    const client = this.client
+    const before = this.sessionId
+    if (!client || id === before) return
+    // Moved into now rather than when the server has answered. Nothing on
+    // screen says a pick has not landed yet — the list is gone and the line is
+    // there to be typed on — so a sentence written in the moment between is
+    // meant for the conversation that was picked, and posting it into the one
+    // being left would lose it and her answer to it with no sign of either.
+    this.sessionId = id
+    // Everything half-said goes with the conversation it was half-said in: the
+    // parts held for it belong to a turn this window is no longer watching.
+    this.working = false
+    this.said = ''
+    this.saying = null
+    this.wrote = false
+    this.parts.clear()
+    this.narrated.clear()
+    if (before) this.letGo(client, before)
+    void this.pickUp(client, id, before, ++this.picking, this.opening)
+  }
+
+  /**
+   * Whatever the conversation being left was waiting on, refused on the way out.
+   *
+   * A tool she is waiting to be allowed holds the turn open on the server until
+   * somebody answers it, and after this nobody can: the question is off the
+   * screen with the conversation it belongs to, and the window will not take an
+   * answer for an id it is no longer holding. Refused, the turn goes on and
+   * ends where it belongs. Left, it waits for ever, and so does anything said
+   * into that conversation afterwards.
+   */
+  private letGo(client: OpencodeClient, from: string) {
+    for (const askId of this.asked) {
+      void client
+        .postSessionIdPermissionsPermissionId({
+          path: { id: from, permissionID: askId },
+          body: { response: 'reject' },
+        })
+        .catch(() => null)
+    }
+    this.asked.clear()
+    for (const askId of this.choosing) void this.answering?.question.reject({ requestID: askId }).catch(() => null)
+    this.choosing.clear()
+  }
+
+  /**
+   * The conversation being opened, read back: it is the one that says where it
+   * was left, and it is also the one that says the conversation is still there.
+   * Deleted from an opencode window somewhere else since the list was drawn,
+   * she is put back where she was and told so — silently left in a session that
+   * is not there, nothing said to her would arrive.
+   */
+  private async pickUp(
+    client: OpencodeClient,
+    id: string,
+    before: string | null,
+    mine: number,
+    attempt: number,
+  ) {
+    const found = await client.session.messages({ path: { id }, query: { limit: READ_BACK } }).catch(() => null)
+    // Or another row was taken over the top of this one, and this answer is
+    // about a conversation nobody is in any more.
+    if (this.spent(attempt) || mine !== this.picking) return
+    if (!found?.data) {
+      // Put back where she was — but only where nothing has gone into the
+      // conversation that was picked. A sentence written before this landed is
+      // already in that one and she is already answering it: moving her back
+      // out would leave the answer streaming into a session the window has
+      // stopped listening to, and the next sentence going somewhere else
+      // again. Then all that failed is the reading back, and that is all this
+      // says.
+      const moved = this.working
+      if (!moved) this.sessionId = before
+      return this.raise({
+        title: moved ? 'That conversation could not be read back' : 'That conversation could not be opened',
+        body: moved
+          ? 'The server behind her would not say what was in it, so the last thing she said there is not on screen. She is in it all the same, and what has just been said to her has gone into it.'
+          : 'The server behind her has no record of it any more. She is back in the one she was already in.',
+        detail: found?.error ? said(found.error) : 'the server did not answer',
+        gone: false,
+      })
+    }
+    // Only while nothing has been said since. A sentence written before this
+    // landed is already in this conversation and she is already answering it —
+    // and where the conversation used to be left is not worth wiping that for.
+    if (!this.working) this.onEvent({ kind: 'picks-up', ...lastSaid(found.data) })
+    await this.tellTalks(client, attempt)
   }
 
   /**

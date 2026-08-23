@@ -325,3 +325,59 @@ test('a page she turned out not to be writing is taken off the scene again', () 
 
   expect(next(guessed, { kind: 'reports', report: null }).report).toBeNull()
 })
+
+test('the conversations she has had here are kept, with the one she is in', () => {
+  const scene = next(up, {
+    kind: 'talks',
+    talks: [{ id: 'ses_2', title: 'The colours of the sky', when: 1000 }],
+    current: 'ses_2',
+  })
+
+  expect(scene.talks).toEqual([{ id: 'ses_2', title: 'The colours of the sky', when: 1000 }])
+  expect(scene.talk).toBe('ses_2')
+})
+
+test('an earlier conversation picked up replaces everything the last one left on screen', () => {
+  const busy = next(
+    next(next(working, { kind: 'says', line: 'looking now', expression: 'focused', mood: '【 focused 】' }), {
+      kind: 'reports',
+      report: { title: 'Colours', body: '# Colours' },
+    }),
+    { kind: 'ask-permission', askId: 'ask-1', toolName: 'bash' },
+  )
+
+  const scene = next(busy, { kind: 'picks-up', line: 'It was in the second haystack.', report: null })
+
+  expect(scene.line).toBe('It was in the second haystack.')
+  // None of it was this conversation's: not the page, not the face, not the
+  // turn she was in the middle of, and not what she was waiting to be allowed.
+  expect(scene.report).toBeNull()
+  expect(scene.mood).toBeNull()
+  expect(scene.expression).toBe('neutral')
+  expect(scene.isWorking).toBe(false)
+  expect(scene.permission).toBeNull()
+})
+
+test('a conversation picked up with a page under her line brings the page with it', () => {
+  const scene = next(up, {
+    kind: 'picks-up',
+    line: 'Here is what I found:',
+    expression: 'proud',
+    mood: '【 proud ᕙ( •̀ ᗜ •́)ᕗ 】',
+    report: { title: 'Colours', body: '# Colours' },
+  })
+
+  expect(scene.report).toEqual({ title: 'Colours', body: '# Colours' })
+  expect(scene.expression).toBe('proud')
+  expect(scene.mood).toBe('【 proud ᕙ( •̀ ᗜ •́)ᕗ 】')
+})
+
+test('an earlier conversation picked up takes the note about the last one with it', () => {
+  const stuck = next(up, { kind: 'trouble', trouble: STUCK })
+
+  const scene = next(stuck, { kind: 'picks-up', line: 'It was in the second haystack.', report: null })
+
+  // The note was about the conversation she has just been taken out of. Left
+  // standing, it covers the box she is spoken to on in the one she is in.
+  expect(scene.trouble).toBeNull()
+})

@@ -66,14 +66,14 @@ const A_BREAK = '↵'
 export const LINE_HOLDS = 100_000
 
 /**
- * What can stand over the scene: the keyboard help, one of the three lists, the
+ * What can stand over the scene: the keyboard help, one of the four lists, the
  * line a folder is typed out on, or what she wrote this turn.
  *
  * One value rather than a flag each, because only ever one of them is up. Held
  * apart, that rule had to be spelled out by every key that opened one — and
  * forgetting a single line left two of them on screen, both answering Enter.
  */
-type Over = 'keys' | 'models' | 'shift' | 'folder' | 'path' | 'report' | null
+type Over = 'keys' | 'models' | 'shift' | 'folder' | 'talks' | 'path' | 'report' | null
 
 /**
  * The frame whatever is over the scene stands in: the whole window, with the
@@ -160,6 +160,28 @@ function invitation(scene: Scene): string {
 }
 
 /**
+ * How long ago a conversation was last spoken in, in the words anyone would say
+ * it in.
+ *
+ * It is what tells two rows of the list apart: a conversation is named after
+ * the first thing said in it, and a week of work in one folder starts several
+ * of them the same way. Rounded rather than exact — nobody picking up where he
+ * left off is counting minutes, and the row has one line for it.
+ */
+function ago(when: number, now: number): string {
+  const minutes = Math.round((now - when) / 60_000)
+  if (minutes < 1) return 'just now'
+  const times = (many: number, what: string) => `${many} ${what}${many === 1 ? '' : 's'} ago`
+  if (minutes < 60) return times(minutes, 'minute')
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return times(hours, 'hour')
+  const days = Math.round(hours / 24)
+  if (days < 7) return times(days, 'day')
+  if (days < 365) return times(Math.round(days / 7), 'week')
+  return times(Math.round(days / 365), 'year')
+}
+
+/**
  * The line above the box: what she is doing, or — before there is anyone to do
  * anything — that what was said to her is being kept. It goes there rather than
  * in the input because it has to survive the next thing being typed.
@@ -201,6 +223,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     use,
     swapTo,
     moveTo,
+    resumeTo,
     retry,
     dismiss,
   } = useMaid(openMaid)
@@ -278,10 +301,20 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // explain why. So what is standing there is not quite what was opened.
   const standing: Over = over === 'report' && scene.report === null ? null : over
   // Which list it is, when it is one of them. The frame, the keys and putting
-  // it away are the same for all three — only the rows and where a chosen one
+  // it away are the same for all four — only the rows and where a chosen one
   // goes differ.
   const picking =
-    standing === 'models' || standing === 'shift' || standing === 'folder' ? standing : null
+    standing === 'models' || standing === 'shift' || standing === 'folder' || standing === 'talks'
+      ? standing
+      : null
+  // The lists that can be typed at, and only once there are rows to narrow: what
+  // she thinks with, which runs to hundreds of rows, and what has been talked
+  // about here, whose rows are sentences — as against four names on either of
+  // the others. A list with nothing in it takes no letters, and a key nothing
+  // takes must go on meaning what it meant: opened while she is down, r is
+  // still the one way to open her again.
+  const narrows =
+    (picking === 'models' && scene.models.length > 0) || (picking === 'talks' && scene.talks.length > 0)
 
   const asked = scene.permission
   // Her question with the answers written out. She raised it, so it is not one
@@ -311,13 +344,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     up: standing === 'keys',
     picking: picking !== null || answering,
     ticking: answering && question.multiple,
-    // The one list that can be typed at: hundreds of models, as against four
-    // names on either of the others — and only once there are rows to narrow.
-    // A list with nothing in it takes no letters, and a key nothing takes must
-    // go on meaning what it meant: opened while she is down, r is still the
-    // one way to open her again.
-    narrows: picking === 'models' && scene.models.length > 0,
-    narrowed: picking === 'models' && narrowedTo !== '',
+    narrows,
+    narrowed: narrows && narrowedTo !== '',
     path: standing === 'path',
     reading: standing === 'report',
     hasReport: scene.report !== null,
@@ -371,6 +399,12 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         // anyone is still asking.
         if (standing !== 'models') setNarrowedTo('')
         return setOver('models')
+      case 'talks':
+        // Opened afresh, the same as the models are: what was typed at the last
+        // list is not a question anyone is still asking, and the two lists
+        // share the letters.
+        if (standing !== 'talks') setNarrowedTo('')
+        return setOver('talks')
       case 'who':
         return setOver('shift')
       case 'where':
@@ -428,6 +462,23 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     [cast],
   )
 
+  // The conversations she has had here, as rows: what each came to be called,
+  // and under it when it was last spoken in — which is what tells two of them
+  // apart. How long ago is worked out when the rows are, so a list left open
+  // does not tick.
+  const talks: Choice[] = useMemo(
+    () => scene.talks.map((one) => ({ id: one.id, label: one.title, description: ago(one.when, Date.now()) })),
+    [scene.talks],
+  )
+  // The rows as they were when the list was opened, and left alone while it is.
+  // She goes on answering underneath it, and the end of a turn puts the
+  // conversation it happened in back at the top — rows sliding out from under
+  // the highlight is a conversation opened by accident. Kept up to date at
+  // every other moment, and taken as they come while there are none: a list
+  // opened before she is up would otherwise stay empty for as long as it is up.
+  const rows = useRef(talks)
+  if (picking !== 'talks' || !rows.current.length) rows.current = talks
+
   // What the list open right now is a list of, and nothing at all when none is
   // open.
   const list =
@@ -441,31 +492,39 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
             take: use,
             narrowing: { typed: narrowedTo, onType: setNarrowedTo },
           }
-        : picking === 'shift'
-          ? { title: 'Who is on shift', items: shifts, chosen: nextShift.id, take: swapTo, narrowing: undefined }
-          : {
-              title: 'Where she works',
-              items: folderRows(folder, been),
-              chosen: folder,
-              narrowing: undefined,
-              // The one row that is not a folder asks for one instead: the
-              // folder wanted is very often one she has never been in, and the
-              // list can only offer the ones she has.
-              take: (id: string) => {
-                if (id === TYPE_A_PATH) {
-                  setTrouble(null)
-                  return setOver('path')
-                }
-                // A row written down for a folder that has been moved or
-                // deleted since. Closing the list on it would look exactly
-                // like the move having worked, so it says what happened and
-                // leaves a line to type somewhere else on.
-                const why = troubleWith(id)
-                setTrouble(why)
-                if (why === null) moveTo(id)
-                else setOver('path')
-              },
+        : picking === 'talks'
+          ? {
+              title: 'What you talked about before',
+              items: rows.current,
+              chosen: scene.talk,
+              take: resumeTo,
+              narrowing: { typed: narrowedTo, onType: setNarrowedTo },
             }
+          : picking === 'shift'
+            ? { title: 'Who is on shift', items: shifts, chosen: nextShift.id, take: swapTo, narrowing: undefined }
+            : {
+                title: 'Where she works',
+                items: folderRows(folder, been),
+                chosen: folder,
+                narrowing: undefined,
+                // The one row that is not a folder asks for one instead: the
+                // folder wanted is very often one she has never been in, and
+                // the list can only offer the ones she has.
+                take: (id: string) => {
+                  if (id === TYPE_A_PATH) {
+                    setTrouble(null)
+                    return setOver('path')
+                  }
+                  // A row written down for a folder that has been moved or
+                  // deleted since. Closing the list on it would look exactly
+                  // like the move having worked, so it says what happened and
+                  // leaves a line to type somewhere else on.
+                  const why = troubleWith(id)
+                  setTrouble(why)
+                  if (why === null) moveTo(id)
+                  else setOver('path')
+                },
+              }
 
   // 760px of a 960px window, and never wider than the terminal has room for.
   const boxWidth = Math.min(90, width - 6)
