@@ -1,7 +1,25 @@
-import type { BridgeEvent, Model, Question, Report, Standing, Talk, Trouble } from './protocol'
+import type { BridgeEvent, Model, Question, Report, Standing, Talk, Trouble, Whisper } from './protocol'
 import type { Expression } from './cast'
 
-export type { Question, Report, Standing } from './protocol'
+export type { Question, Report, Standing, Whisper } from './protocol'
+
+/**
+ * One of the words up beside her right now, with the number it went up under.
+ *
+ * The number is what tells two of them apart, and it has to be one: the same
+ * tool run twice is the same few words twice, and the one whose moment is up is
+ * the older of them rather than both.
+ */
+export type Whispered = Whisper & { id: number }
+
+/**
+ * How many of them stand together at the most, oldest first out.
+ *
+ * A turn picks up tools faster than any of them can be read, and left to
+ * themselves they would run down the screen and reach the box she speaks from.
+ * Three is what can be taken in at a glance anyway.
+ */
+export const AT_MOST = 3
 
 /** What she wants picked, and the id the answer goes back under. */
 export type Asked = { askId: string; questions: Question[] }
@@ -29,6 +47,12 @@ export type Scene = {
   mood: string | null
   /** 地の文 — what she is doing, in the words the session gives it. */
   narration: string | null
+  /** The words up beside her, oldest first: what she has just put down, and
+   * whether it went through. Each of them comes off again on its own. */
+  whispers: Whispered[]
+  /** How many there have been this session, which is where the next one's
+   * number comes from. */
+  whispered: number
   /** What she wrote this turn, waiting to be read. Nothing, until she writes
    * something too long to say. */
   report: Report | null
@@ -60,6 +84,8 @@ export const OPENING: Scene = {
   expression: 'neutral',
   mood: null,
   narration: null,
+  whispers: [],
+  whispered: 0,
   report: null,
   isWorking: false,
   permission: null,
@@ -101,6 +127,14 @@ export function next(was: Scene, event: BridgeEvent): Scene {
     // nothing else on this screen, so nothing is hidden.
     case 'doing':
       return { ...was, narration: event.label }
+    // A word about what she has just put down. It stacks rather than replaces:
+    // a turn is several tools and each of them is worth the row it takes, and
+    // the one before it has not had its moment yet. Only the last few stand at
+    // once — the rest is what the 地の文 already said while it was happening.
+    case 'whispers': {
+      const id = was.whispered + 1
+      return { ...was, whispered: id, whispers: [...was.whispers, { ...event.whisper, id }].slice(-AT_MOST) }
+    }
     // Something she cannot get past — or word that it is over. Whatever she was
     // in the middle of is not going to finish, and a question raised by the
     // thing that broke has nobody left to answer it, so both go with it. What
@@ -142,6 +176,7 @@ export function next(was: Scene, event: BridgeEvent): Scene {
         expression: event.expression ?? 'neutral',
         mood: event.mood ?? null,
         narration: null,
+        whispers: [],
         report: event.report,
         isWorking: false,
         permission: null,
@@ -165,6 +200,19 @@ export function next(was: Scene, event: BridgeEvent): Scene {
       return { ...was, isWorking: false, permission: null, asked: null, line: event.error ?? was.line }
   }
 }
+
+/**
+ * One of them, taken back off: its moment is up.
+ *
+ * By number rather than by position, because they do not necessarily come off
+ * in the order they went up — one pushed out by newer ones still has a moment
+ * of its own running somewhere, and it must not take a row that is not its own
+ * down with it when that is over.
+ */
+export const hushed = (was: Scene, id: number): Scene => ({
+  ...was,
+  whispers: was.whispers.filter((one) => one.id !== id),
+})
 
 /**
  * Whether nothing has passed between them yet: she has said nothing, nothing is

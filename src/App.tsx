@@ -15,6 +15,7 @@ import { PathBox } from './PathBox'
 import { Picker, type Choice } from './Picker'
 import { ReportReader } from './ReportReader'
 import { TroubleNote } from './TroubleNote'
+import { Whispers } from './Whispers'
 import { Asking, columns } from './Asking'
 import { cornerFor, pressed, takes } from './keys'
 import { useMaid, type Scene } from './brain'
@@ -240,6 +241,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     startFresh,
     retry,
     dismiss,
+    hush,
   } = useMaid(openMaid)
   // The line she is spoken to on, and a copy of what is typed on it. The copy
   // is for coming back: the line is taken out of the box while her question or
@@ -585,6 +587,12 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         left={Math.round((width - boxWidth) / 2)}
         zIndex={6}
       >
+        {/* Above the box, growing up out of it: the box grows upwards too, and
+            these are the ones that give way. Anything her line needs, her line
+            takes — a whisper pushed off the top of the window was a moment of
+            nothing to begin with. */}
+        <Whispers theme={theme} whispers={scene.whispers} width={boxWidth} onGone={hush} />
+
         <DialogueBox
           theme={theme}
           name={onShift.name}

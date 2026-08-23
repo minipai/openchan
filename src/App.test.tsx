@@ -30,6 +30,7 @@ import { CAST, remember, remembered } from './cast'
 import { OPENED_IN } from './folder'
 import type { BridgeEvent } from './protocol'
 import { LOST, MODELS, Stand, STUCK, TALKS } from './stand'
+import { WHISPERED_FOR } from './Whispers'
 
 /** What a terminal is unless someone has resized it. */
 const TERMINAL = { width: 80, height: 24 }
@@ -66,6 +67,49 @@ const opened: { renderer: { destroy(): void } }[] = []
 afterEach(() => {
   for (const setup of opened.splice(0)) setup.renderer.destroy()
 })
+
+/**
+ * The clock, for the one thing on this screen that counts out a moment of its
+ * own.
+ *
+ * A whisper takes itself off after a couple of seconds, and a test that waited
+ * for that would be a test that sat still for them. Everybody else's clock is
+ * left alone: the renderer underneath is hanging moments of its own the whole
+ * time it is up, and stopping those stops the terminal rather than the whisper.
+ * So only the ones hung for exactly as long as a whisper lasts are caught here,
+ * and they come due when the test says the time has passed.
+ */
+function heldMoments() {
+  const real = globalThis.setTimeout
+  const realClear = globalThis.clearTimeout
+  const held = new Map<object, { due: number; run: () => void }>()
+  let now = 0
+  globalThis.setTimeout = ((run: () => void, ms?: number, ...rest: unknown[]) => {
+    if (ms !== WHISPERED_FOR) return real(run, ms, ...rest)
+    const token = {}
+    held.set(token, { due: now + ms, run })
+    return token
+  }) as unknown as typeof setTimeout
+  globalThis.clearTimeout = ((token: object) => {
+    if (!held.delete(token)) realClear(token as Parameters<typeof clearTimeout>[0])
+  }) as typeof clearTimeout
+  return {
+    /** That much of it, passed. Whatever was due by then has happened. */
+    passes: (ms: number) => {
+      now += ms
+      for (const [token, moment] of [...held]) {
+        if (moment.due > now) continue
+        held.delete(token)
+        moment.run()
+      }
+    },
+    /** The real one back, however the test went. */
+    give: () => {
+      globalThis.setTimeout = real
+      globalThis.clearTimeout = realClear
+    },
+  }
+}
 
 /**
  * The whole window over a stand-in, with the keyboard to drive it by.
@@ -115,6 +159,9 @@ async function onScreen() {
     her: sessions[0]!,
     sessions,
     clipboard,
+    /** Something done to the window from outside it, settled before the screen
+     * is looked at: moving the clock on, the same as pressing a key. */
+    settle,
     /** The terminal saying it will not take a clipboard write. */
     refuseClipboard: () => {
       setup.renderer.copyToClipboardOSC52 = () => false
@@ -1165,4 +1212,116 @@ test('a list of conversations with none in it yet is a list with nothing in it',
   expect(frame()).not.toContain('type to narrow it')
   await press('r')
   expect(her.retries).toBe(1)
+})
+
+/** What she has just put down, as the session says it. */
+const whispered = (text: string, kind: 'did' | 'failed' = 'did'): BridgeEvent =>
+  ({ kind: 'whispers', whisper: { text, kind } })
+
+test('a word about what she just did goes up beside her, and takes itself away again', async () => {
+  const clock = heldMoments()
+  try {
+    const { wakeUp, raise, settle, frame } = await onScreen()
+    await wakeUp()
+    await raise({ kind: 'says', line: 'It was in the second haystack' })
+    await raise({ kind: 'doing', label: 'reading brain.ts' })
+
+    await raise(whispered('read brain.ts'))
+
+    expect(frame()).toContain('· read brain.ts')
+    // Neither of the two lines anybody actually reads has been touched.
+    expect(frame()).toContain('It was in the second haystack')
+    expect(frame()).toContain('reading brain.ts')
+
+    await settle(() => clock.passes(WHISPERED_FOR))
+
+    // Gone on its own, with nobody pressing anything and nothing else moving.
+    expect(frame()).not.toContain('· read brain.ts')
+    expect(frame()).toContain('It was in the second haystack')
+    expect(frame()).toContain('reading brain.ts')
+  } finally {
+    clock.give()
+  }
+})
+
+test('several of them stand together, each with its own moment', async () => {
+  const clock = heldMoments()
+  try {
+    const { wakeUp, raise, settle, frame } = await onScreen()
+    await wakeUp()
+    await raise({ kind: 'says', line: 'It was in the second haystack' })
+
+    await raise(whispered('read brain.ts'))
+    await raise(whispered('wrote scene.ts'))
+
+    // Both of them, rather than the second over the first — and her line under
+    // neither.
+    expect(frame()).toContain('· read brain.ts')
+    expect(frame()).toContain('· wrote scene.ts')
+    expect(frame()).toContain('It was in the second haystack')
+
+    // One raised halfway through theirs keeps a whole moment of its own.
+    await settle(() => clock.passes(WHISPERED_FOR / 2))
+    await raise(whispered('looked for the needle'))
+    await settle(() => clock.passes(WHISPERED_FOR / 2))
+
+    expect(frame()).not.toContain('· read brain.ts')
+    expect(frame()).not.toContain('· wrote scene.ts')
+    expect(frame()).toContain('· looked for the needle')
+
+    await settle(() => clock.passes(WHISPERED_FOR / 2))
+
+    expect(frame()).not.toContain('· looked for the needle')
+  } finally {
+    clock.give()
+  }
+})
+
+test('a burst of them gives way at the top rather than running down the screen', async () => {
+  const clock = heldMoments()
+  try {
+    const { wakeUp, raise, frame } = await onScreen()
+    await wakeUp()
+    await raise({ kind: 'says', line: 'It was in the second haystack' })
+
+    // One more than there is room for, all inside one of their moments: the
+    // oldest goes as the fourth arrives rather than waiting its moment out.
+    await raise(whispered('read brain.ts'))
+    await raise(whispered('wrote scene.ts'))
+    await raise(whispered('ran bun test', 'failed'))
+    await raise(whispered('looked for the needle'))
+
+    expect(frame()).not.toContain('· read brain.ts')
+    expect(frame()).toContain('· wrote scene.ts')
+    expect(frame()).toContain('× ran bun test')
+    expect(frame()).toContain('· looked for the needle')
+    expect(frame()).toContain('It was in the second haystack')
+  } finally {
+    clock.give()
+  }
+})
+
+test('a word too long for the row is cut rather than laid across the window', async () => {
+  const clock = heldMoments()
+  try {
+    const { wakeUp, raise, frame } = await onScreen()
+    await wakeUp()
+
+    await raise(whispered(`ran bun test --filter ${'the whole of it '.repeat(20)}`))
+
+    // One row, ending inside the box it is drawn over rather than running on
+    // across the window or wrapping onto a second row.
+    const rows = frame().split('\n').filter((row) => row.includes('ran bun test'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.trimEnd().length).toBeLessThanOrEqual(77)
+    expect(rows[0]).toContain('…')
+
+    // Cut by the cells it is drawn in rather than by its length: a Japanese
+    // filename is two of them a letter, and counted the other way it takes the
+    // row with it.
+    await raise(whispered(`read ${'これは長いファイル名です'.repeat(6)}.ts`))
+    expect(frame().split('\n').filter((row) => row.includes('read これ'))).toHaveLength(1)
+  } finally {
+    clock.give()
+  }
 })

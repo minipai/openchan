@@ -19,6 +19,23 @@ export type Model = { id: string; label: string }
  */
 export type Talk = { id: string; title: string; when: number }
 
+/**
+ * A word about something that just happened, said beside her rather than by
+ * her: a tool she picked up and put down again, or one that came back wrong.
+ *
+ * Nobody is meant to stop and read it. It goes up, it is there for a moment,
+ * and it takes itself away again — which is why it is kept off her line and off
+ * the 地の文: those two are read, and a sentence pushed aside by word of a file
+ * having been written is a sentence nobody got.
+ */
+export type Whisper = {
+  /** What happened, in a few words. It has one row and shares it with nothing. */
+  text: string
+  /** Whether it went through or came back wrong, which is the only difference
+   * the screen makes between them. */
+  kind: 'did' | 'failed'
+}
+
 /** Something she wrote rather than said: what she headed it with, and the
  * markdown under it. */
 export type Report = { title: string; body: string }
@@ -102,6 +119,11 @@ export type BridgeEvent =
   | { kind: 'reports'; report: Report | null }
   /** 地の文 — what she is doing, while she is doing it. */
   | { kind: 'doing'; label: string }
+  /** A word about what just happened, for a moment: she has put a tool down,
+   * and either it went through or it did not. Said beside her rather than
+   * instead of anything — several of them stand together, and none of them
+   * touches what she is saying. */
+  | { kind: 'whispers'; whisper: Whisper }
   /** A tool she may not pick up until he says she can, with what she would do
    * with it: one line of it for the box, which has room for one line, and the
    * whole of it for whoever wants to read before saying yes — and what saying
