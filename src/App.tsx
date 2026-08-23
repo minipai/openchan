@@ -3,11 +3,13 @@ import { useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
 import { KeysOverlay } from './KeysOverlay'
+import { PathBox } from './PathBox'
 import { Picker, type Choice } from './Picker'
 import { ReportReader } from './ReportReader'
 import { cornerFor, keyFor, pressed, shownAs, takes } from './keys'
 import { useMaid, type Scene } from './brain'
 import type { Character } from './cast'
+import { asPath, fitted, folderRows, shortened, troubleWith, TYPE_A_PATH } from './folder'
 import { paletteOver } from './theme'
 
 /** The strip the window leaves under the dialogue box. */
@@ -45,7 +47,7 @@ export function App({ behind }: { behind: string | undefined }) {
   // Her box is coloured against the terminal, the same answer that keeps her
   // out of a black slab.
   const theme = paletteOver(behind)
-  const { scene, cast, onShift, nextShift, ask, answer, stop, use, swapTo } = useMaid()
+  const { scene, cast, onShift, nextShift, folder, been, ask, answer, stop, use, swapTo, moveTo } = useMaid()
   const [typed, setTyped] = useState('')
   // Ctrl-B: draw her out of half-block characters even where the terminal
   // could take real pixels. It is the rougher picture, and it is a look.
@@ -54,7 +56,12 @@ export function App({ behind }: { behind: string | undefined }) {
   // Ctrl-P and Ctrl-G: what she could think with, and which of them is standing
   // there. What each list is picked from is held elsewhere, so all the window
   // keeps is which of them is open.
-  const [picking, setPicking] = useState<'models' | 'shift' | null>(null)
+  const [picking, setPicking] = useState<'models' | 'shift' | 'folder' | null>(null)
+  // The one row of the folder list that is not a folder, taken: the rows go
+  // away and a line to type a path on takes their place, along with whatever
+  // was wrong with the last one typed.
+  const [typingPath, setTypingPath] = useState(false)
+  const [trouble, setTrouble] = useState<string | null>(null)
   // Ctrl-R: what she wrote this turn, open over the scene. What is in it is the
   // scene's — this is only whether it is being looked at.
   const [reading, setReading] = useState(false)
@@ -66,6 +73,7 @@ export function App({ behind }: { behind: string | undefined }) {
   const where = {
     up: keysUp,
     picking: picking !== null,
+    path: typingPath,
     reading: open,
     hasReport: scene.report !== null,
     isWorking: scene.isWorking,
@@ -89,6 +97,7 @@ export function App({ behind }: { behind: string | undefined }) {
         // go on taking Enter behind these keys, and swap what she thinks with
         // while the master is reading about it.
         setPicking(null)
+        setTypingPath(false)
         setReading(false)
         return setKeysUp(true)
       case 'close':
@@ -105,20 +114,30 @@ export function App({ behind }: { behind: string | undefined }) {
       case 'models':
         setKeysUp(false)
         setReading(false)
+        setTypingPath(false)
         return setPicking('models')
       case 'who':
         setKeysUp(false)
         setReading(false)
+        setTypingPath(false)
         return setPicking('shift')
+      case 'where':
+        setKeysUp(false)
+        setReading(false)
+        setTypingPath(false)
+        return setPicking('folder')
       // The same one-thing-at-a-time rule, and nothing is lost by it: what she
       // wrote waits on the scene whether or not it is being looked at.
       case 'report':
         setKeysUp(false)
         setPicking(null)
+        setTypingPath(false)
         return setReading(true)
-      // Nothing else happens: what she thinks with and who is standing there
-      // are only ever changed by picking something off the list.
+      // Nothing else happens: what she thinks with, who is standing there and
+      // where she works are only ever changed by taking a row off the list — or,
+      // for a folder she has never been in, by typing it out in full.
       case 'cancel':
+        setTypingPath(false)
         return setPicking(null)
     }
   })
@@ -138,7 +157,30 @@ export function App({ behind }: { behind: string | undefined }) {
       ? null
       : picking === 'models'
         ? { title: 'What she thinks with', items: scene.models, chosen: scene.model, take: use }
-        : { title: 'Who is on shift', items: shifts, chosen: nextShift.id, take: swapTo }
+        : picking === 'shift'
+          ? { title: 'Who is on shift', items: shifts, chosen: nextShift.id, take: swapTo }
+          : {
+              title: 'Where she works',
+              items: folderRows(folder, been),
+              chosen: folder,
+              // The one row that is not a folder asks for one instead: the
+              // folder wanted is very often one she has never been in, and the
+              // list can only offer the ones she has.
+              take: (id: string) => {
+                if (id === TYPE_A_PATH) {
+                  setTrouble(null)
+                  return setTypingPath(true)
+                }
+                // A row written down for a folder that has been moved or
+                // deleted since. Closing the list on it would look exactly
+                // like the move having worked, so it says what happened and
+                // leaves a line to type somewhere else on.
+                const why = troubleWith(id)
+                setTrouble(why)
+                if (why === null) moveTo(id)
+                else setTypingPath(true)
+              },
+            }
 
   // 760px of a 960px window, and never wider than the terminal has room for.
   const boxWidth = Math.min(90, width - 6)
@@ -171,6 +213,9 @@ export function App({ behind }: { behind: string | undefined }) {
         <DialogueBox
           theme={theme}
           name={onShift.name}
+          // Half the strip at most: what she is doing is written on the other
+          // half of the same line.
+          folder={fitted(shortened(folder), Math.floor(boxWidth / 2))}
           width={boxWidth}
           line={scene.line}
           narration={above(scene, nextShift.id === onShift.id ? null : nextShift)}
@@ -188,7 +233,7 @@ export function App({ behind }: { behind: string | undefined }) {
               <box flexDirection="row" gap={1}>
                 <text fg={theme.primary}>›</text>
                 <input
-                  focused={!keysUp && picking === null && !open}
+                  focused={!keysUp && picking === null && !typingPath && !open}
                   value={typed}
                   placeholder={invitation(scene)}
                   flexGrow={1}
@@ -229,6 +274,39 @@ export function App({ behind }: { behind: string | undefined }) {
             onPick={(id) => {
               list.take(id)
               setPicking(null)
+            }}
+          />
+        </box>
+      )}
+
+      {/* Where the list was, because it is the same list one step further in:
+          the rows have been put away and the folder is being written out. */}
+      {typingPath && (
+        <box
+          position="absolute"
+          top={0}
+          left={0}
+          width={width}
+          height={height}
+          alignItems="center"
+          justifyContent="center"
+          zIndex={8}
+        >
+          <PathBox
+            theme={theme}
+            from={shortened(folder)}
+            trouble={trouble}
+            width={Math.min(60, width - 6)}
+            onGo={(typed) => {
+              const going = asPath(typed, folder)
+              // A path that is not a folder keeps the box on screen with the
+              // reason under it. Closing on it would look exactly like a folder
+              // that had been moved to and quietly was not.
+              const why = troubleWith(going)
+              setTrouble(why)
+              if (why !== null) return
+              moveTo(going)
+              setTypingPath(false)
             }}
           />
         </box>

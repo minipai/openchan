@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CAST, remember, remembered, type Character } from './cast'
+import { folders, OPENED_IN, rememberFolder, troubleWith } from './folder'
 import { MaidSession } from './opencode'
 import { handedOver, hold, next, OPENING, unspoken, type Scene } from './scene'
 import type { Conversation, OpenConversation } from './protocol'
@@ -9,7 +10,7 @@ export type { Permission, Scene } from './scene'
 /** The only agent there is today. Written once rather than inline in the
  * default: a fresh one each render would be a fresh conversation each render
  * to anything that watched it. */
-const openMaid: OpenConversation = (say, who) => new MaidSession(say, who)
+const openMaid: OpenConversation = (say, who, folder) => new MaidSession(say, who, folder)
 
 /**
  * Her, for as long as the window is open.
@@ -26,6 +27,14 @@ export function useMaid(open: OpenConversation = openMaid) {
    * while there was a conversation going: then she is waiting for the next
    * session rather than walking into this one. */
   const [asked, setAsked] = useState<Character>(who)
+  /** The folder the open session can see. It cannot change under a session
+   * either — opencode fixes it when the session is opened — so moving her is
+   * the same closing and reopening that sending for one of the others is. */
+  const [folder, setFolder] = useState(OPENED_IN)
+  /** Wherever she has been, for the list to offer. Kept up here rather than
+   * read at the moment the list opens, so that a folder just moved to is in it
+   * without the note being read again mid-render. */
+  const [been, setBeen] = useState(folders)
   const session = useRef<Conversation | null>(null)
 
   useEffect(() => {
@@ -33,9 +42,13 @@ export function useMaid(open: OpenConversation = openMaid) {
     // for another girl fails on its way down and says so — and by then the
     // scene it would be saying it into is hers, not its own.
     let mine = true
-    const her = open((event) => {
-      if (mine) setScene((was) => next(was, event))
-    }, who)
+    const her = open(
+      (event) => {
+        if (mine) setScene((was) => next(was, event))
+      },
+      who,
+      folder,
+    )
     session.current = her
     void her.start()
     // React never unmounts on the way out — the renderer exits the process
@@ -49,7 +62,7 @@ export function useMaid(open: OpenConversation = openMaid) {
       her.close()
       session.current = null
     }
-  }, [open, who])
+  }, [open, who, folder])
 
   // Nothing is sent from where it was typed. It waits on the scene until there
   // is a session to take it, and goes the moment there is — the window is up
@@ -71,6 +84,10 @@ export function useMaid(open: OpenConversation = openMaid) {
     /** Who the picker marks: whoever was asked for, whether or not she has been
      * able to come out yet. */
     nextShift: asked,
+    /** The folder she is working in, which the list marks and the screen says. */
+    folder,
+    /** The folders worth offering her, most recent first. */
+    been,
     ask(prompt: string) {
       setScene((was) => hold(was, prompt))
     },
@@ -105,6 +122,34 @@ export function useMaid(open: OpenConversation = openMaid) {
       // session being closed, down to whether there is anyone to speak to.
       setScene(OPENING)
       setWho(her)
+    },
+    /**
+     * Move her to another folder.
+     *
+     * Unlike sending for one of the others, this does not wait for the next
+     * session: being asked to work somewhere else is a thing to do now, and a
+     * pick that took effect the next time the window opened would be no answer
+     * at all. So the conversation ends here — which is what changing the folder
+     * means, because opencode fixes a session's folder when it opens it.
+     *
+     * Where she was is written down as well as where she is going, so the list
+     * that took her away is also the list that brings her back. And whoever was
+     * sent for mid-conversation walks into it: this is the next session, which
+     * is the one she has been waiting for.
+     */
+    moveTo(where: string) {
+      // A row for a folder that has been moved or deleted since it was written
+      // down, or a path typed straight past the box that checks them. Neither is
+      // worth opening a session onto nothing for.
+      if (where === folder || troubleWith(where) !== null) return
+      rememberFolder(folder)
+      rememberFolder(where)
+      setBeen(folders())
+      // Back to nothing on the way in, the same as sending for one of the
+      // others: what is on screen belongs to the session being closed.
+      setScene(OPENING)
+      setWho(asked)
+      setFolder(where)
     },
     answer(askId: string, allow: boolean) {
       session.current?.answer(askId, allow)

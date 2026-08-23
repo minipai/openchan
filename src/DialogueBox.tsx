@@ -16,6 +16,7 @@ export function DialogueBox({
   theme,
   name,
   line,
+  folder,
   narration,
   mood,
   isWorking,
@@ -26,6 +27,11 @@ export function DialogueBox({
   /** Whoever is on shift, for the plate on the frame's edge. */
   name: string
   line: string
+  /** The folder she is working in, short enough to read. It is on screen at all
+   * times rather than behind the list that changes it: everything she picks up
+   * happens in there, and a girl quietly working in the wrong folder is the one
+   * mistake this window could make that nobody would notice. */
+  folder: string
   /** 地の文 — what she is doing, while she is doing it. */
   narration: string | null
   mood: string | null
@@ -42,9 +48,11 @@ export function DialogueBox({
   return (
     <box width={width} flexDirection="column">
       {/* Above the frame, where the window floats them: what she is doing right
-          now, gone the moment she starts speaking again. */}
-      <box height={1} paddingLeft={2}>
-        <text fg={theme.faint}>{narration ?? ''}</text>
+          now on the left, gone the moment she starts speaking again, and where
+          she is doing it on the right, which does not go anywhere. */}
+      <box height={1} paddingX={2} flexDirection="row" justifyContent="space-between">
+        <text fg={theme.faint} flexShrink={1}>{narration ?? ''}</text>
+        <text fg={theme.muted} flexShrink={0}>{folder}</text>
       </box>
 
       <box
