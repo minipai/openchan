@@ -1,5 +1,5 @@
-import type { Character } from './cast'
-import type { Expression } from './expressions'
+import type { Character } from './her/cast'
+import type { Expression } from './her/expressions'
 
 /**
  * One of the models she could think with: what the agent behind her calls it,

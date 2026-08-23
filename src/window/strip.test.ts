@@ -4,7 +4,7 @@ import path from 'node:path'
 import { columns } from './Asking'
 import { STRIP_SPENDS } from './DialogueBox'
 import { shareOut } from './strip'
-import type { Model } from './protocol'
+import type { Model } from '../protocol'
 
 /** Somewhere with a name long enough to have to be cut: twenty-one columns of
  * it, written the way the strip writes it. */

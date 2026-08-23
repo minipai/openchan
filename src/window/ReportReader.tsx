@@ -1,6 +1,6 @@
 import { columns } from './Asking'
 import { readingKeys, shownAs, type Shortcut } from './keys'
-import type { Report } from './scene'
+import type { Report } from '../scene'
 import type { Palette } from './theme'
 
 /** What is left between one key along the bottom edge and the next. */

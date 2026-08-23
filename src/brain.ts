@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { CAST, remember, remembered, type Character } from './cast'
+import { CAST, remember, remembered, type Character } from './her/cast'
 import { folders, OPENED_IN, rememberFolder, troubleWith } from './folder'
-import { MaidSession } from './opencode'
+import { MaidSession } from './opencode/opencode'
 import { handedOver, hold, hushed, next, OPENING, unspoken, type Scene } from './scene'
 import type { Conversation, OpenConversation } from './protocol'
 

@@ -1,5 +1,5 @@
 import { keyFor, shownAs } from './keys'
-import type { Trouble } from './protocol'
+import type { Trouble } from '../protocol'
 import type { Palette } from './theme'
 
 /**

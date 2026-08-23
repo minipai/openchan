@@ -1,5 +1,5 @@
 import type { BridgeEvent, Model, Question, Report, Standing, Talk, Trouble, Whisper } from './protocol'
-import type { Expression } from './cast'
+import type { Expression } from './her/cast'
 
 export type { Question, Report, Standing, Whisper } from './protocol'
 

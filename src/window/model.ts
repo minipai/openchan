@@ -1,5 +1,5 @@
 import { columns, cut } from './Asking'
-import type { Model } from './protocol'
+import type { Model } from '../protocol'
 
 /** The least room worth writing a model's name into. Under this there is
  * nothing left of it but the first letter or two, which names nothing — better
