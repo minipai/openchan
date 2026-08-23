@@ -32,6 +32,7 @@ bun dev
 | `Enter` | send |
 | `ESC` | interrupt her |
 | `y` / `n` | allow or refuse a tool she asked for |
+| `Ctrl-R` | read what she wrote — anything longer than a line lives on its own page |
 | `Ctrl-B` | draw her out of half-block characters — the rougher picture, on purpose |
 | `Ctrl-C` | leave |
 

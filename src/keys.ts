@@ -23,6 +23,9 @@ export type Does =
   | 'leave'
   | 'models'
   | 'who'
+  | 'report'
+  | 'scroll-up'
+  | 'scroll-down'
   | 'previous'
   | 'next'
   | 'choose'
@@ -31,9 +34,10 @@ export type Does =
 /**
  * The ones the window does not do itself, and so does not take the key away
  * from whatever is underneath: the line she is spoken to on takes Enter, an
- * open list takes the arrows and Enter, and the renderer takes Ctrl-C.
+ * open list and an open report take the arrows, the list takes Enter, and the
+ * renderer takes Ctrl-C.
  */
-const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'leave']
+const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'leave', 'scroll-up', 'scroll-down']
 
 /** Whether pressing it is the window's own to act on — and so to keep from
  * reaching what is drawn under it. */
@@ -41,8 +45,9 @@ export const takes = (does: Does) => !THEIRS.includes(does)
 
 /** When a key is worth anything: whenever, while there is a line to type into,
  * while she is working, while she is waiting to be allowed, while a list is
- * open, or while these keys are on screen. */
-type When = 'always' | 'typing' | 'working' | 'asked' | 'picking' | 'up'
+ * open, while there is something she wrote to read, while it is open, or while
+ * these keys are on screen. */
+type When = 'always' | 'typing' | 'working' | 'asked' | 'picking' | 'reported' | 'reading' | 'up'
 
 export type Shortcut = {
   /** As the terminal names it: the key, with `ctrl+` in front if it is held. */
@@ -61,6 +66,10 @@ export type Where = {
   asked: boolean
   /** Whether there is a list open to pick something off. */
   picking: boolean
+  /** Whether what she wrote is open and being read. */
+  reading: boolean
+  /** Whether she has written something there is a report to open at all. */
+  hasReport: boolean
 }
 
 /**
@@ -72,6 +81,12 @@ export type Where = {
 const KEYS: (Shortcut & { when: When })[] = [
   { when: 'up', press: 'escape', does: 'close', says: 'put these away' },
   { when: 'up', press: 'ctrl+k', does: 'close', says: 'put these away' },
+
+  // An open report takes the arrows to be scrolled by and ESC to be put away,
+  // the same way a list does — what is on screen is what is being answered.
+  { when: 'reading', press: 'escape', does: 'close', says: 'put it away' },
+  { when: 'reading', press: 'up', does: 'scroll-up', says: 'back up a bit' },
+  { when: 'reading', press: 'down', does: 'scroll-down', says: 'on down a bit' },
 
   // A list takes the keys that move through it and the one that takes what it
   // is on, and it takes ESC before she does: the list is what is being answered
@@ -89,6 +104,8 @@ const KEYS: (Shortcut & { when: When })[] = [
 
   { when: 'typing', press: 'return', does: 'send', says: 'say it' },
 
+  { when: 'reported', press: 'ctrl+r', does: 'report', says: 'read what she wrote' },
+
   { when: 'always', press: 'ctrl+k', does: 'keys', says: 'these keys' },
   { when: 'always', press: 'ctrl+p', does: 'models', says: 'what she thinks with' },
   { when: 'always', press: 'ctrl+g', does: 'who', says: 'who is on shift' },
@@ -99,12 +116,17 @@ const KEYS: (Shortcut & { when: When })[] = [
 /** What the shortcuts are grouped under, in the order they are shown. */
 const HEADINGS: Record<When, string> = {
   up: 'While these are up',
+  reading: 'While what she wrote is open',
   picking: 'While a list is open',
   asked: 'While she is waiting to be allowed',
   working: 'While she is working',
   // Two of them, because what can be typed and what can be pressed read as one
   // thing to whoever is looking — they are shown under the one heading.
   typing: 'Whenever',
+  // Under the same heading as the rest: having written something is not a state
+  // she is in, it is one more thing that can be opened from wherever the window
+  // happens to be.
+  reported: 'Whenever',
   always: 'Whenever',
 }
 
@@ -122,11 +144,15 @@ export type Group = { heading: string; keys: Shortcut[] }
 const holds = (when: When, where: Where) =>
   when === 'always' ||
   (when === 'up' && where.up) ||
+  (when === 'reading' && where.reading) ||
   (when === 'picking' && where.picking) ||
+  // Not while it is already open: the key that opens it is not worth offering
+  // from inside it.
+  (when === 'reported' && where.hasReport && !where.reading) ||
   // The line she is spoken to on is behind these keys while they are up, and
-  // behind a list while one is open; a blurred input does not take Enter — so
-  // it is not offered while either is.
-  (when === 'typing' && !where.up && !where.picking) ||
+  // behind a list or an open report while one of those is; a blurred input does
+  // not take Enter — so it is not offered while any of them are.
+  (when === 'typing' && !where.up && !where.picking && !where.reading) ||
   (when === 'asked' && where.asked) ||
   (when === 'working' && where.isWorking && !where.asked)
 
@@ -141,7 +167,7 @@ const holds = (when: When, where: Where) =>
 export function keysNow(where: Where): Group[] {
   const groups: Group[] = []
   const taken = new Set<string>()
-  for (const when of ['up', 'picking', 'asked', 'working', 'typing', 'always'] as const) {
+  for (const when of ['up', 'reading', 'picking', 'asked', 'working', 'typing', 'reported', 'always'] as const) {
     if (!holds(when, where)) continue
     const keys: Shortcut[] = []
     for (const { when: _, ...key } of KEYS.filter((one) => one.when === when)) {
@@ -188,6 +214,15 @@ export function listKeys(): Shortcut[] {
   return KEYS.filter((one) => one.when === 'picking').map(({ when: _, ...key }) => key)
 }
 
+/**
+ * What an open report answers to, for the same reason a list prints its own:
+ * the overlay is one thing over the scene and bringing it up puts the report
+ * away, so these would be written down nowhere anybody looks.
+ */
+export function readingKeys(): Shortcut[] {
+  return KEYS.filter((one) => one.when === 'reading').map(({ when: _, ...key }) => key)
+}
+
 /** A key as it is worth printing: the terminal's names for them are not the
  * ones on the keyboard. */
 export function shownAs(press: string): string {
@@ -208,11 +243,17 @@ const HINT = `${shownAs('ctrl+k')} ${keyFor('keys').says}`
  *
  * Asked rather than told: ESC is three different things depending on what she
  * is in the middle of, and the corner used to say so whether or not it was
- * true. With these keys up it says nothing — they are the corner's own subject,
- * and they are on screen saying it better.
+ * true. With these keys up — or with what she wrote open over the box — it says
+ * nothing: they are the corner's own subject, and they are on screen saying it
+ * better.
  */
 export function cornerFor(where: Where): string {
-  if (where.up) return ''
+  if (where.up || where.reading) return ''
   const escapes = pressed({ name: 'escape' }, where)
-  return escapes ? `${shownAs('escape')} ${keyFor(escapes).says}` : HINT
+  if (escapes) return `${shownAs('escape')} ${keyFor(escapes).says}`
+  // Something she wrote is the one thing worth saying from an idle corner — it
+  // is the only sign that there is a page there at all, and it goes on saying
+  // so for as long as the page is there to open.
+  if (where.hasReport) return `${shownAs('ctrl+r')} ${keyFor('report').says}`
+  return HINT
 }

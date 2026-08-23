@@ -8,6 +8,10 @@ import type { Expression } from './expressions'
  */
 export type Model = { id: string; label: string }
 
+/** Something she wrote rather than said: what she headed it with, and the
+ * markdown under it. */
+export type Report = { title: string; body: string }
+
 /**
  * What passes between her brain and her face.
  *
@@ -23,6 +27,17 @@ export type BridgeEvent =
   /** Her line so far, marker stripped, with the face and the 【…】 she signed
    * it with once she has finished writing them. */
   | { kind: 'says'; line: string; expression?: Expression; mood?: string }
+  /** What she wrote rather than said: everything below her spoken line that is
+   * markdown rather than speech, under whatever she headed it with. She has one
+   * line to talk in, and an investigation crammed into it stops reading as her
+   * — so it is handed over separately and kept until the next thing she is
+   * asked.
+   *
+   * Sent as it grows, the same as her line is — and it can say there is nothing
+   * there. Where the writing starts is read off half-finished text, so a line
+   * that looked like a heading until its next character arrived has to be taken
+   * back rather than left as a page with nothing in it. */
+  | { kind: 'reports'; report: Report | null }
   /** 地の文 — what she is doing, while she is doing it. */
   | { kind: 'doing'; label: string }
   | { kind: 'ask-permission'; askId: string; toolName: string }

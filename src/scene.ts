@@ -1,5 +1,7 @@
-import type { BridgeEvent, Model } from './protocol'
+import type { BridgeEvent, Model, Report } from './protocol'
 import type { Expression } from './cast'
+
+export type { Report } from './protocol'
 
 export type Permission = { askId: string; toolName: string }
 
@@ -12,6 +14,9 @@ export type Scene = {
   mood: string | null
   /** 地の文 — what she is doing, in the words the session gives it. */
   narration: string | null
+  /** What she wrote this turn, waiting to be read. Nothing, until she writes
+   * something too long to say. */
+  report: Report | null
   isWorking: boolean
   permission: Permission | null
   /** Whether there is a session to speak to yet. She is several seconds behind
@@ -34,6 +39,7 @@ export const OPENING: Scene = {
   expression: 'neutral',
   mood: null,
   narration: null,
+  report: null,
   isWorking: false,
   permission: null,
   isReady: false,
@@ -63,6 +69,10 @@ export function next(was: Scene, event: BridgeEvent): Scene {
         mood: event.mood ?? was.mood,
         narration: null,
       }
+    // What she wrote rather than said. It arrives beside her line rather than
+    // instead of it — she is still talking, and this is only the rest of it.
+    case 'reports':
+      return { ...was, report: event.report }
     // Everything she picks up gets narrated: there is one line of 地の文 and
     // nothing else on this screen, so nothing is hidden.
     case 'doing':
@@ -128,6 +138,10 @@ export function handedOver(was: Scene, prompt: string): Scene {
     line: '',
     mood: null,
     narration: null,
+    // Last turn's report goes with last turn. It is kept across everything else
+    // — putting the reader away must not lose it — so this is the one place it
+    // is let go of.
+    report: null,
     isWorking: true,
   }
 }

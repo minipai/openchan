@@ -1,11 +1,32 @@
 import { expect, test } from 'bun:test'
-import { cornerFor, keyFor, keysNow, listKeys, pressed, shownAs, takes, type Where } from './keys'
+import {
+  cornerFor,
+  keyFor,
+  keysNow,
+  listKeys,
+  pressed,
+  readingKeys,
+  shownAs,
+  takes,
+  type Where,
+} from './keys'
 
-const idle: Where = { up: false, picking: false, isWorking: false, asked: false }
+const idle: Where = {
+  up: false,
+  picking: false,
+  reading: false,
+  hasReport: false,
+  isWorking: false,
+  asked: false,
+}
 const working: Where = { ...idle, isWorking: true }
 const asked: Where = { ...working, asked: true }
 const up = (where: Where): Where => ({ ...where, up: true })
 const picking = (where: Where): Where => ({ ...where, picking: true })
+/** She has written something, and it has not been opened. */
+const wrote = (where: Where): Where => ({ ...where, hasReport: true })
+/** …and it is open, which it can only be if there is one. */
+const reading = (where: Where): Where => ({ ...where, hasReport: true, reading: true })
 
 /** A key as the terminal hands it over, from how the table writes it down. */
 const press = (written: string) =>
@@ -199,15 +220,90 @@ test('keys are printed the way they are pressed, not the way the terminal names 
   expect(shownAs('y')).toBe('y')
 })
 
+test('what she wrote is opened by a key of its own, and only while there is one', () => {
+  // A key shown or answered with nothing behind it opens an empty page — so it
+  // is worth nothing until she has actually written something.
+  expect(pressed(press('ctrl+r'), idle)).toBeNull()
+  expect(pressed(press('ctrl+r'), wrote(idle))).toBe('report')
+  expect(pressed(press('ctrl+r'), wrote(working))).toBe('report')
+  expect(offered(idle)).not.toContain('report')
+  expect(offered(wrote(idle))).toContain('report')
+})
+
+test('an open report is scrolled by the arrows and put away by escape', () => {
+  expect(pressed(press('up'), reading(idle))).toBe('scroll-up')
+  expect(pressed(press('down'), reading(idle))).toBe('scroll-down')
+  expect(pressed(press('escape'), reading(idle))).toBe('close')
+  // The same rule as a list: what is on screen is what is being answered, so
+  // escape puts the page away rather than stopping her.
+  expect(pressed(press('escape'), reading(working))).toBe('close')
+  expect(pressed(press('escape'), reading(asked))).toBe('close')
+})
+
+test('the key that opens it is worth nothing from inside it', () => {
+  expect(pressed(press('ctrl+r'), reading(idle))).toBeNull()
+  expect(offered(reading(idle))).not.toContain('report')
+})
+
+test('nothing is offered on the line that is behind an open report', () => {
+  // The input is blurred under it, the same as under the list, so Enter never
+  // reaches it.
+  expect(pressed(press('return'), reading(idle))).toBeNull()
+  expect(offered(reading(idle))).not.toContain('send')
+})
+
+test('scrolling is the page’s own to do, and is not taken from it', () => {
+  expect([takes('scroll-up'), takes('scroll-down')]).toEqual([false, false])
+  // Opening it is the window’s own: the page is not there yet to answer for it.
+  expect(takes('report')).toBe(true)
+})
+
+test('what an open report answers to is what the page itself prints', () => {
+  expect(readingKeys().map((key) => key.does)).toEqual(['close', 'scroll-up', 'scroll-down'])
+  for (const key of readingKeys()) {
+    expect(pressed(press(key.press), reading(idle))).toBe(key.does)
+  }
+})
+
+test('an unread report is what the corner says, once nothing narrower does', () => {
+  expect(cornerFor(wrote(idle))).toBe('Ctrl-R read what she wrote')
+  // Stopping her is the more pressing of the two while she is still at it.
+  expect(cornerFor(wrote(working))).toBe('ESC stop her')
+  // With the page itself on screen the corner is behind it, and it is the
+  // page that says what it answers to.
+  expect(cornerFor(reading(idle))).toBe('')
+})
+
 const headings = (where: Where) => keysNow(where).map((group) => group.heading)
 const offered = (where: Where) => keysNow(where).flatMap((group) => group.keys.map((key) => key.does))
 
 /** Every key written down, and everywhere the window can be while one arrives. */
-const EVERY_PRESS = ['escape', 'ctrl+k', 'ctrl+p', 'ctrl+g', 'y', 'n', 'return', 'up', 'down', 'ctrl+b', 'ctrl+c']
+const EVERY_PRESS = [
+  'escape',
+  'ctrl+k',
+  'ctrl+p',
+  'ctrl+g',
+  'ctrl+r',
+  'y',
+  'n',
+  'return',
+  'up',
+  'down',
+  'ctrl+b',
+  'ctrl+c',
+]
 const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
   [false, true].flatMap((picking) =>
     [false, true].flatMap((isWorking) =>
-      [false, true].map((asked) => ({ up, picking, isWorking, asked })),
+      [false, true].flatMap((asked) =>
+        // Only the three the window can actually be in: it never opens a
+        // report it does not have.
+        [
+          { hasReport: false, reading: false },
+          { hasReport: true, reading: false },
+          { hasReport: true, reading: true },
+        ].map((written) => ({ up, picking, isWorking, asked, ...written })),
+      ),
     ),
   ),
 )

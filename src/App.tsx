@@ -4,6 +4,7 @@ import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
 import { KeysOverlay } from './KeysOverlay'
 import { Picker, type Choice } from './Picker'
+import { ReportReader } from './ReportReader'
 import { cornerFor, keyFor, pressed, shownAs, takes } from './keys'
 import { useMaid, type Scene } from './brain'
 import type { Character } from './cast'
@@ -54,10 +55,19 @@ export function App({ behind }: { behind: string | undefined }) {
   // there. What each list is picked from is held elsewhere, so all the window
   // keeps is which of them is open.
   const [picking, setPicking] = useState<'models' | 'shift' | null>(null)
+  // Ctrl-R: what she wrote this turn, open over the scene. What is in it is the
+  // scene's — this is only whether it is being looked at.
+  const [reading, setReading] = useState(false)
+  // Only ever open over something: the next thing she is asked takes the report
+  // with it, and a reader left standing over nothing would go on swallowing ESC
+  // with no page on screen to explain why.
+  const open = reading && scene.report !== null
 
   const where = {
     up: keysUp,
     picking: picking !== null,
+    reading: open,
+    hasReport: scene.report !== null,
     isWorking: scene.isWorking,
     asked: scene.permission !== null,
   }
@@ -79,8 +89,10 @@ export function App({ behind }: { behind: string | undefined }) {
         // go on taking Enter behind these keys, and swap what she thinks with
         // while the master is reading about it.
         setPicking(null)
+        setReading(false)
         return setKeysUp(true)
       case 'close':
+        setReading(false)
         return setKeysUp(false)
       case 'allow':
         return answer(scene.permission!.askId, true)
@@ -92,10 +104,18 @@ export function App({ behind }: { behind: string | undefined }) {
         return setBlocks((was) => !was)
       case 'models':
         setKeysUp(false)
+        setReading(false)
         return setPicking('models')
       case 'who':
         setKeysUp(false)
+        setReading(false)
         return setPicking('shift')
+      // The same one-thing-at-a-time rule, and nothing is lost by it: what she
+      // wrote waits on the scene whether or not it is being looked at.
+      case 'report':
+        setKeysUp(false)
+        setPicking(null)
+        return setReading(true)
       // Nothing else happens: what she thinks with and who is standing there
       // are only ever changed by picking something off the list.
       case 'cancel':
@@ -168,7 +188,7 @@ export function App({ behind }: { behind: string | undefined }) {
               <box flexDirection="row" gap={1}>
                 <text fg={theme.primary}>›</text>
                 <input
-                  focused={!keysUp && picking === null}
+                  focused={!keysUp && picking === null && !open}
                   value={typed}
                   placeholder={invitation(scene)}
                   flexGrow={1}
@@ -210,6 +230,30 @@ export function App({ behind }: { behind: string | undefined }) {
               list.take(id)
               setPicking(null)
             }}
+          />
+        </box>
+      )}
+
+      {/* Nearly the whole window: a report is as long as it is, and the point
+          of moving it off her line is to give it room. Under the keys overlay
+          rather than over it — that one is the sheet of paper held up in front
+          of everything. */}
+      {open && scene.report && (
+        <box
+          position="absolute"
+          top={0}
+          left={0}
+          width={width}
+          height={height}
+          alignItems="center"
+          justifyContent="center"
+          zIndex={8}
+        >
+          <ReportReader
+            theme={theme}
+            report={scene.report}
+            width={Math.min(90, width - 6)}
+            height={Math.min(height, Math.max(9, height - 6))}
           />
         </box>
       )}
