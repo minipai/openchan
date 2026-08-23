@@ -1,8 +1,11 @@
 import { expect, test } from 'bun:test'
-import { next, OPENING, type Scene } from './scene'
+import { handedOver, hold, next, OPENING, type Scene } from './scene'
 
 /** Mid-turn: she has been asked something and has not finished answering. */
-const working: Scene = { ...OPENING, isWorking: true }
+const working: Scene = { ...OPENING, isWorking: true, isReady: true }
+
+/** Her session is open: she can be spoken to. */
+const up: Scene = next(OPENING, { kind: 'ready' })
 
 test('she says a line, and wears the face she signed it with', () => {
   const scene = next(working, {
@@ -70,4 +73,78 @@ test('a turn that ended badly is hers to say out loud', () => {
 
   expect(scene.line).toBe('the server went away')
   expect(scene.isWorking).toBe(false)
+})
+
+test('she cannot be spoken to until her session says so', () => {
+  expect(OPENING.isReady).toBe(false)
+  expect(up.isReady).toBe(true)
+})
+
+test('something said before she is up waits instead of going nowhere', () => {
+  const scene = hold(OPENING, 'are you there?')
+
+  expect(scene.held).toBe('are you there?')
+  // The whole of the bug: she used to be put to work over a prompt that was
+  // never sent, and sat at "thinking…" until ESC.
+  expect(scene.isWorking).toBe(false)
+})
+
+test('what was held is still there when she wakes up', () => {
+  const waited = next(hold(OPENING, 'are you there?'), { kind: 'ready' })
+
+  expect(waited.isReady).toBe(true)
+  expect(waited.held).toBe('are you there?')
+})
+
+test('saying something else before she is up corrects what she gets', () => {
+  const waited = hold(hold(OPENING, 'are you ther'), 'are you there?')
+
+  expect(waited.held).toBe('are you there?')
+})
+
+test('handing it over is what puts her to work', () => {
+  const waited = next(hold(OPENING, 'are you there?'), { kind: 'ready' })
+
+  const scene = handedOver(waited, 'are you there?')
+
+  expect(scene.held).toBeNull()
+  expect(scene.isWorking).toBe(true)
+  expect(scene.line).toBe('')
+})
+
+test('something said once she is up is held for no time at all', () => {
+  const scene = handedOver(hold(up, 'good morning'), 'good morning')
+
+  expect(scene.isWorking).toBe(true)
+  expect(scene.held).toBeNull()
+})
+
+test('an empty line is not something to hold', () => {
+  expect(hold(up, '   ').held).toBeNull()
+  expect(hold(up, '   ').isWorking).toBe(false)
+})
+
+test('what was typed while the last one was on its way is not lost with it', () => {
+  const second = hold(hold(up, 'are you there?'), 'never mind — what time is it?')
+
+  const scene = handedOver(second, 'are you there?')
+
+  expect(scene.isWorking).toBe(true)
+  expect(scene.held).toBe('never mind — what time is it?')
+})
+
+test('a session that never opens lets go of what was held, and says why', () => {
+  const waiting = hold(OPENING, 'are you there?')
+
+  const scene = next(waiting, { kind: 'lost', why: 'She could not be woken up — no server' })
+
+  expect(scene.held).toBeNull()
+  expect(scene.line).toBe('She could not be woken up — no server')
+  expect(scene.isWorking).toBe(false)
+})
+
+test('nothing is held for her once she is known not to be coming', () => {
+  const gone = next(OPENING, { kind: 'lost', why: 'She could not be woken up — no server' })
+
+  expect(hold(gone, 'are you there?').held).toBeNull()
 })
