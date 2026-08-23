@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
+import { KeysOverlay } from './KeysOverlay'
+import { keyFor, pressed, shownAs } from './keys'
 import { useMaid } from './brain'
 import { paletteOver } from './theme'
 
@@ -18,19 +20,29 @@ export function App({ behind }: { behind: string | undefined }) {
   // Ctrl-B: draw her out of half-block characters even where the terminal
   // could take real pixels. It is the rougher picture, and it is a look.
   const [blocks, setBlocks] = useState(false)
+  const [keysUp, setKeysUp] = useState(false)
 
-  // Ctrl-C is not handled here on purpose: the renderer takes it, and it is
-  // the one that knows how to put the terminal back — leave the alternate
-  // screen, and tell it to forget the pictures of her it was given. Killing
-  // the process first skips all of that and leaves her on the screen.
+  const where = { up: keysUp, isWorking: scene.isWorking, asked: scene.permission !== null }
+
+  // Which key does what, and which of them count from here, is the keys table's
+  // to say — including Ctrl-C, which is not answered here on purpose: the
+  // renderer takes it, and it is the one that knows how to put the terminal
+  // back. Killing the process first leaves her standing on the master's shell.
   useKeyboard((key) => {
-    if (scene.permission) {
-      if (key.name === 'y') answer(scene.permission.askId, true)
-      if (key.name === 'n' || key.name === 'escape') answer(scene.permission.askId, false)
-      return
+    switch (pressed(key, where)) {
+      case 'keys':
+        return setKeysUp(true)
+      case 'close':
+        return setKeysUp(false)
+      case 'allow':
+        return answer(scene.permission!.askId, true)
+      case 'refuse':
+        return answer(scene.permission!.askId, false)
+      case 'stop':
+        return stop()
+      case 'blocks':
+        return setBlocks((was) => !was)
     }
-    if (key.ctrl && key.name === 'b') setBlocks((was) => !was)
-    if (key.name === 'escape' && scene.isWorking) stop()
   })
 
   // 760px of a 960px window, and never wider than the terminal has room for.
@@ -71,14 +83,14 @@ export function App({ behind }: { behind: string | undefined }) {
             scene.permission ? (
               <box flexDirection="row" gap={2}>
                 <text fg={theme.foreground}>{`She wants to use ${scene.permission.toolName}`}</text>
-                <text fg={theme.primary}>y allow</text>
-                <text fg={theme.muted}>n refuse</text>
+                <text fg={theme.primary}>{`${shownAs(keyFor('allow').press)} ${keyFor('allow').says}`}</text>
+                <text fg={theme.muted}>{`${shownAs(keyFor('refuse').press)} ${keyFor('refuse').says}`}</text>
               </box>
             ) : (
               <box flexDirection="row" gap={1}>
                 <text fg={theme.primary}>›</text>
                 <input
-                  focused
+                  focused={!keysUp}
                   value={typed}
                   placeholder={scene.isWorking ? 'ESC to stop her…' : 'Say something to her…'}
                   flexGrow={1}
@@ -86,11 +98,25 @@ export function App({ behind }: { behind: string | undefined }) {
                   onInput={setTyped}
                   onSubmit={send}
                 />
+                {/* The one key nobody would guess at, kept where the eye already
+                    is — it is what the rest of them are behind. */}
+                <text fg={theme.faint}>{`${shownAs(keyFor('keys').press)} ${keyFor('keys').says}`}</text>
               </box>
             )
           }
         />
       </box>
+
+      {keysUp && (
+        <box
+          position="absolute"
+          top={Math.max(1, Math.round(height / 2) - 8)}
+          left={Math.round((width - Math.min(46, width - 6)) / 2)}
+          zIndex={10}
+        >
+          <KeysOverlay theme={theme} where={where} width={Math.min(46, width - 6)} />
+        </box>
+      )}
     </box>
   )
 }
