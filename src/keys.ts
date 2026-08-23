@@ -54,7 +54,7 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'typing', press: 'return', does: 'send', says: 'say it' },
 
   { when: 'always', press: 'ctrl+k', does: 'keys', says: 'these keys' },
-  { when: 'always', press: 'ctrl+b', does: 'blocks', says: 'draw her rougher' },
+  { when: 'always', press: 'ctrl+b', does: 'blocks', says: 'swap how she is drawn' },
   { when: 'always', press: 'ctrl+c', does: 'leave', says: 'leave' },
 ]
 
