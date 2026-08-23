@@ -32,12 +32,15 @@ bun dev
 | `Enter` | send |
 | `ESC` | interrupt her |
 | `y` / `n` | allow or refuse a tool she asked for |
+| `↑` `↓` `Enter` | when she asks you to pick — `Space` ticks, if she said more than one will do; `ESC` declines rather than answering |
 | `Ctrl-R` | read what she wrote — anything longer than a line lives on its own page |
 | `Ctrl-B` | draw her out of half-block characters — the rougher picture, on purpose |
 | `Ctrl-C` | leave |
 
 Running commands, editing files and fetching the web are all set to ask, so
-nothing happens to your folder without a y.
+nothing happens to your folder without a y. When she wants a decision rather
+than a permission, she asks it with the answers written out, and you pick one —
+or several — off a list instead of typing.
 
 ## Choosing her model
 
@@ -53,7 +56,7 @@ up never quietly spends money.
 | | |
 |---|---|
 | `src/opencode.ts` | the only file that knows opencode exists — it turns the server's event stream into her vocabulary |
-| `src/protocol.ts` | that vocabulary: she said something, she picked something up, she wants permission, she is done — and what the screen may ask of her in return |
+| `src/protocol.ts` | that vocabulary: she said something, she picked something up, she wants permission, she wants something picked, she is done — and what the screen may ask of her in return |
 | `src/scene.ts` | what an event leaves on the scene: the latest of each, and nothing decided |
 | `src/brain.ts` | holds her open for as long as the window is, and hands the screen one scene |
 | `src/keys.ts` | every key the window answers to, written down once — the overlay and the screen both read it off here |

@@ -24,6 +24,8 @@ class Stand implements Conversation {
   answer(askId: string, allow: boolean) {
     this.answers.push([askId, allow])
   }
+  choose() {}
+  decline() {}
   interrupt() {}
   retry() {}
   close() {}

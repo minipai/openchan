@@ -16,6 +16,10 @@ export class Stand implements Conversation {
   readonly handed: string[] = []
   /** Every permission answered from the keyboard, in order. */
   readonly answered: { askId: string; allow: boolean }[] = []
+  /** Every question with choices answered off the list, in order — and the
+   * ones put down without an answer, marked as that rather than as nothing
+   * picked. */
+  readonly chosen: { askId: string; answers: string[][] | 'declined' }[] = []
   /** The questions she is still waiting on. The real one drops an answer to
    * any other id rather than sending it, so this does too. */
   private readonly waiting = new Set<string>()
@@ -36,7 +40,7 @@ export class Stand implements Conversation {
   async start() {}
   /** Anything at all, said as her. */
   raise(event: BridgeEvent) {
-    if (event.kind === 'ask-permission') this.waiting.add(event.askId)
+    if (event.kind === 'ask-permission' || event.kind === 'ask-choice') this.waiting.add(event.askId)
     this.say(event)
   }
   wakeUp() {
@@ -66,6 +70,12 @@ export class Stand implements Conversation {
   }
   answer(askId: string, allow: boolean) {
     if (this.waiting.delete(askId)) this.answered.push({ askId, allow })
+  }
+  choose(askId: string, answers: string[][]) {
+    if (this.waiting.delete(askId)) this.chosen.push({ askId, answers })
+  }
+  decline(askId: string) {
+    if (this.waiting.delete(askId)) this.chosen.push({ askId, answers: 'declined' })
   }
   interrupt() {
     this.interrupted++

@@ -1,7 +1,10 @@
-import type { BridgeEvent, Model, Report, Trouble } from './protocol'
+import type { BridgeEvent, Model, Question, Report, Trouble } from './protocol'
 import type { Expression } from './cast'
 
-export type { Report } from './protocol'
+export type { Question, Report } from './protocol'
+
+/** What she wants picked, and the id the answer goes back under. */
+export type Asked = { askId: string; questions: Question[] }
 
 export type Permission = {
   askId: string
@@ -27,6 +30,8 @@ export type Scene = {
   report: Report | null
   isWorking: boolean
   permission: Permission | null
+  /** A question with the answers written out, waiting to be picked from. */
+  asked: Asked | null
   /** Whether there is a session to speak to yet. She is several seconds behind
    * the window that draws her. */
   isReady: boolean
@@ -50,6 +55,7 @@ export const OPENING: Scene = {
   report: null,
   isWorking: false,
   permission: null,
+  asked: null,
   isReady: false,
   held: null,
   trouble: null,
@@ -102,6 +108,7 @@ export function next(was: Scene, event: BridgeEvent): Scene {
         // server, waiting — it is behind the note while that is up, and back to
         // be answered the moment the note is put away.
         permission: event.trouble.gone ? null : was.permission,
+        asked: event.trouble.gone ? null : was.asked,
       }
     // What she thinks with is hers to report rather than the picker's to keep
     // its own copy of: there is one answer and she is holding it.
@@ -117,8 +124,10 @@ export function next(was: Scene, event: BridgeEvent): Scene {
           detail: event.detail ?? null,
         },
       }
+    case 'ask-choice':
+      return { ...was, asked: { askId: event.askId, questions: event.questions } }
     case 'done':
-      return { ...was, isWorking: false, permission: null, line: event.error ?? was.line }
+      return { ...was, isWorking: false, permission: null, asked: null, line: event.error ?? was.line }
   }
 }
 

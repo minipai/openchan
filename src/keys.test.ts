@@ -15,6 +15,7 @@ import {
 const idle: Where = {
   up: false,
   picking: false,
+  ticking: false,
   path: false,
   reading: false,
   hasReport: false,
@@ -26,6 +27,8 @@ const working: Where = { ...idle, isWorking: true }
 const asked: Where = { ...working, asked: true }
 const up = (where: Where): Where => ({ ...where, up: true })
 const picking = (where: Where): Where => ({ ...where, picking: true })
+/** Her question, when several rows answer it: the list with ticks on it. */
+const ticking = (where: Where): Where => ({ ...where, picking: true, ticking: true })
 /** The folder list, one step further in: the rows are away and a path is being
  * written out in their place. */
 const typingPath = (where: Where): Where => ({ ...where, path: true })
@@ -281,6 +284,29 @@ test('what an open list answers to is what the list itself prints', () => {
   }
 })
 
+test('a list that takes several rows ticks them, and Enter means done', () => {
+  expect(pressed(press('space'), ticking(idle))).toBe('tick')
+  expect(pressed(press('return'), ticking(idle))).toBe('choose')
+  expect(pressed(press('escape'), ticking(working))).toBe('cancel')
+  // Space is nothing to a list that takes one row: Enter is the whole of it.
+  expect(pressed(press('space'), picking(idle))).toBeNull()
+  expect(pressed(press('space'), idle)).toBeNull()
+
+  // What the list prints is the ticking keys and then the rest, with Enter
+  // said once and saying the ticking thing — the same key listed twice doing
+  // two things would be the keys table failing at the one thing it is for.
+  expect(listKeys(true).map((key) => [key.press, key.does])).toEqual([
+    ['space', 'tick'],
+    ['return', 'choose'],
+    ['up', 'previous'],
+    ['down', 'next'],
+    ['escape', 'cancel'],
+  ])
+  expect(listKeys(true).find((key) => key.press === 'return')?.says).toBe("that's all")
+  expect(headings(ticking(idle))).toEqual(['While a list is open', 'Whenever'])
+  expect(offered(ticking(idle)).filter((does) => does === 'choose')).toHaveLength(1)
+})
+
 test('which of them is on shift is opened with a key of its own', () => {
   // The same shape as the list of what she thinks with: one key, from wherever
   // the window is, and the words next to it are the table's.
@@ -411,6 +437,7 @@ const EVERY_PRESS = [
   'return',
   'up',
   'down',
+  'space',
   'ctrl+b',
   'ctrl+c',
 ]
@@ -418,9 +445,10 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
   // A list and a path being typed are one thing over the scene in two states:
   // taking the row that asks for a path is what puts the rows away.
   [
-    { picking: false, path: false },
-    { picking: true, path: false },
-    { picking: false, path: true },
+    { picking: false, ticking: false, path: false },
+    { picking: true, ticking: false, path: false },
+    { picking: true, ticking: true, path: false },
+    { picking: false, ticking: false, path: true },
   ].flatMap((over) =>
     [false, true].flatMap((isWorking) =>
       [false, true].flatMap((asked) =>

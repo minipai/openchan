@@ -3,8 +3,9 @@ import os from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
 import { createOpencodeClient, createOpencodeServer, type OpencodeClient } from '@opencode-ai/sdk'
+import { createOpencodeClient as createAnswering, type OpencodeClient as Answering } from '@opencode-ai/sdk/v2/client'
 import { briefFor, type Character } from './cast'
-import type { BridgeEvent, Conversation, Model, Trouble } from './protocol'
+import type { BridgeEvent, Conversation, Model, Question, Trouble } from './protocol'
 import { readMood, splitReport } from './reply'
 
 /**
@@ -115,6 +116,8 @@ function narrate(tool: string, input: Record<string, unknown>): string {
       return 'looking it up'
     case 'todowrite':
       return 'putting things in order'
+    case 'question':
+      return 'asking'
     default:
       return tool
   }
@@ -159,6 +162,34 @@ const FRESH_START: Trouble = {
   title: 'She is starting over',
   body: 'The conversation that was interrupted could not be reopened — the server behind her has no record of it. She is up, but nothing said before the connection dropped is in her memory.',
   gone: false,
+}
+
+/** A question she asked with the answers written out, as the server raises
+ * it: one request, carrying one or more questions, each with its options. */
+type AskedQuestion = {
+  id: string
+  questions: {
+    question: string
+    header: string
+    options: { label: string; description?: string }[]
+    multiple?: boolean
+  }[]
+}
+
+/**
+ * Her questions, in the window's vocabulary: the same shape the server gives
+ * them, less what the window has no use for. What goes back is the labels —
+ * the server takes the answer as the label, not as a position in the list —
+ * and a description the agent left empty is no description at all rather than
+ * an empty line under the row.
+ */
+export function questionsIn(asked: AskedQuestion): Question[] {
+  return asked.questions.map((one) => ({
+    header: one.header,
+    question: one.question,
+    options: one.options.map(({ label, description }) => (description ? { label, description } : { label })),
+    multiple: one.multiple ?? false,
+  }))
 }
 
 /** A tool she may not use until he says so. The server names the tool under
@@ -221,6 +252,11 @@ function hunks(diff: string): string {
  */
 export class MaidSession implements Conversation {
   private client: OpencodeClient | null = null
+  /** The newer client over the same server, for the one thing the older one
+   * cannot say: the answer to a question she asked with choices. Everything
+   * else stays on the older one — it is the one everything else is written
+   * against, and swapping the whole of it over is not this file's errand. */
+  private answering: Answering | null = null
   private server: Awaited<ReturnType<typeof createOpencodeServer>> | null = null
   private sessionId: string | null = null
   private closed = false
@@ -246,6 +282,8 @@ export class MaidSession implements Conversation {
   private saying: string | null = null
   /** The permission questions on screen, so a stale answer goes nowhere. */
   private asked = new Set<string>()
+  /** The questions with choices on screen, for the same reason. */
+  private choosing = new Set<string>()
   /** Calls already narrated. A tool announces itself again every time its
    * state moves — and one that had to wait to be allowed announces itself on
    * both sides of the wait — but she only picks it up once. */
@@ -330,6 +368,7 @@ export class MaidSession implements Conversation {
     // she picked up and nothing she wanted permission for would ever arrive.
     const client = createOpencodeClient({ baseUrl: started.url, directory: this.folder })
     this.client = client
+    this.answering = createAnswering({ baseUrl: started.url, directory: this.folder })
     this.server = started
     this.stopListening = stopListening
 
@@ -445,6 +484,8 @@ export class MaidSession implements Conversation {
       case 'permission.asked':
       case 'permission.updated':
         return this.readPermission(props as unknown as AskedPermission)
+      case 'question.asked':
+        return this.readQuestion(props as unknown as AskedQuestion)
       case 'session.idle':
         return this.finish()
       case 'session.error':
@@ -527,6 +568,11 @@ export class MaidSession implements Conversation {
     })
   }
 
+  private readQuestion(asked: AskedQuestion) {
+    this.choosing.add(asked.id)
+    this.onEvent({ kind: 'ask-choice', askId: asked.id, questions: questionsIn(asked) })
+  }
+
   /**
    * A turn the server ended itself. Most of what comes back is this turn's
    * business and hers to say out loud — but a provider she has no credentials
@@ -591,6 +637,18 @@ export class MaidSession implements Conversation {
     })
   }
 
+  choose(askId: string, answers: string[][]) {
+    if (!this.answering || !this.choosing.delete(askId)) return
+    void this.answering.question.reply({ requestID: askId, answers })
+  }
+
+  /** Rejected, in the server's word for it: the tool comes back to her as
+   * refused rather than answered, and she goes on from there. */
+  decline(askId: string) {
+    if (!this.answering || !this.choosing.delete(askId)) return
+    void this.answering.question.reject({ requestID: askId })
+  }
+
   /**
    * Open her again, from wherever the last attempt got to. What that attempt
    * left behind goes first — a half-started server, the leavings of a turn that
@@ -607,12 +665,14 @@ export class MaidSession implements Conversation {
     this.stopListening.abort()
     this.server?.close()
     this.client = null
+    this.answering = null
     this.server = null
     this.working = false
     this.said = ''
     this.parts.clear()
     this.narrated.clear()
     this.asked.clear()
+    this.choosing.clear()
     this.raise(null)
     void this.start()
   }

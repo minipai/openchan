@@ -31,6 +31,7 @@ export type Does =
   | 'previous'
   | 'next'
   | 'choose'
+  | 'tick'
   | 'go'
   | 'cancel'
   | 'retry'
@@ -42,7 +43,7 @@ export type Does =
  * open list and an open report take the arrows, the list takes Enter, and the
  * renderer takes Ctrl-C.
  */
-const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'go', 'leave', 'scroll-up', 'scroll-down']
+const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'tick', 'go', 'leave', 'scroll-up', 'scroll-down']
 
 /** Whether pressing it is the window's own to act on — and so to keep from
  * reaching what is drawn under it. */
@@ -51,9 +52,9 @@ export const takes = (does: Does) => !THEIRS.includes(does)
 /** When a key is worth anything: whenever, while there is a line to type into,
  * while she is working, while she is waiting to be allowed, while something is
  * in the way of her working at all — with or without her session left standing
- * — while a list is open, while a path is being typed into one, while there is
- * something she wrote to read, while it is open, or while these keys are on
- * screen. */
+ * — while a list is open, while the open list takes several rows rather than
+ * one, while a path is being typed into one, while there is something she
+ * wrote to read, while it is open, or while these keys are on screen. */
 type When =
   | 'always'
   | 'typing'
@@ -62,6 +63,7 @@ type When =
   | 'gone'
   | 'troubled'
   | 'picking'
+  | 'ticking'
   | 'path'
   | 'reported'
   | 'reading'
@@ -84,6 +86,9 @@ export type Where = {
   asked: boolean
   /** Whether there is a list open to pick something off. */
   picking: boolean
+  /** Whether the open list takes several rows rather than one: her question,
+   * when she has said more than one answer will do. */
+  ticking: boolean
   /** Whether a folder is being typed out rather than picked off a list. */
   path: boolean
   /** Whether what she wrote is open and being read. */
@@ -118,6 +123,13 @@ const KEYS: (Shortcut & { when: When })[] = [
   // away and the same ESC that would have closed them closes this.
   { when: 'path', press: 'return', does: 'go', says: 'work there' },
   { when: 'path', press: 'escape', does: 'cancel', says: 'never mind' },
+
+  // A list that takes several rows is the same list with one more key on it:
+  // the one that ticks a row without leaving, so that Enter can mean done. It
+  // is a question she asked, which is why Enter says what it says — "use it"
+  // is for a model, not for an answer.
+  { when: 'ticking', press: 'space', does: 'tick', says: 'tick it' },
+  { when: 'ticking', press: 'return', does: 'choose', says: "that's all" },
 
   { when: 'picking', press: 'up', does: 'previous', says: 'the one above' },
   { when: 'picking', press: 'down', does: 'next', says: 'the one below' },
@@ -158,6 +170,7 @@ const HEADINGS: Record<When, string> = {
   up: 'While these are up',
   reading: 'While what she wrote is open',
   picking: 'While a list is open',
+  ticking: 'While a list is open',
   path: 'While a path is being typed',
   gone: 'While she cannot be reached',
   troubled: 'While something is in the way',
@@ -189,6 +202,7 @@ const holds = (when: When, where: Where) =>
   (when === 'up' && where.up) ||
   (when === 'reading' && where.reading) ||
   (when === 'picking' && where.picking) ||
+  (when === 'ticking' && where.picking && where.ticking) ||
   (when === 'path' && where.path) ||
   (when === 'gone' && where.trouble === 'gone') ||
   (when === 'troubled' && where.trouble === 'stuck') ||
@@ -230,6 +244,7 @@ export function keysNow(where: Where): Group[] {
     'up',
     'reading',
     'path',
+    'ticking',
     'picking',
     'gone',
     'troubled',
@@ -275,14 +290,18 @@ const ARROWS: Record<string, string> = { up: '↑', down: '↓' }
 
 /**
  * What an open list answers to, for the list to print along its own bottom
- * edge.
+ * edge — with the keys for ticking several rows in front, for a list that
+ * takes several, and Enter meaning what it means there rather than twice.
  *
  * It prints them itself because the overlay never gets the chance to: bringing
  * the overlay up puts the list away, so the two are never on screen together
  * and the list's keys would otherwise be written down nowhere anybody looks.
  */
-export function listKeys(): Shortcut[] {
-  return KEYS.filter((one) => one.when === 'picking').map(({ when: _, ...key }) => key)
+export function listKeys(ticking = false): Shortcut[] {
+  const taken = new Set<string>()
+  return KEYS.filter((one) => one.when === 'picking' || (ticking && one.when === 'ticking'))
+    .filter((one) => !taken.has(one.press) && taken.add(one.press))
+    .map(({ when: _, ...key }) => key)
 }
 
 /**
@@ -315,7 +334,9 @@ export function shownAs(press: string): string {
         ? 'Enter'
         : name === 'tab'
           ? 'Tab'
-          : ARROWS[name] ?? name
+          : name === 'space'
+            ? 'Space'
+            : ARROWS[name] ?? name
   return held ? `Ctrl-${shown.toUpperCase()}` : shown
 }
 
