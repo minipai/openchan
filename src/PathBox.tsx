@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef } from 'react'
+import type { InputRenderable } from '@opentui/core'
 import { pathKeys, shownAs } from './keys'
 import type { Palette } from './theme'
 
@@ -33,7 +34,11 @@ export function PathBox({
   width: number
   onGo: (typed: string) => void
 }) {
-  const [typed, setTyped] = useState('')
+  // Read off the line when Enter hands it over rather than mirrored into
+  // state: a paste a terminal did not wrap is the path and its Enter in one
+  // chunk, every byte taken in before a render, and state would still be empty
+  // at the Enter.
+  const line = useRef<InputRenderable>(null)
 
   return (
     <box
@@ -51,13 +56,12 @@ export function PathBox({
       <box flexDirection="row" gap={1}>
         <text fg={theme.primary}>›</text>
         <input
+          ref={line}
           focused
-          value={typed}
           placeholder={from}
           flexGrow={1}
           backgroundColor={theme.card}
-          onInput={setTyped}
-          onSubmit={() => onGo(typed)}
+          onSubmit={() => onGo(line.current!.value)}
         />
       </box>
 

@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
+import type { InputRenderable } from '@opentui/core'
 import { useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
@@ -156,6 +157,17 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     retry,
     dismiss,
   } = useMaid(openMaid)
+  // The line she is spoken to on, and a copy of what is typed on it. The copy
+  // is for coming back: the line is taken out of the box while her question or
+  // a note is drawn there, and a half-written sentence would go with it. What
+  // Enter sends is read off the line itself, not the copy — a paste a terminal
+  // did not wrap is the sentence and its Enter in one chunk, every byte taken
+  // in before the window has rendered once, so at the Enter the copy is still
+  // whatever the last render saw. The line is cleared the same way, because
+  // once the copy has caught up to empty the render that would clear it never
+  // comes: the copy was already empty the last time the line was drawn from
+  // it, and nothing it has not drawn gets pushed back down.
+  const line = useRef<InputRenderable>(null)
   const [typed, setTyped] = useState('')
   // Ctrl-B: draw her out of half-block characters even where the terminal
   // could take real pixels. It is the rougher picture, and it is a look.
@@ -313,8 +325,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   const boxWidth = Math.min(90, width - 6)
 
   const send = () => {
-    ask(typed)
-    setTyped('')
+    ask(line.current!.value)
+    line.current!.value = ''
   }
 
   return (
@@ -367,6 +379,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
               <box flexDirection="row" gap={1}>
                 <text fg={theme.primary}>›</text>
                 <input
+                  ref={line}
                   focused={standing === null && !answering}
                   value={typed}
                   placeholder={invitation(scene)}
