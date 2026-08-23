@@ -18,6 +18,7 @@ export type Does =
   | 'new-line'
   | 'stop'
   | 'allow'
+  | 'always'
   | 'refuse'
   | 'details'
   | 'blocks'
@@ -58,18 +59,20 @@ export const takes = (does: Does) => !THEIRS.includes(does)
 
 /** When a key is worth anything: whenever, while there is a line to type into,
  * while she has said something, while she is working, while she is waiting to
- * be allowed, while something is in the way of her working at all — with or
- * without her session left standing — while a list is open, while the open
- * list takes several rows rather than one, while the open list can be narrowed
- * by typing at it, while it has been, while a path is being typed into one,
- * while there is something she wrote to read, while it is open, or while these
- * keys are on screen. */
+ * be allowed, while what she is waiting on is narrow enough to be allowed for
+ * the rest of the session, while something is in the way of her working at all
+ * — with or without her session left standing — while a list is open, while
+ * the open list takes several rows rather than one, while the open list can be
+ * narrowed by typing at it, while it has been, while a path is being typed
+ * into one, while there is something she wrote to read, while it is open, or
+ * while these keys are on screen. */
 type When =
   | 'always'
   | 'typing'
   | 'said'
   | 'working'
   | 'asked'
+  | 'standing'
   | 'gone'
   | 'troubled'
   | 'picking'
@@ -96,6 +99,10 @@ export type Where = {
   isWorking: boolean
   /** Whether she is waiting to be allowed something. */
   asked: boolean
+  /** Whether what she is waiting on can be allowed for the rest of the session
+   * — which it can only be when there are words narrow enough to say what that
+   * would cover. */
+  standing: boolean
   /** Whether there is a list open to pick something off. */
   picking: boolean
   /** Whether the open list takes several rows rather than one: her question,
@@ -180,6 +187,11 @@ const KEYS: (Shortcut & { when: When })[] = [
 
   { when: 'asked', press: 'y', does: 'allow', says: 'let her' },
   { when: 'asked', press: 'n', does: 'refuse', says: "don't" },
+  // Yes, and yes to the same thing again without being asked, for as long as
+  // this session lasts and no longer. What "the same thing" comes to is printed
+  // next to it by the box: it is the whole of what is being given away, and it
+  // is different every time.
+  { when: 'standing', press: 'a', does: 'always', says: 'always let her' },
   { when: 'asked', press: 'escape', does: 'refuse', says: "don't" },
   // A look before deciding, and the same key again to stop looking. It answers
   // nothing either way: y and n mean what they meant with it open.
@@ -227,6 +239,10 @@ const HEADINGS: Record<When, string> = {
   gone: 'While she cannot be reached',
   troubled: 'While something is in the way',
   asked: 'While she is waiting to be allowed',
+  // Under a heading of its own, because the heading is where the one thing the
+  // key cannot say in the width the box has for it gets said: what it gives
+  // away is given away until she is closed and no longer.
+  standing: 'For as long as this session lasts',
   working: 'While she is working',
   // Two of them, because what can be typed and what can be pressed read as one
   // thing to whoever is looking — they are shown under the one heading.
@@ -240,6 +256,16 @@ const HEADINGS: Record<When, string> = {
 }
 
 export type Group = { heading: string; keys: Shortcut[] }
+
+/**
+ * Whether her question is what a key would be answering. Not while a path is
+ * being written out, or a list is being typed at: y, n and a are letters in a
+ * path, and a folder under `~/Sync` would otherwise answer her question halfway
+ * through being typed. And her question is behind the note the same way the
+ * line she is spoken to on is: still open on the server, not on screen, and so
+ * not answerable until the note is put away.
+ */
+const answerable = (where: Where) => where.asked && !where.path && !where.narrows && where.trouble === null
 
 /**
  * Whether a group of keys is worth anything from where the window is.
@@ -285,12 +311,11 @@ const holds = (when: When, where: Where) =>
     !where.reading &&
     !where.asked &&
     where.trouble === null) ||
-  // Not while a path is being written out, or a list is being typed at: y and
-  // n are letters in a path, and a folder under `~/Sync` would otherwise answer
-  // her question halfway through being typed. And her question is behind the
-  // note the same way the line she is spoken to on is: still open on the
-  // server, not on screen, and so not answerable until the note is put away.
-  (when === 'asked' && where.asked && !where.path && !where.narrows && where.trouble === null) ||
+  (when === 'asked' && answerable(where)) ||
+  // Offered only where there is something narrow to say yes to: a tool nothing
+  // is known about has no scope to give, and a key that read as "always" and
+  // meant "anything" is the one thing this must never be.
+  (when === 'standing' && where.standing && answerable(where)) ||
   (when === 'working' && where.isWorking && !where.asked)
 
 /**
@@ -315,6 +340,7 @@ export function keysNow(where: Where): Group[] {
     'gone',
     'troubled',
     'asked',
+    'standing',
     'working',
     'typing',
     'said',

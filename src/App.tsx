@@ -120,7 +120,8 @@ function OverTheScene({
 /**
  * Everything the box is besides her line and the command she is asking to run:
  * the strip under it, its frame, the mood under her line, the divider, and the
- * two rows of the question itself.
+ * two rows of the question itself — three, when it is one she can be allowed
+ * for the rest of the session, which is counted where it is known about.
  */
 const BESIDES_THE_DETAIL = 12
 
@@ -141,12 +142,12 @@ const BESIDES_THE_DETAIL = 12
  * with room to spare — so they are counted one by one rather than as a single
  * run of text, which is short by a row per break in a long answer.
  */
-function roomToOpen(height: number, box: number, line: string): number {
+function roomToOpen(height: number, box: number, line: string, offered: boolean): number {
   const wrapped = line
     .split('\n')
     .reduce((rows, paragraph) => rows + Math.max(1, Math.ceil(columns(paragraph) / (box - 6))), 0)
   const spoken = Math.max(2, wrapped + 1)
-  return Math.max(2, height - BESIDES_THE_DETAIL - spoken)
+  return Math.max(2, height - BESIDES_THE_DETAIL - (offered ? 1 : 0) - spoken)
 }
 
 /**
@@ -217,6 +218,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     been,
     ask,
     answer,
+    allowAlways,
     choose,
     decline,
     stop,
@@ -352,6 +354,10 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     said: scene.line !== '',
     isWorking: scene.isWorking,
     asked: asked !== null,
+    // Only a question that came with a scope written for it can be answered
+    // for the rest of the session — the key is not offered where there is
+    // nothing narrow to say yes to.
+    standing: asked?.standing != null,
     // Which way out of it there is, which is the only thing about it the keys
     // have any business knowing.
     trouble: scene.trouble && (scene.trouble.gone ? ('gone' as const) : ('stuck' as const)),
@@ -376,6 +382,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         return setOver(null)
       case 'allow':
         return answer(asked!.askId, true)
+      case 'always':
+        return allowAlways(asked!.askId)
       case 'refuse':
         return answer(asked!.askId, false)
       case 'details':
@@ -578,7 +586,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
                 permission={asked}
                 open={showing}
                 width={boxWidth}
-                rows={roomToOpen(height, boxWidth, scene.line)}
+                rows={roomToOpen(height, boxWidth, scene.line, asked.standing !== null)}
               />
             ) : (
               <box flexDirection="row" gap={1}>

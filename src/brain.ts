@@ -36,15 +36,36 @@ export function useMaid(open: OpenConversation = openMaid) {
    * without the note being read again mid-render. */
   const [been, setBeen] = useState(folders)
   const session = useRef<Conversation | null>(null)
+  /**
+   * What he has already said she may go on doing, by the scope each yes was
+   * given against — `bash git`, or the one file she is editing.
+   *
+   * It lives here and nowhere else: not on disk, not on the server. So a
+   * window opened tomorrow starts with nothing remembered, and neither the
+   * agent's own permission settings nor anybody else's session is touched by
+   * anything said here. Emptied whenever a session opens, below — a standing
+   * yes was given to what she was doing then, and a new session is not that.
+   */
+  const allowed = useRef(new Set<string>())
 
   useEffect(() => {
     // Only while this is the session on screen. One being closed to make room
     // for another girl fails on its way down and says so — and by then the
     // scene it would be saying it into is hers, not its own.
     let mine = true
+    allowed.current = new Set()
     const her = open(
       (event) => {
-        if (mine) setScene((was) => next(was, event))
+        if (!mine) return
+        // Something he has already said yes to at this scope is answered where
+        // it arrives, and never reaches the screen: being asked again is the
+        // whole of what he was trying to stop. It goes back as the same yes any
+        // other key sends — the server is never told to allow the tool from
+        // here, because that would be every file rather than this one.
+        if (event.kind === 'ask-permission' && event.standing && allowed.current.has(event.standing.scope)) {
+          return her.answer(event.askId, true)
+        }
+        setScene((was) => next(was, event))
       },
       who,
       folder,
@@ -161,6 +182,10 @@ export function useMaid(open: OpenConversation = openMaid) {
      * where that conversation was left, and it says so.
      */
     resumeTo(id: string) {
+      // What he let her go on doing was said in the conversation being turned
+      // away from, and a page she had yesterday is not the one he was watching.
+      // The server keeps them all on one session; this does not.
+      allowed.current = new Set()
       session.current?.resume(id)
     },
     /**
@@ -172,6 +197,10 @@ export function useMaid(open: OpenConversation = openMaid) {
      * meanwhile is still held, and goes the moment she is up.
      */
     retry() {
+      // Whatever he let her go on doing was let go of with the session it was
+      // said in — and opening her again can come back as a conversation the
+      // server has no record of, which is a new one in everything but the id.
+      allowed.current = new Set()
       session.current?.retry()
     },
     /** Put what is in the way away. She is still standing there — this is only
@@ -188,6 +217,22 @@ export function useMaid(open: OpenConversation = openMaid) {
     },
     answer(askId: string, allow: boolean) {
       session.current?.answer(askId, allow)
+      setScene((was) => ({ ...was, permission: null }))
+    },
+    /**
+     * Yes, and yes to the same thing for the rest of this session.
+     *
+     * What "the same thing" is was settled when the question was raised and is
+     * printed next to the key: the one program, the one file, the one host.
+     * Nothing wider is remembered from here, because nothing wider was on
+     * screen to be agreed to — and a question that came with no scope written
+     * for it cannot be answered this way at all, which is why the key is not
+     * offered for one.
+     */
+    allowAlways(askId: string) {
+      const standing = scene.permission?.askId === askId ? scene.permission.standing : null
+      if (standing) allowed.current.add(standing.scope)
+      session.current?.answer(askId, true)
       setScene((was) => ({ ...was, permission: null }))
     },
     /** What was picked, handed back to her. The list comes off the screen here

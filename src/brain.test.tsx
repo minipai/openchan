@@ -7,8 +7,8 @@ import { testRender } from '@opentui/react/test-utils'
 import { useMaid } from './brain'
 import { briefFor, CAST, remember, remembered } from './cast'
 import { OPENED_IN } from './folder'
-import type { OpenConversation } from './protocol'
-import { LOST, MODELS, Stand, STUCK } from './stand'
+import type { BridgeEvent, OpenConversation } from './protocol'
+import { LOST, MODELS, Stand, STUCK, TALKS } from './stand'
 
 /** The window, reduced to the two things this cares about. */
 function Window({ open, hold }: { open: OpenConversation; hold: (maid: Maid) => void }) {
@@ -95,6 +95,10 @@ async function open() {
     onShift: () => maid.onShift,
     nextShift: () => maid.nextShift,
     say: (prompt: string) => settle(() => maid.ask(prompt)),
+    // Said by whoever is standing there now, the same as the rest of these.
+    raise: (event: BridgeEvent) => settle(() => sessions[sessions.length - 1]!.raise(event)),
+    allowAlways: (askId: string) => settle(() => maid.allowAlways(askId)),
+    resumeTo: (id: string) => settle(() => maid.resumeTo(id)),
     // Whoever is standing there now: after a swap that is the girl who walked
     // in, not the one whose session was closed behind her.
     wakeUp: () => settle(() => sessions[sessions.length - 1]!.wakeUp()),
@@ -494,4 +498,107 @@ test('neither picking a model nor sending for one of them moves her', async () =
 
   expect(sessions).toHaveLength(1)
   expect(folder()).toBe(OPENED_IN)
+})
+
+/** A tool she wants, and what a standing yes to it would cover. */
+const RUNS_GIT: BridgeEvent = {
+  kind: 'ask-permission',
+  askId: 'ask-1',
+  toolName: 'bash',
+  summary: 'git status --short',
+  standing: { scope: 'bash git', covers: 'run git' },
+}
+
+test('what he has let her always do is answered where it arrives and never asked again', async () => {
+  const { her, raise, allowAlways, scene } = await open()
+
+  await raise(RUNS_GIT)
+  await allowAlways('ask-1')
+  await raise({ ...RUNS_GIT, askId: 'ask-2', summary: 'git commit' })
+
+  // The second one went back as the same yes the y key sends — the server is
+  // never told to allow the tool itself, which would be every command she
+  // could think of rather than the one he agreed to.
+  expect(her.answered).toEqual([
+    { askId: 'ask-1', allow: true },
+    { askId: 'ask-2', allow: true },
+  ])
+  expect(scene().permission).toBeNull()
+})
+
+test('a standing yes covers the scope it was given against and nothing wider', async () => {
+  const { her, raise, allowAlways, scene } = await open()
+
+  await raise(RUNS_GIT)
+  await allowAlways('ask-1')
+  await raise({
+    ...RUNS_GIT,
+    askId: 'ask-2',
+    summary: 'rm -rf dist',
+    standing: { scope: 'bash rm', covers: 'run rm' },
+  })
+
+  expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
+  expect(scene().permission?.askId).toBe('ask-2')
+})
+
+test('a standing yes goes with the session it was given in', async () => {
+  const { raise, allowAlways, sendFor, sessions, scene } = await open()
+
+  await raise(RUNS_GIT)
+  await allowAlways('ask-1')
+  await sendFor('kurumi')
+  await raise({ ...RUNS_GIT, askId: 'ask-2' })
+
+  // A different girl on a different server was never the one he said yes to,
+  // and she asks for herself.
+  expect(sessions).toHaveLength(2)
+  expect(sessions[1]!.answered).toEqual([])
+  expect(scene().permission?.askId).toBe('ask-2')
+})
+
+test('a standing yes does not follow her to another folder', async () => {
+  const { raise, allowAlways, moveTo, sessions, scene } = await open()
+
+  await raise(RUNS_GIT)
+  await allowAlways('ask-1')
+  await moveTo(elsewhere)
+  await raise({ ...RUNS_GIT, askId: 'ask-2' })
+
+  expect(sessions).toHaveLength(2)
+  expect(sessions[1]!.answered).toEqual([])
+  expect(scene().permission?.askId).toBe('ask-2')
+})
+
+test('a standing yes does not survive her being opened again', async () => {
+  const { her, raise, allowAlways, giveUp, retry, wakeUp, scene } = await open()
+
+  await raise(RUNS_GIT)
+  await allowAlways('ask-1')
+  await giveUp()
+  await retry()
+  await wakeUp()
+  await raise({ ...RUNS_GIT, askId: 'ask-2' })
+
+  // The same session object, but not necessarily the same conversation: a
+  // server with no record of the old one starts a fresh one under it, and the
+  // yes was given inside the one that went away.
+  expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
+  expect(scene().permission?.askId).toBe('ask-2')
+})
+
+test('a standing yes does not follow her into a conversation she is picking up again', async () => {
+  const { her, raise, allowAlways, resumeTo, scene } = await open()
+
+  await raise(RUNS_GIT)
+  await allowAlways('ask-1')
+  await resumeTo(TALKS[1]!.id)
+  await raise({ ...RUNS_GIT, askId: 'ask-2' })
+
+  // Nothing was closed — the server keeps every conversation the folder has had
+  // on the one session — but the page he said yes on is not the page she is on
+  // now, and he is asked again.
+  expect(her.resumed).toEqual([TALKS[1]!.id])
+  expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
+  expect(scene().permission?.askId).toBe('ask-2')
 })
