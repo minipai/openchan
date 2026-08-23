@@ -20,7 +20,8 @@ import { Asking, columns } from './Asking'
 import { cornerFor, pressed, takes } from './keys'
 import { useMaid, type Scene } from './brain'
 import type { Character } from './cast'
-import { asPath, fitted, folderRows, shortened, troubleWith, TYPE_A_PATH } from './folder'
+import { asPath, folderRows, shortened, troubleWith, TYPE_A_PATH } from './folder'
+import { shareOut } from './strip'
 import type { OpenConversation } from './protocol'
 import { paletteOver } from './theme'
 
@@ -562,6 +563,11 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // 760px of a 960px window, and never wider than the terminal has room for.
   const boxWidth = Math.min(90, width - 6)
 
+  // The right end of the strip, shared out between the folder she is in and
+  // what she is thinking with — what she is doing is kept a word of the line
+  // in there too.
+  const { folder: shownFolder, model: shownModel } = shareOut(boxWidth, folder, scene.models, scene.model)
+
   const send = () => {
     ask(line.current!.value.replaceAll(A_BREAK, '\n'))
     line.current!.value = ''
@@ -596,9 +602,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         <DialogueBox
           theme={theme}
           name={onShift.name}
-          // Half the strip at most: what she is doing is written on the other
-          // half of the same line.
-          folder={fitted(shortened(folder), Math.floor(boxWidth / 2))}
+          folder={shownFolder}
+          model={shownModel}
           width={boxWidth}
           line={scene.line}
           narration={above(scene, nextShift.id === onShift.id ? null : nextShift)}

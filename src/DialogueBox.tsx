@@ -1,6 +1,27 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Palette } from './theme'
 
+/** How far the strip above the frame holds its writing off the frame's edges. */
+const OFF_THE_EDGE = 2
+
+/** How far the two standing facts are held off what she is doing, and off each
+ * other. Further from it than from each other, so that they read as a pair at
+ * the end of the line rather than as the tail of a sentence about what she is
+ * doing. */
+const OFF_WHAT_SHE_IS_DOING = 3
+const BETWEEN_THE_TWO = 2
+
+/**
+ * What the strip spends before a word is written on it, once what she is
+ * thinking with is on the line: the padding either side, the air that holds
+ * the pair off what she is doing, and the gap between the two of them.
+ *
+ * Whoever shares the line out needs it, and it is true of the strip rather
+ * than of them: these are the same numbers the box is drawn with a few lines
+ * below, so the two cannot drift apart.
+ */
+export const STRIP_SPENDS = OFF_THE_EDGE * 2 + OFF_WHAT_SHE_IS_DOING + BETWEEN_THE_TWO
+
 /** What the screen says as her while a model is writing. Several, because one
  * line repeated on every turn stops reading as her — and the first of them is
  * whoever is standing there, not whoever was written into this file. */
@@ -17,6 +38,7 @@ export function DialogueBox({
   name,
   line,
   folder,
+  model,
   narration,
   mood,
   isWorking,
@@ -32,6 +54,12 @@ export function DialogueBox({
    * happens in there, and a girl quietly working in the wrong folder is the one
    * mistake this window could make that nobody would notice. */
   folder: string
+  /** What she is thinking with, short enough to read, and nothing at all until
+   * she has said which model that is. It stands beside the folder for the same
+   * reason the folder stands there: the two of them are what is true of this
+   * session all the way through it, and which one is answering is the
+   * difference between her thinking for free and on the master's money. */
+  model: string
   /** 地の文 — what she is doing, while she is doing it. */
   narration: string | null
   mood: string | null
@@ -48,11 +76,29 @@ export function DialogueBox({
   return (
     <box width={width} flexDirection="column">
       {/* Above the frame, where the window floats them: what she is doing right
-          now on the left, gone the moment she starts speaking again, and where
-          she is doing it on the right, which does not go anywhere. */}
-      <box height={1} paddingX={2} flexDirection="row" justifyContent="space-between">
+          now on the left, gone the moment she starts speaking again, and on the
+          right what does not go anywhere — what she is thinking with, and the
+          folder she is thinking in. Those two sit together, and the folder sits
+          outermost: it is the one of the three that never gives. */}
+      <box height={1} paddingX={OFF_THE_EDGE} flexDirection="row" justifyContent="space-between">
         <text fg={theme.faint} flexShrink={1}>{narration ?? ''}</text>
-        <text fg={theme.muted} flexShrink={0}>{folder}</text>
+        {/* One weight for the two of them: they are the same kind of fact, and
+            the one that changes every few seconds is the one written faintly.
+
+            The air in front is what holds the pair off what she is doing, so
+            it is only there while there is a pair. On a terminal too narrow for
+            a model's name at all, three columns is the difference between what
+            she is doing having a word and having none, and the folder standing
+            where it always stood is what that terminal had before. */}
+        <box
+          flexDirection="row"
+          gap={BETWEEN_THE_TWO}
+          marginLeft={model ? OFF_WHAT_SHE_IS_DOING : 0}
+          flexShrink={0}
+        >
+          {model ? <text fg={theme.muted}>{model}</text> : null}
+          <text fg={theme.muted}>{folder}</text>
+        </box>
       </box>
 
       <box
