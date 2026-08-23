@@ -5,18 +5,59 @@ import { fileURLToPath } from 'node:url'
 import net from 'node:net'
 import { createOpencode } from '@opencode-ai/sdk'
 import { faceFor, type Expression } from './expressions'
-import type { BridgeEvent, Conversation } from './protocol'
+import type { BridgeEvent, Conversation, Model } from './protocol'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const project = path.resolve(here, '..')
 
 /**
- * Which model she thinks with. opencode names a model `provider/id`, and the
- * point of this whole exercise is that the provider is not fixed — so it is an
- * environment variable rather than a constant, and the default is a free one so
- * that starting her up never quietly spends the master's money.
+ * Which model she starts the session thinking with — she can be handed another
+ * one off the picker afterwards, and this is only where she begins. opencode
+ * names a model `provider/id`, and the point of this whole exercise is that the
+ * provider is not fixed — so it is an environment variable rather than a
+ * constant, and the default is a free one so that starting her up never quietly
+ * spends the master's money.
  */
 const MODEL = process.env.CAFE_MODEL ?? 'opencode/nemotron-3.5-lightning-free'
+
+/**
+ * A model as opencode wants it named when it is being asked for: the two halves
+ * of `provider/id`, apart. Nothing, if what came out of the environment is not
+ * a model name at all — then the server keeps whatever it was started with,
+ * which is a better answer than half a name.
+ */
+function halves(model: string) {
+  const cut = model.indexOf('/')
+  if (cut < 1 || cut === model.length - 1) return undefined
+  return { providerID: model.slice(0, cut), modelID: model.slice(cut + 1) }
+}
+
+/**
+ * Everything the server has to think with, flattened out of the providers it
+ * answers with and put in one order — a list that came back grouped by whoever
+ * happened to be configured first reads as no order at all.
+ *
+ * The label carries the provider as well as the model: the same model is
+ * offered by several of them, and two rows reading `Claude Sonnet 4.5` with
+ * nothing to tell them apart is worse than not offering the choice.
+ */
+export function modelsIn(providers: ProviderModels[]): Model[] {
+  return providers
+    .flatMap((provider) =>
+      Object.values(provider.models ?? {}).map((model) => ({
+        id: `${provider.id}/${model.id}`,
+        label: `${provider.name} · ${model.name}`,
+      })),
+    )
+    .sort((one, other) => one.label.localeCompare(other.label))
+}
+
+/** As much of a provider as the list needs. */
+export type ProviderModels = {
+  id: string
+  name: string
+  models: Record<string, { id: string; name: string }>
+}
 
 /**
  * What she does without asking. `ask` is what puts the y/n question on screen —
@@ -138,6 +179,10 @@ export class MaidSession implements Conversation {
   private server: Awaited<ReturnType<typeof createOpencode>>['server'] | null = null
   private sessionId: string | null = null
   private closed = false
+  /** What she is thinking with, which is hers to remember rather than the
+   * server's: the model travels with each prompt, so changing it is a matter of
+   * what the next one says rather than of restarting anything. */
+  private model = MODEL
   /** Whether a turn is still open, so a stream that goes quiet twice only
    * closes it once. */
   private working = false
@@ -152,6 +197,9 @@ export class MaidSession implements Conversation {
    * state moves — and one that had to wait to be allowed announces itself on
    * both sides of the wait — but she only picks it up once. */
   private narrated = new Set<string>()
+  /** The list the server gave, kept so that changing model can be said the same
+   * way it was first said. */
+  private models: Model[] = []
 
   /** The folder she works in is the one she was started in — opencode takes
    * the process's own. */
@@ -189,6 +237,25 @@ export class MaidSession implements Conversation {
     if (this.closed) return
     void this.listen(stream.stream)
     this.onEvent({ kind: 'ready' })
+
+    // What she could think with, asked for once and after she is announced: the
+    // server's answer does not change under her, and a picker that fetches its
+    // own contents opens onto an empty box. Not being able to say what else she
+    // could think with is not a reason to say she never woke up — she is up,
+    // and the model she was started on works — so this one is swallowed rather
+    // than allowed to take the session down with it.
+    const listed = await this.client.config.providers().catch(() => null)
+    if (this.closed) return
+    this.tellModel(modelsIn(listed?.data?.providers ?? []))
+  }
+
+  /** What she thinks with, said out loud. The screen marks the one in force off
+   * this rather than off what it asked for — there is one place the answer
+   * lives and it is here, so the list cannot drift from what the next prompt
+   * will actually carry. */
+  private tellModel(models = this.models) {
+    this.models = models
+    this.onEvent({ kind: 'thinks-with', models, using: this.model })
   }
 
   /** Every event the server has, filtered down to this conversation. */
@@ -294,8 +361,16 @@ export class MaidSession implements Conversation {
     this.narrated.clear()
     void this.client.session.promptAsync({
       path: { id: this.sessionId },
-      body: { parts: [{ type: 'text', text: prompt }] },
+      // The model goes with the prompt rather than being set on the session:
+      // that is the whole of what makes swapping it take from the next turn on
+      // without anything being restarted.
+      body: { model: halves(this.model), parts: [{ type: 'text', text: prompt }] },
     })
+  }
+
+  use(model: string) {
+    this.model = model
+    this.tellModel()
   }
 
   answer(askId: string, allow: boolean) {
