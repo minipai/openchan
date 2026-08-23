@@ -55,7 +55,8 @@ up never quietly spends money.
 | `src/protocol.ts` | that vocabulary: she said something, she picked something up, she wants permission, she is done — and what the screen may ask of her in return |
 | `src/scene.ts` | what an event leaves on the scene: the latest of each, and nothing decided |
 | `src/brain.ts` | holds her open for as long as the window is, and hands the screen one scene |
-| `src/App.tsx` + `SpriteLayer` / `DialogueBox` | the screen |
+| `src/keys.ts` | every key the window answers to, written down once — the overlay and the screen both read it off here |
+| `src/App.tsx` + `SpriteLayer` / `DialogueBox` / `KeysOverlay` | the screen |
 | `src/expressions.ts` | the 26 faces, and the mood marker that names them |
 | `persona/` | who she is, appended to opencode's own instructions rather than replacing them |
 | `art/` | her sprites |
