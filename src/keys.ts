@@ -32,6 +32,8 @@ export type Does =
   | 'choose'
   | 'go'
   | 'cancel'
+  | 'retry'
+  | 'dismiss'
 
 /**
  * The ones the window does not do itself, and so does not take the key away
@@ -46,10 +48,23 @@ const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'go', 'leave', 'sc
 export const takes = (does: Does) => !THEIRS.includes(does)
 
 /** When a key is worth anything: whenever, while there is a line to type into,
- * while she is working, while she is waiting to be allowed, while a list is
- * open, while a path is being typed into one, while there is something she
- * wrote to read, while it is open, or while these keys are on screen. */
-type When = 'always' | 'typing' | 'working' | 'asked' | 'picking' | 'path' | 'reported' | 'reading' | 'up'
+ * while she is working, while she is waiting to be allowed, while something is
+ * in the way of her working at all — with or without her session left standing
+ * — while a list is open, while a path is being typed into one, while there is
+ * something she wrote to read, while it is open, or while these keys are on
+ * screen. */
+type When =
+  | 'always'
+  | 'typing'
+  | 'working'
+  | 'asked'
+  | 'gone'
+  | 'troubled'
+  | 'picking'
+  | 'path'
+  | 'reported'
+  | 'reading'
+  | 'up'
 
 export type Shortcut = {
   /** As the terminal names it: the key, with `ctrl+` in front if it is held. */
@@ -74,6 +89,9 @@ export type Where = {
   reading: boolean
   /** Whether she has written something there is a report to open at all. */
   hasReport: boolean
+  /** What is in the way, if anything is: something she is still standing
+   * behind, or something that took her session with it. */
+  trouble: 'stuck' | 'gone' | null
 }
 
 /**
@@ -105,6 +123,14 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'picking', press: 'return', does: 'choose', says: 'use it' },
   { when: 'picking', press: 'escape', does: 'cancel', says: 'never mind' },
 
+  // Something in the way takes the box the line she is spoken to on lives in,
+  // and her question with it — both are drawn there and neither is drawn while
+  // this is. Which key is offered is which way out there is: a session that
+  // went with it can only be opened again, and one that survived only has to be
+  // let go of.
+  { when: 'gone', press: 'r', does: 'retry', says: 'try her again' },
+  { when: 'troubled', press: 'escape', does: 'dismiss', says: 'put it away' },
+
   { when: 'asked', press: 'y', does: 'allow', says: 'let her' },
   { when: 'asked', press: 'n', does: 'refuse', says: "don't" },
   { when: 'asked', press: 'escape', does: 'refuse', says: "don't" },
@@ -129,6 +155,8 @@ const HEADINGS: Record<When, string> = {
   reading: 'While what she wrote is open',
   picking: 'While a list is open',
   path: 'While a path is being typed',
+  gone: 'While she cannot be reached',
+  troubled: 'While something is in the way',
   asked: 'While she is waiting to be allowed',
   working: 'While she is working',
   // Two of them, because what can be typed and what can be pressed read as one
@@ -158,17 +186,29 @@ const holds = (when: When, where: Where) =>
   (when === 'reading' && where.reading) ||
   (when === 'picking' && where.picking) ||
   (when === 'path' && where.path) ||
+  (when === 'gone' && where.trouble === 'gone') ||
+  (when === 'troubled' && where.trouble === 'stuck') ||
   // Not while it is already open: the key that opens it is not worth offering
-  // from inside it.
+  // from inside it. Something in the way does not take it away — what she wrote
+  // is on the scene either way, and a page already written is still readable
+  // once she is not.
   (when === 'reported' && where.hasReport && !where.reading) ||
-  // The line she is spoken to on is behind these keys while they are up, and
-  // behind a list or an open report while one of those is; a blurred input does
-  // not take Enter — so it is not offered while any of them are.
-  (when === 'typing' && !where.up && !where.picking && !where.path && !where.reading) ||
+  // The line she is spoken to on is behind these keys while they are up, behind
+  // a list or a path being typed or an open report while one of those is, and
+  // not drawn at all while something is in the way; a blurred input does not
+  // take Enter — so it is not offered while any of those hold.
+  (when === 'typing' &&
+    !where.up &&
+    !where.picking &&
+    !where.path &&
+    !where.reading &&
+    where.trouble === null) ||
   // Not while a path is being written out: y and n are letters in a path, and a
   // folder under `~/Sync` would otherwise answer her question halfway through
-  // being typed.
-  (when === 'asked' && where.asked && !where.path) ||
+  // being typed. And her question is behind the note the same way the line she
+  // is spoken to on is: still open on the server, not on screen, and so not
+  // answerable until the note is put away.
+  (when === 'asked' && where.asked && !where.path && where.trouble === null) ||
   (when === 'working' && where.isWorking && !where.asked)
 
 /**
@@ -182,7 +222,19 @@ const holds = (when: When, where: Where) =>
 export function keysNow(where: Where): Group[] {
   const groups: Group[] = []
   const taken = new Set<string>()
-  for (const when of ['up', 'reading', 'path', 'picking', 'asked', 'working', 'typing', 'reported', 'always'] as const) {
+  for (const when of [
+    'up',
+    'reading',
+    'path',
+    'picking',
+    'gone',
+    'troubled',
+    'asked',
+    'working',
+    'typing',
+    'reported',
+    'always',
+  ] as const) {
     if (!holds(when, where)) continue
     const keys: Shortcut[] = []
     for (const { when: _, ...key } of KEYS.filter((one) => one.when === when)) {

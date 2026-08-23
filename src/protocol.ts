@@ -13,6 +13,27 @@ export type Model = { id: string; label: string }
 export type Report = { title: string; body: string }
 
 /**
+ * Something in the way that she cannot get past on her own, said in words
+ * rather than left as an error string nobody reads.
+ *
+ * Whichever agent is underneath is the one that writes it — it is the only one
+ * that knows what actually went wrong — but it writes it in the window's
+ * vocabulary, so the screen goes on knowing how to show it when the agent is
+ * swapped.
+ */
+export type Trouble = {
+  /** What is wrong, in a line. */
+  title: string
+  /** What it means, and what gets past it. */
+  body: string
+  /** What actually came back, for whoever wants to look at it. */
+  detail?: string
+  /** Whether her session went with it. Then there is nobody to speak to until
+   * she is opened again, and opening her again is the only way out. */
+  gone: boolean
+}
+
+/**
  * What passes between her brain and her face.
  *
  * This is the swap point: nothing above this file knows that opencode is what
@@ -41,9 +62,11 @@ export type BridgeEvent =
   /** 地の文 — what she is doing, while she is doing it. */
   | { kind: 'doing'; label: string }
   | { kind: 'ask-permission'; askId: string; toolName: string }
-  /** She is not coming: the server behind her never came up. There is nobody
-   * to speak to until the window is started again. */
-  | { kind: 'lost'; why: string }
+  /** Something is in the way — or, with nothing in it, that whatever was in
+   * the way is not any more. Whether her session survived it is the trouble's
+   * own to say: some of them leave her standing there, and some take the
+   * server behind her with them. */
+  | { kind: 'trouble'; trouble: Trouble | null }
   /** What she can think with, and which of them she is thinking with. Said
    * when the session opens and again every time it changes — the one in force
    * is the agent's to report, so the list only ever marks what has taken. */
@@ -56,9 +79,9 @@ export type BridgeEvent =
 /**
  * Her brain, from the face's side of the bridge.
  *
- * Six things is all the window ever does to her, and it does them the same way
- * whichever agent is underneath — so this is the whole of what something has to
- * be able to do to stand in for opencode.
+ * Seven things is all the window ever does to her, and it does them the same
+ * way whichever agent is underneath — so this is the whole of what something
+ * has to be able to do to stand in for opencode.
  */
 export interface Conversation {
   /** Open it. She says nothing until this has settled. */
@@ -72,6 +95,11 @@ export interface Conversation {
    * marks is what the next prompt will carry rather than a second copy of it
    * kept up here. */
   use(model: string): void
+  /** Open her again, after something took the session down. What is on screen
+   * is cleared as the attempt starts — pressing it has to look like something
+   * happening — and a new trouble raised if this one does not get through
+   * either. */
+  retry(): void
   /** Stop her, mid-turn. */
   interrupt(): void
   close(): void

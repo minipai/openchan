@@ -5,7 +5,7 @@ import net from 'node:net'
 import { createOpencodeClient, createOpencodeServer, type OpencodeClient } from '@opencode-ai/sdk'
 import { briefFor, type Character } from './cast'
 import { faceFor, type Expression } from './expressions'
-import type { BridgeEvent, Conversation, Model } from './protocol'
+import type { BridgeEvent, Conversation, Model, Trouble } from './protocol'
 
 /**
  * Which model she starts the session thinking with — she can be handed another
@@ -118,6 +118,34 @@ function narrate(tool: string, input: Record<string, unknown>): string {
     default:
       return tool
   }
+}
+
+/** What the server says went wrong, as it names it. Only the names matter here
+ * — one of them is trouble of its own and the rest are this turn's business. */
+type SessionError = { name?: string; data?: { providerID?: string; message?: string } }
+
+/**
+ * How many times the event stream may put itself back together before the
+ * server behind it counts as gone.
+ *
+ * It has to be a number: left to itself the stream reconnects for ever, so a
+ * server that died stays invisible — she simply stops answering and the window
+ * goes on looking like nothing is wrong. Three attempts is a few seconds of
+ * backoff, which a hiccup survives and a dead process does not.
+ */
+const RECONNECTS = 3
+
+/**
+ * What came back, as much of it as is worth reading: an error's message rather
+ * than the stack under it, and on one line.
+ *
+ * Cut, because a server that fell over prints everything it had to say on the
+ * way down — and the note it lands in grows the dialogue box upward, so a long
+ * enough one pushes her line and the frame's own top off the top of the screen.
+ */
+function said(trouble: unknown) {
+  const words = (trouble instanceof Error ? trouble.message : String(trouble)).replace(/\s+/g, ' ').trim()
+  return words.length > 200 ? `${words.slice(0, 200)}…` : words
 }
 
 /** A tool she may not use until he says so. The server names the tool under
@@ -262,6 +290,14 @@ export class MaidSession implements Conversation {
   /** The list the server gave, kept so that changing model can be said the same
    * way it was first said. */
   private models: Model[] = []
+  /** Which attempt at opening her is the live one. Everything an attempt starts
+   * answers to the number it was started under: a stream from an attempt that
+   * has been given up on takes a few seconds to notice, and by then what it has
+   * to say is about a session nobody is in. */
+  private opening = 0
+  /** What is dropped when an attempt is done with — the event stream, which
+   * otherwise goes on reaching for a server that is not there. */
+  private stopListening = new AbortController()
 
   /** Both of the things a session is fixed to are settled here: the persona
    * goes into the server as it starts and the folder goes into the session as
@@ -274,27 +310,48 @@ export class MaidSession implements Conversation {
   ) {}
 
   async start() {
+    const mine = ++this.opening
     try {
-      await this.open()
+      await this.open(mine)
     } catch (trouble) {
-      // Unless this one was shut on the way up: swapping her closes a booting
-      // server out from under itself, and the scene the complaint would land in
-      // belongs to the girl who replaced her.
-      if (this.closed) return
+      // Unless this one has been given up on: swapping her closes a booting
+      // server out from under itself, and so does opening her again, and the
+      // scene the complaint would land in is not this attempt's any more.
+      if (this.spent(mine)) return
       // A server that never came up is invisible from everywhere else — the
       // window would sit at "waking her up…" for good, holding a sentence for a
-      // session that is never going to open.
-      this.onEvent({ kind: 'lost', why: `She could not be woken up — ${trouble}` })
+      // session nobody is opening. Retryable, and worth saying so: the usual
+      // reason is something the master can go and fix in one command.
+      this.raise({
+        title: 'She could not be woken up',
+        body: 'The opencode server behind her did not start. Check that opencode is installed and signed in to at least one provider, then try her again.',
+        detail: said(trouble),
+        gone: true,
+      })
     }
   }
 
-  private async open() {
+  /** Whether an attempt at opening her still has the screen: it has either been
+   * closed, or another attempt has been started over the top of it. */
+  private spent(mine: number) {
+    return this.closed || mine !== this.opening
+  }
+
+  private async open(mine: number) {
+    const stopListening = new AbortController()
     const started = await createOpencodeServer({
       port: await freePort(),
       config: { model: MODEL, instructions: [writePersona(this.who)], permission: PERMISSION },
     })
-    if (this.closed) return void started.close()
-    this.server = started
+    // What this attempt started, let go of. It is asked after every wait rather
+    // than only the first: an attempt given up on halfway leaves a server
+    // running behind a window nobody can see it from, and a stream reaching for
+    // it, and the id of a session on it about to be written over the live one's.
+    const drop = () => {
+      stopListening.abort()
+      started.close()
+    }
+    if (this.spent(mine)) return drop()
 
     // The folder goes on the client rather than on the one call that opens the
     // session: opencode holds a server's folders apart from one another all the
@@ -303,9 +360,13 @@ export class MaidSession implements Conversation {
     // a client asking for the folder the window happens to have been started in
     // would leave her working perfectly and silently — nothing she said, nothing
     // she picked up and nothing she wanted permission for would ever arrive.
-    this.client = createOpencodeClient({ baseUrl: started.url, directory: this.folder })
+    const client = createOpencodeClient({ baseUrl: started.url, directory: this.folder })
+    this.client = client
+    this.server = started
+    this.stopListening = stopListening
 
-    const opened = await this.client.session.create({ body: { title: 'claudecafe' } })
+    const opened = await client.session.create({ body: { title: 'claudecafe' } })
+    if (this.spent(mine)) return drop()
     this.sessionId = (opened as { data?: { id: string } }).data?.id ?? null
     if (!this.sessionId) throw new Error('the server opened no session')
 
@@ -313,9 +374,12 @@ export class MaidSession implements Conversation {
     // announced once it has taken: whoever was waiting to speak to her speaks
     // the moment this lands, and a prompt sent before the stream is open loses
     // the front of her answer.
-    const stream = await this.client.event.subscribe()
-    if (this.closed) return
-    void this.listen(stream.stream)
+    const stream = await client.event.subscribe({
+      signal: stopListening.signal,
+      sseMaxRetryAttempts: RECONNECTS,
+    })
+    if (this.spent(mine)) return drop()
+    void this.listen(stream.stream, mine)
     this.onEvent({ kind: 'ready' })
 
     // What she could think with, asked for once and after she is announced: the
@@ -324,8 +388,8 @@ export class MaidSession implements Conversation {
     // could think with is not a reason to say she never woke up — she is up,
     // and the model she was started on works — so this one is swallowed rather
     // than allowed to take the session down with it.
-    const listed = await this.client.config.providers().catch(() => null)
-    if (this.closed) return
+    const listed = await client.config.providers().catch(() => null)
+    if (this.spent(mine)) return drop()
     this.tellModel(modelsIn(listed?.data?.providers ?? []))
   }
 
@@ -339,13 +403,39 @@ export class MaidSession implements Conversation {
   }
 
   /** Every event the server has, filtered down to this conversation. */
-  private async listen(events: AsyncIterable<unknown>) {
-    for await (const event of events) {
-      if (this.closed) return
-      const props = (event as { properties?: Record<string, unknown> }).properties ?? {}
-      if (props.sessionID && props.sessionID !== this.sessionId) continue
-      this.read(event as { type: string; properties: Record<string, never> })
+  private async listen(events: AsyncIterable<unknown>, mine: number) {
+    try {
+      for await (const event of events) {
+        if (this.spent(mine)) return
+        const props = (event as { properties?: Record<string, unknown> }).properties ?? {}
+        if (props.sessionID && props.sessionID !== this.sessionId) continue
+        this.read(event as { type: string; properties: Record<string, never> })
+      }
+    } catch (trouble) {
+      return this.dropped(mine, said(trouble))
     }
+    this.dropped(mine)
+  }
+
+  /**
+   * The stream, given up on. It puts itself back together across a hiccup, so
+   * it only runs out of attempts when the server is not coming back — and from
+   * then on every prompt is posted into nothing at all, silently, which is the
+   * worst way for her to be gone.
+   */
+  private dropped(mine: number, detail?: string) {
+    if (this.spent(mine)) return
+    this.raise({
+      title: 'She stopped answering',
+      body: 'The connection to the server behind her dropped. Nothing said to her can arrive until she is opened again.',
+      detail,
+      gone: true,
+    })
+  }
+
+  /** Something in the way, on its way to the screen. */
+  private raise(trouble: Trouble | null) {
+    this.onEvent({ kind: 'trouble', trouble })
   }
 
   private read(event: { type: string; properties: Record<string, never> }) {
@@ -363,7 +453,7 @@ export class MaidSession implements Conversation {
       case 'session.idle':
         return this.finish()
       case 'session.error':
-        return this.finish(JSON.stringify(props.error))
+        return this.readError(props.error as SessionError | undefined)
     }
   }
 
@@ -441,6 +531,25 @@ export class MaidSession implements Conversation {
     })
   }
 
+  /**
+   * A turn the server ended itself. Most of what comes back is this turn's
+   * business and hers to say out loud — but a provider she has no credentials
+   * for is not: nothing said to her on that model will get through either, so
+   * it is put where the input was, with the thing to go and do about it. She is
+   * still standing there, and picking another model is the shorter way out.
+   */
+  private readError(error?: SessionError) {
+    if (error?.name !== 'ProviderAuthError') return this.finish(JSON.stringify(error))
+    const provider = error.data?.providerID ?? 'that provider'
+    this.raise({
+      title: `She is not signed in to ${provider}`,
+      body: `opencode has no credentials for ${provider}, so nothing can be run on it. Connect it in opencode, or have her think with a model from somewhere else.`,
+      detail: error.data?.message,
+      gone: false,
+    })
+    this.finish()
+  }
+
   /** The turn, closed out. Her line and the face she signed it with are already
    * on screen — the stream carried them — so there is nothing left to say but
    * that she has stopped, and why, if it was not her idea. */
@@ -452,19 +561,25 @@ export class MaidSession implements Conversation {
 
   ask(prompt: string) {
     if (!this.client || !this.sessionId) return
+    const mine = this.opening
     this.working = true
     this.said = ''
     this.saying = null
     this.wrote = false
     this.parts.clear()
     this.narrated.clear()
-    void this.client.session.promptAsync({
-      path: { id: this.sessionId },
-      // The model goes with the prompt rather than being set on the session:
-      // that is the whole of what makes swapping it take from the next turn on
-      // without anything being restarted.
-      body: { model: halves(this.model), parts: [{ type: 'text', text: prompt }] },
-    })
+    void this.client.session
+      .promptAsync({
+        path: { id: this.sessionId },
+        // The model goes with the prompt rather than being set on the session:
+        // that is the whole of what makes swapping it take from the next turn on
+        // without anything being restarted.
+        body: { model: halves(this.model), parts: [{ type: 'text', text: prompt }] },
+      })
+      // A sentence that could not even be posted says the same thing the stream
+      // is about to take a few seconds to work out, and says it while he is
+      // still looking at the sentence: there is no server on the other end.
+      .catch((trouble) => this.dropped(mine, said(trouble)))
   }
 
   use(model: string) {
@@ -480,6 +595,29 @@ export class MaidSession implements Conversation {
     })
   }
 
+  /**
+   * Open her again, from wherever the last attempt got to. What that attempt
+   * left behind goes first — a half-started server, a session id pointing at
+   * nothing, the leavings of a turn that will never finish — and the trouble
+   * comes off the screen as this starts, so pressing it is visibly something
+   * happening rather than a key that does nothing.
+   */
+  retry() {
+    if (this.closed) return
+    this.stopListening.abort()
+    this.server?.close()
+    this.client = null
+    this.server = null
+    this.sessionId = null
+    this.working = false
+    this.said = ''
+    this.parts.clear()
+    this.narrated.clear()
+    this.asked.clear()
+    this.raise(null)
+    void this.start()
+  }
+
   interrupt() {
     if (!this.client || !this.sessionId) return
     void this.client.session.abort({ path: { id: this.sessionId } })
@@ -488,6 +626,9 @@ export class MaidSession implements Conversation {
 
   close() {
     this.closed = true
+    // Or the stream goes on reaching for a server that has been shut, for as
+    // long as the window is open.
+    this.stopListening.abort()
     this.server?.close()
   }
 }
