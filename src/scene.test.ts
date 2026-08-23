@@ -45,12 +45,22 @@ test('a tool she may not use yet becomes a question on screen', () => {
 })
 
 test('the turn closing puts her down and takes any question with it', () => {
-  const asked = next(working, { kind: 'ask-permission', askId: 'ask-1', toolName: 'bash' })
+  const spoken = next(working, { kind: 'says', line: 'There you go' })
+  const asked = next(spoken, { kind: 'ask-permission', askId: 'ask-1', toolName: 'bash' })
 
   const scene = next(asked, { kind: 'done' })
 
   expect(scene.isWorking).toBe(false)
   expect(scene.permission).toBeNull()
+  // A turn that ended on its own leaves the last thing she said on screen —
+  // clearing it would blank the box the instant she stops talking.
+  expect(scene.line).toBe('There you go')
+})
+
+test('nothing but the turn closing decides whether she is working', () => {
+  const idle = next(OPENING, { kind: 'doing', label: 'reading brain.ts' })
+
+  expect(idle.isWorking).toBe(false)
 })
 
 test('a turn that ended badly is hers to say out loud', () => {

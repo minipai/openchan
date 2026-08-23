@@ -52,8 +52,9 @@ up never quietly spends money.
 | | |
 |---|---|
 | `src/opencode.ts` | the only file that knows opencode exists — it turns the server's event stream into her vocabulary |
-| `src/protocol.ts` | that vocabulary: she said something, she picked something up, she wants permission, she is done |
-| `src/brain.ts` | keeps the latest of each, and hands the screen one scene |
+| `src/protocol.ts` | that vocabulary: she said something, she picked something up, she wants permission, she is done — and what the screen may ask of her in return |
+| `src/scene.ts` | what an event leaves on the scene: the latest of each, and nothing decided |
+| `src/brain.ts` | holds her open for as long as the window is, and hands the screen one scene |
 | `src/App.tsx` + `SpriteLayer` / `DialogueBox` | the screen |
 | `src/expressions.ts` | the 26 faces, and the mood marker that names them |
 | `persona/` | who she is, appended to opencode's own instructions rather than replacing them |
