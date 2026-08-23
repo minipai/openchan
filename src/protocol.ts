@@ -1,6 +1,13 @@
 import type { Expression } from './expressions'
 
 /**
+ * One of the models she could think with: what the agent behind her calls it,
+ * and what the list shows for it. The label is the adapter's to write — only it
+ * knows whether an id reads as anything to a person.
+ */
+export type Model = { id: string; label: string }
+
+/**
  * What passes between her brain and her face.
  *
  * This is the swap point: nothing above this file knows that opencode is what
@@ -21,6 +28,10 @@ export type BridgeEvent =
   /** She is not coming: the server behind her never came up. There is nobody
    * to speak to until the window is started again. */
   | { kind: 'lost'; why: string }
+  /** What she can think with, and which of them she is thinking with. Said
+   * when the session opens and again every time it changes — the one in force
+   * is the agent's to report, so the list only ever marks what has taken. */
+  | { kind: 'thinks-with'; models: Model[]; using: string }
   /** The turn, closed out. An error is hers to say out loud — there is one line
    * on this screen and swallowing it would leave her mute for no visible
    * reason. */
@@ -29,7 +40,7 @@ export type BridgeEvent =
 /**
  * Her brain, from the face's side of the bridge.
  *
- * Five things is all the window ever does to her, and it does them the same way
+ * Six things is all the window ever does to her, and it does them the same way
  * whichever agent is underneath — so this is the whole of what something has to
  * be able to do to stand in for opencode.
  */
@@ -40,6 +51,11 @@ export interface Conversation {
   /** An answer to an `ask-permission`. An id she is no longer waiting on is
    * dropped rather than sent. */
   answer(askId: string, allow: boolean): void
+  /** What she thinks with from the next turn on, by the id the `thinks-with`
+   * list gives it. Answered with a `thinks-with` of its own, so what the screen
+   * marks is what the next prompt will carry rather than a second copy of it
+   * kept up here. */
+  use(model: string): void
   /** Stop her, mid-turn. */
   interrupt(): void
   close(): void

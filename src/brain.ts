@@ -52,6 +52,11 @@ export function useMaid(open: OpenConversation = openMaid) {
     ask(prompt: string) {
       setScene((was) => hold(was, prompt))
     },
+    /** What she thinks with from here on. The scene is not touched from here —
+     * she is the one who says which model is hers, and the list marks that. */
+    use(model: string) {
+      session.current?.use(model)
+    },
     answer(askId: string, allow: boolean) {
       session.current?.answer(askId, allow)
       setScene((was) => ({ ...was, permission: null }))

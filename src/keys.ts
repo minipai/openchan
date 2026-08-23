@@ -9,14 +9,39 @@
  */
 
 /** What pressing it does. Not all of them are the window's to do: `send` is the
- * input's own, and `leave` belongs to the renderer, which is the one that knows
- * how to put the terminal back. They are here to be listed. */
-export type Does = 'send' | 'stop' | 'allow' | 'refuse' | 'blocks' | 'keys' | 'close' | 'leave'
+ * input's own, moving through a list and choosing off it belong to the list,
+ * and `leave` belongs to the renderer, which is the one that knows how to put
+ * the terminal back. They are here to be listed. */
+export type Does =
+  | 'send'
+  | 'stop'
+  | 'allow'
+  | 'refuse'
+  | 'blocks'
+  | 'keys'
+  | 'close'
+  | 'leave'
+  | 'models'
+  | 'previous'
+  | 'next'
+  | 'choose'
+  | 'cancel'
+
+/**
+ * The ones the window does not do itself, and so does not take the key away
+ * from whatever is underneath: the line she is spoken to on takes Enter, an
+ * open list takes the arrows and Enter, and the renderer takes Ctrl-C.
+ */
+const THEIRS: Does[] = ['send', 'previous', 'next', 'choose', 'leave']
+
+/** Whether pressing it is the window's own to act on — and so to keep from
+ * reaching what is drawn under it. */
+export const takes = (does: Does) => !THEIRS.includes(does)
 
 /** When a key is worth anything: whenever, while there is a line to type into,
- * while she is working, while she is waiting to be allowed, or while these keys
- * are on screen. */
-type When = 'always' | 'typing' | 'working' | 'asked' | 'up'
+ * while she is working, while she is waiting to be allowed, while a list is
+ * open, or while these keys are on screen. */
+type When = 'always' | 'typing' | 'working' | 'asked' | 'picking' | 'up'
 
 export type Shortcut = {
   /** As the terminal names it: the key, with `ctrl+` in front if it is held. */
@@ -33,6 +58,8 @@ export type Where = {
   isWorking: boolean
   /** Whether she is waiting to be allowed something. */
   asked: boolean
+  /** Whether there is a list open to pick something off. */
+  picking: boolean
 }
 
 /**
@@ -45,6 +72,14 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'up', press: 'escape', does: 'close', says: 'put these away' },
   { when: 'up', press: 'ctrl+k', does: 'close', says: 'put these away' },
 
+  // A list takes the keys that move through it and the one that takes what it
+  // is on, and it takes ESC before she does: the list is what is being answered
+  // while it is open, not her.
+  { when: 'picking', press: 'up', does: 'previous', says: 'the one above' },
+  { when: 'picking', press: 'down', does: 'next', says: 'the one below' },
+  { when: 'picking', press: 'return', does: 'choose', says: 'use it' },
+  { when: 'picking', press: 'escape', does: 'cancel', says: 'never mind' },
+
   { when: 'asked', press: 'y', does: 'allow', says: 'let her' },
   { when: 'asked', press: 'n', does: 'refuse', says: "don't" },
   { when: 'asked', press: 'escape', does: 'refuse', says: "don't" },
@@ -54,6 +89,7 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'typing', press: 'return', does: 'send', says: 'say it' },
 
   { when: 'always', press: 'ctrl+k', does: 'keys', says: 'these keys' },
+  { when: 'always', press: 'ctrl+p', does: 'models', says: 'what she thinks with' },
   { when: 'always', press: 'ctrl+b', does: 'blocks', says: 'swap how she is drawn' },
   { when: 'always', press: 'ctrl+c', does: 'leave', says: 'leave' },
 ]
@@ -61,6 +97,7 @@ const KEYS: (Shortcut & { when: When })[] = [
 /** What the shortcuts are grouped under, in the order they are shown. */
 const HEADINGS: Record<When, string> = {
   up: 'While these are up',
+  picking: 'While a list is open',
   asked: 'While she is waiting to be allowed',
   working: 'While she is working',
   // Two of them, because what can be typed and what can be pressed read as one
@@ -83,9 +120,11 @@ export type Group = { heading: string; keys: Shortcut[] }
 const holds = (when: When, where: Where) =>
   when === 'always' ||
   (when === 'up' && where.up) ||
-  // The line she is spoken to on is behind these keys while they are up, and a
-  // blurred input does not take Enter — so it is not offered while they are.
-  (when === 'typing' && !where.up) ||
+  (when === 'picking' && where.picking) ||
+  // The line she is spoken to on is behind these keys while they are up, and
+  // behind a list while one is open; a blurred input does not take Enter — so
+  // it is not offered while either is.
+  (when === 'typing' && !where.up && !where.picking) ||
   (when === 'asked' && where.asked) ||
   (when === 'working' && where.isWorking && !where.asked)
 
@@ -100,7 +139,7 @@ const holds = (when: When, where: Where) =>
 export function keysNow(where: Where): Group[] {
   const groups: Group[] = []
   const taken = new Set<string>()
-  for (const when of ['up', 'asked', 'working', 'typing', 'always'] as const) {
+  for (const when of ['up', 'picking', 'asked', 'working', 'typing', 'always'] as const) {
     if (!holds(when, where)) continue
     const keys: Shortcut[] = []
     for (const { when: _, ...key } of KEYS.filter((one) => one.when === when)) {
@@ -132,12 +171,28 @@ export function keyFor(does: Does): Shortcut {
   return key
 }
 
+/** The keys with a shape rather than a name on them. */
+const ARROWS: Record<string, string> = { up: '↑', down: '↓' }
+
+/**
+ * What an open list answers to, for the list to print along its own bottom
+ * edge.
+ *
+ * It prints them itself because the overlay never gets the chance to: bringing
+ * the overlay up puts the list away, so the two are never on screen together
+ * and the list's keys would otherwise be written down nowhere anybody looks.
+ */
+export function listKeys(): Shortcut[] {
+  return KEYS.filter((one) => one.when === 'picking').map(({ when: _, ...key }) => key)
+}
+
 /** A key as it is worth printing: the terminal's names for them are not the
  * ones on the keyboard. */
 export function shownAs(press: string): string {
   const held = press.startsWith('ctrl+')
   const name = held ? press.slice('ctrl+'.length) : press
-  const shown = name === 'escape' ? 'ESC' : name === 'return' ? 'Enter' : name
+  const shown =
+    name === 'escape' ? 'ESC' : name === 'return' ? 'Enter' : ARROWS[name] ?? name
   return held ? `Ctrl-${shown.toUpperCase()}` : shown
 }
 

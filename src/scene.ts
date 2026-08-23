@@ -1,4 +1,4 @@
-import type { BridgeEvent } from './protocol'
+import type { BridgeEvent, Model } from './protocol'
 import type { Expression } from './cast'
 
 export type Permission = { askId: string; toolName: string }
@@ -22,6 +22,10 @@ export type Scene = {
   held: string | null
   /** Why she is not coming, once it is clear she is not. */
   lost: string | null
+  /** Every model she could think with, as the agent behind her lists them. */
+  models: Model[]
+  /** The one she is thinking with, once she has said which. */
+  model: string | null
 }
 
 /** Before she has said anything. */
@@ -35,6 +39,8 @@ export const OPENING: Scene = {
   isReady: false,
   held: null,
   lost: null,
+  models: [],
+  model: null,
 }
 
 /**
@@ -66,6 +72,10 @@ export function next(was: Scene, event: BridgeEvent): Scene {
     // line — a sentence disappearing without one is the whole of this bug.
     case 'lost':
       return { ...was, lost: event.why, held: null, isWorking: false, line: event.why }
+    // What she thinks with is hers to report rather than the picker's to keep
+    // its own copy of: there is one answer and she is holding it.
+    case 'thinks-with':
+      return { ...was, models: event.models, model: event.using }
     case 'ask-permission':
       return { ...was, permission: { askId: event.askId, toolName: event.toolName } }
     case 'done':

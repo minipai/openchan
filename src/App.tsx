@@ -3,7 +3,8 @@ import { useKeyboard, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './DialogueBox'
 import { KeysOverlay } from './KeysOverlay'
-import { cornerFor, keyFor, pressed, shownAs } from './keys'
+import { Picker } from './Picker'
+import { cornerFor, keyFor, pressed, shownAs, takes } from './keys'
 import { useMaid, type Scene } from './brain'
 import { paletteOver } from './theme'
 
@@ -36,14 +37,22 @@ export function App({ behind }: { behind: string | undefined }) {
   // Her box is coloured against the terminal, the same answer that keeps her
   // out of a black slab.
   const theme = paletteOver(behind)
-  const { scene, ask, answer, stop } = useMaid()
+  const { scene, ask, answer, stop, use } = useMaid()
   const [typed, setTyped] = useState('')
   // Ctrl-B: draw her out of half-block characters even where the terminal
   // could take real pixels. It is the rougher picture, and it is a look.
   const [blocks, setBlocks] = useState(false)
   const [keysUp, setKeysUp] = useState(false)
+  // Ctrl-P: the list of what she could think with. Which one is hers is the
+  // scene's, so all the window keeps is whether the list is open.
+  const [picking, setPicking] = useState(false)
 
-  const where = { up: keysUp, isWorking: scene.isWorking, asked: scene.permission !== null }
+  const where = {
+    up: keysUp,
+    picking,
+    isWorking: scene.isWorking,
+    asked: scene.permission !== null,
+  }
 
   // Which key does what, and which of them count from here, is the keys table's
   // to say — including Ctrl-C, which is not answered here on purpose: the
@@ -51,14 +60,17 @@ export function App({ behind }: { behind: string | undefined }) {
   // back. Killing the process first leaves her standing on the master's shell.
   useKeyboard((key) => {
     const does = pressed(key, where)
-    // A key the window has taken is not the input's to act on as well. Ctrl-K
-    // is delete-to-end-of-line in there, so bringing these up would take the
-    // half-written sentence with it; Ctrl-B moves the cursor. Leaving is left
-    // alone — that one is the renderer's, and it is the one that knows how to
-    // put the terminal back.
-    if (does && does !== 'send' && does !== 'leave') key.preventDefault()
+    // A key the window has taken is not the input's — or the open list's — to
+    // act on as well. Ctrl-K is delete-to-end-of-line in there, so bringing
+    // these up would take the half-written sentence with it; Ctrl-B moves the
+    // cursor. Which keys are the window's own is the table's to say.
+    if (does && takes(does)) key.preventDefault()
     switch (does) {
       case 'keys':
+        // One thing over the scene at a time: a list left open underneath would
+        // go on taking Enter behind these keys, and swap what she thinks with
+        // while the master is reading about it.
+        setPicking(false)
         return setKeysUp(true)
       case 'close':
         return setKeysUp(false)
@@ -70,6 +82,13 @@ export function App({ behind }: { behind: string | undefined }) {
         return stop()
       case 'blocks':
         return setBlocks((was) => !was)
+      case 'models':
+        setKeysUp(false)
+        return setPicking(true)
+      // Nothing else happens: what she thinks with is only ever changed by
+      // picking something off the list.
+      case 'cancel':
+        return setPicking(false)
     }
   })
 
@@ -119,7 +138,7 @@ export function App({ behind }: { behind: string | undefined }) {
               <box flexDirection="row" gap={1}>
                 <text fg={theme.primary}>›</text>
                 <input
-                  focused={!keysUp}
+                  focused={!keysUp && !picking}
                   value={typed}
                   placeholder={invitation(scene)}
                   flexGrow={1}
@@ -133,6 +152,33 @@ export function App({ behind }: { behind: string | undefined }) {
           }
         />
       </box>
+
+      {/* Over the box rather than beside it, and above her: a list is the thing
+          being answered while it is open. */}
+      {picking && (
+        <box
+          position="absolute"
+          top={0}
+          left={0}
+          width={width}
+          height={height}
+          alignItems="center"
+          justifyContent="center"
+          zIndex={8}
+        >
+          <Picker
+            theme={theme}
+            title="What she thinks with"
+            items={scene.models}
+            chosen={scene.model}
+            width={Math.min(60, width - 6)}
+            onPick={(model) => {
+              use(model)
+              setPicking(false)
+            }}
+          />
+        </box>
+      )}
 
       {/* Middle of the screen, and let the terminal work out where that is:
           the list is a different height depending on what she is in the middle
