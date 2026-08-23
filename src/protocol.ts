@@ -1,3 +1,4 @@
+import type { Character } from './cast'
 import type { Expression } from './expressions'
 
 /**
@@ -61,5 +62,15 @@ export interface Conversation {
   close(): void
 }
 
-/** How one is opened: hand her the way to speak, and she is yours. */
-export type OpenConversation = (say: (event: BridgeEvent) => void) => Conversation
+/**
+ * How one is opened: hand her the way to speak and say which of them is on
+ * shift, and she is yours.
+ *
+ * Who she is belongs to the session rather than to something set on it
+ * afterwards: her persona is the one thing the agent underneath cannot be told
+ * to change halfway through, so it is settled here or not at all.
+ */
+export type OpenConversation = (
+  say: (event: BridgeEvent) => void,
+  who: Character,
+) => Conversation

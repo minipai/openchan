@@ -22,6 +22,7 @@ export type Does =
   | 'close'
   | 'leave'
   | 'models'
+  | 'who'
   | 'previous'
   | 'next'
   | 'choose'
@@ -90,6 +91,7 @@ const KEYS: (Shortcut & { when: When })[] = [
 
   { when: 'always', press: 'ctrl+k', does: 'keys', says: 'these keys' },
   { when: 'always', press: 'ctrl+p', does: 'models', says: 'what she thinks with' },
+  { when: 'always', press: 'ctrl+g', does: 'who', says: 'who is on shift' },
   { when: 'always', press: 'ctrl+b', does: 'blocks', says: 'swap how she is drawn' },
   { when: 'always', press: 'ctrl+c', does: 'leave', says: 'leave' },
 ]

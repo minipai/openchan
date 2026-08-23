@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Palette } from './theme'
-import { HER } from './cast'
 
 /** What the screen says as her while a model is writing. Several, because one
- * line repeated on every turn stops reading as her. */
-const WAITING = ['Kotone is thinking…', 'One moment~', 'Having a look…']
+ * line repeated on every turn stops reading as her — and the first of them is
+ * whoever is standing there, not whoever was written into this file. */
+const waiting = (her: string) => [`${her} is thinking…`, 'One moment~', 'Having a look…']
 
 /**
  * The galgame dialogue panel — one frame holding the spoken line on top and
@@ -14,6 +14,7 @@ const WAITING = ['Kotone is thinking…', 'One moment~', 'Having a look…']
  */
 export function DialogueBox({
   theme,
+  name,
   line,
   narration,
   mood,
@@ -22,6 +23,8 @@ export function DialogueBox({
   footer,
   width,
 }: {
+  /** Whoever is on shift, for the plate on the frame's edge. */
+  name: string
   line: string
   /** 地の文 — what she is doing, while she is doing it. */
   narration: string | null
@@ -34,7 +37,7 @@ export function DialogueBox({
   width: number
   theme: Palette
 }) {
-  const said = useCycled(isWorking)
+  const said = useCycled(isWorking, name)
 
   return (
     <box width={width} flexDirection="column">
@@ -50,7 +53,7 @@ export function DialogueBox({
         backgroundColor={theme.card}
         // Her name plate hangs off the top-left edge of the frame; the border's
         // own title is what a terminal has in place of a pill sitting on it.
-        title={` ${HER} `}
+        title={` ${name} `}
         titleColor={theme.foreground}
         titleAlignment="left"
         flexDirection="column"
@@ -83,12 +86,13 @@ export function DialogueBox({
 }
 
 /** One of her waiting lines at a time, changed while she is still at it. */
-function useCycled(running: boolean) {
+function useCycled(running: boolean, her: string) {
   const [at, setAt] = useState(0)
   useEffect(() => {
     if (!running) return
     const tick = setInterval(() => setAt((was) => was + 1), 2500)
     return () => clearInterval(tick)
   }, [running])
-  return WAITING[at % WAITING.length]
+  const lines = waiting(her)
+  return lines[at % lines.length]
 }

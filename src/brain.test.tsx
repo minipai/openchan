@@ -1,7 +1,8 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test'
 import { act } from 'react'
 import { testRender } from '@opentui/react/test-utils'
 import { useMaid } from './brain'
+import { briefFor, CAST, remember, remembered, type Character } from './cast'
 import type { BridgeEvent, Conversation, Model, OpenConversation } from './protocol'
 
 /** What the stand-in says she could think with. */
@@ -19,8 +20,13 @@ class Stand implements Conversation {
   readonly asked: string[] = []
   /** Every model she has been handed, in order. */
   readonly handed: string[] = []
+  /** Whether the window has shut this one, which is what swapping her does. */
+  closed = false
   private model = MODELS[0]!.id
-  constructor(private say: (event: BridgeEvent) => void) {}
+  constructor(
+    private say: (event: BridgeEvent) => void,
+    readonly who: Character,
+  ) {}
   async start() {}
   wakeUp() {
     this.say({ kind: 'ready' })
@@ -39,7 +45,9 @@ class Stand implements Conversation {
   }
   answer() {}
   interrupt() {}
-  close() {}
+  close() {
+    this.closed = true
+  }
 }
 
 /** The window, reduced to the two things this cares about. */
@@ -50,6 +58,15 @@ function Window({ open, hold }: { open: OpenConversation; hold: (maid: Maid) => 
 }
 
 type Maid = ReturnType<typeof useMaid>
+
+/** Whoever the master last sent for, put back afterwards: sending for one of
+ * them writes her down for the next window, and the window these tests open is
+ * reading the same note. */
+const kept = remembered()
+afterAll(() => remember(kept))
+/** Every window here opens on ことね, whoever the last test sent for. */
+const kotone = CAST.find((one) => one.id === 'kotone')!
+beforeEach(() => remember(kotone))
 
 /** Every window a test opened, so the next test starts on an empty terminal
  * rather than on top of the last one's. */
@@ -66,10 +83,19 @@ afterEach(() => {
  * rather than a render.
  */
 async function open() {
-  let her!: Stand
+  // Every session the window has opened, in order: swapping her closes one and
+  // opens another, and which girl each was opened as is the whole question.
+  const sessions: Stand[] = []
   let maid!: Maid
   const setup = await testRender(
-    <Window open={(say) => (her = new Stand(say))} hold={(it) => (maid = it)} />,
+    <Window
+      open={(say, who) => {
+        const her = new Stand(say, who)
+        sessions.push(her)
+        return her
+      }}
+      hold={(it) => (maid = it)}
+    />,
     { width: 30, height: 3 },
   )
   const settle = async (work: () => void) => {
@@ -79,14 +105,22 @@ async function open() {
   await setup.flush()
   opened.push(setup)
   return {
-    her: her!,
+    // The one the window opened with. The others are in `sessions`.
+    her: sessions[0]!,
+    sessions,
     // The latest render's, not the first: what is being checked is where the
     // window ended up.
     scene: () => maid.scene,
     pick: (model: string) => settle(() => maid.use(model)),
+    sendFor: (id: string) => settle(() => maid.swapTo(id)),
+    stop: () => settle(() => maid.stop()),
+    onShift: () => maid.onShift,
+    nextShift: () => maid.nextShift,
     say: (prompt: string) => settle(() => maid.ask(prompt)),
-    wakeUp: () => settle(() => her.wakeUp()),
-    giveUp: () => settle(() => her.giveUp()),
+    // Whoever is standing there now: after a swap that is the girl who walked
+    // in, not the one whose session was closed behind her.
+    wakeUp: () => settle(() => sessions[sessions.length - 1]!.wakeUp()),
+    giveUp: () => settle(() => sessions[sessions.length - 1]!.giveUp()),
     setup,
   }
 }
@@ -183,4 +217,131 @@ test('nothing but picking one changes what she thinks with', async () => {
 
   expect(her.handed).toEqual([])
   expect(scene().model).toBe('opencode/free')
+})
+
+test('sending for one of the others before anything is said brings her out now', async () => {
+  const { her, sessions, sendFor, onShift } = await open()
+
+  await sendFor('kurumi')
+
+  // The session she would have been spoken to in is shut, and the one that
+  // replaced it was opened as くるみ — which is the whole of what makes the
+  // words it carries hers.
+  expect(her.closed).toBe(true)
+  expect(sessions.map((one) => one.who.id)).toEqual(['kotone', 'kurumi'])
+  expect(briefFor(sessions[1]!.who)).toContain('くるみ')
+  expect(onShift().id).toBe('kurumi')
+})
+
+test('the girl who walks in is not handed the scene the last one left', async () => {
+  const { wakeUp, sendFor, scene } = await open()
+
+  await wakeUp()
+  expect(scene().isReady).toBe(true)
+
+  await sendFor('kurumi')
+
+  // Down to whether there is anyone to speak to: what was on screen belonged to
+  // a session that has been closed.
+  expect(scene().isReady).toBe(false)
+  expect(scene().models).toEqual([])
+})
+
+test('sending for one of the others mid-conversation leaves the conversation alone', async () => {
+  const { her, sessions, wakeUp, say, sendFor, onShift, nextShift } = await open()
+
+  await wakeUp()
+  await say('good morning')
+  await sendFor('kurumi')
+
+  // Nothing is opened and nothing is closed: her persona went into the agent
+  // when it was started, so the only honest place to put くるみ is the next one.
+  expect(sessions).toHaveLength(1)
+  expect(her.closed).toBe(false)
+  expect(onShift().id).toBe('kotone')
+  // And she is not lost in the meantime — the picker marks her, and the screen
+  // says she is next.
+  expect(nextShift().id).toBe('kurumi')
+})
+
+test('sending for whoever is already standing there is not a swap', async () => {
+  const { sessions, sendFor, onShift } = await open()
+
+  await sendFor('kotone')
+
+  expect(sessions).toHaveLength(1)
+  expect(onShift().id).toBe('kotone')
+})
+
+test('nothing but sending for one of them changes who is standing there', async () => {
+  // Opening the list, moving through it and putting it away again go through
+  // none of this — the same as it is with what she thinks with.
+  const { sessions, wakeUp, say, pick, onShift, nextShift } = await open()
+
+  await wakeUp()
+  await say('good morning')
+  await pick('anthropic/opus')
+
+  expect(sessions).toHaveLength(1)
+  expect(onShift().id).toBe('kotone')
+  expect(nextShift().id).toBe('kotone')
+})
+
+test('a girl sent for mid-conversation is written down for the next window', async () => {
+  const { wakeUp, say, sendFor } = await open()
+
+  await wakeUp()
+  await say('good morning')
+  await sendFor('kurumi')
+
+  // Which is what makes the line above the box true: she cannot walk into this
+  // session, and the next window is where the next one comes from.
+  expect(remembered().id).toBe('kurumi')
+
+  const later = await open()
+  expect(later.onShift().id).toBe('kurumi')
+  expect(later.sessions[0]!.who.id).toBe('kurumi')
+  expect(briefFor(later.sessions[0]!.who)).toContain('くるみ')
+})
+
+test('asking again for the one who is waiting brings her out once there is nothing to interrupt', async () => {
+  const { sessions, wakeUp, say, sendFor, stop, onShift } = await open()
+
+  await wakeUp()
+  await say('good morning')
+  await sendFor('kurumi')
+  expect(sessions).toHaveLength(1)
+
+  // ESC before she has said a word: there is no longer a conversation in the
+  // way, and the row is still the one marked in the list.
+  await stop()
+  await sendFor('kurumi')
+
+  expect(sessions.map((one) => one.who.id)).toEqual(['kotone', 'kurumi'])
+  expect(onShift().id).toBe('kurumi')
+})
+
+test('a session that never opened can be given to somebody else', async () => {
+  const { sessions, giveUp, sendFor, scene } = await open()
+
+  await giveUp()
+  await sendFor('kurumi')
+
+  // Nothing to interrupt, the screen has been saying to start her again, and a
+  // different girl is a different server — which may well come up.
+  expect(sessions.map((one) => one.who.id)).toEqual(['kotone', 'kurumi'])
+  expect(scene().lost).toBeNull()
+})
+
+test('a session closed to make room does not fail into the scene of the girl who replaced it', async () => {
+  const { her, sendFor, wakeUp, scene } = await open()
+
+  await sendFor('kurumi')
+  // The server behind her was shut mid-boot and says so on its way down. It is
+  // saying it to a screen that stopped being hers when she left it.
+  await act(async () => her.giveUp())
+  await wakeUp()
+
+  expect(scene().lost).toBeNull()
+  expect(scene().isReady).toBe(true)
 })

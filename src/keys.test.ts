@@ -180,6 +180,14 @@ test('what an open list answers to is what the list itself prints', () => {
   }
 })
 
+test('which of them is on shift is opened with a key of its own', () => {
+  // The same shape as the list of what she thinks with: one key, from wherever
+  // the window is, and the words next to it are the table's.
+  expect(pressed(press('ctrl+g'), idle)).toBe('who')
+  expect(pressed(press('ctrl+g'), asked)).toBe('who')
+  expect(keyFor('who').says).toBe('who is on shift')
+})
+
 test('keys are printed the way they are pressed, not the way the terminal names them', () => {
   expect(shownAs('escape')).toBe('ESC')
   expect(shownAs('return')).toBe('Enter')
@@ -195,7 +203,7 @@ const headings = (where: Where) => keysNow(where).map((group) => group.heading)
 const offered = (where: Where) => keysNow(where).flatMap((group) => group.keys.map((key) => key.does))
 
 /** Every key written down, and everywhere the window can be while one arrives. */
-const EVERY_PRESS = ['escape', 'ctrl+k', 'ctrl+p', 'y', 'n', 'return', 'up', 'down', 'ctrl+b', 'ctrl+c']
+const EVERY_PRESS = ['escape', 'ctrl+k', 'ctrl+p', 'ctrl+g', 'y', 'n', 'return', 'up', 'down', 'ctrl+b', 'ctrl+c']
 const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
   [false, true].flatMap((picking) =>
     [false, true].flatMap((isWorking) =>

@@ -84,6 +84,21 @@ export function next(was: Scene, event: BridgeEvent): Scene {
 }
 
 /**
+ * Whether nothing has passed between them yet: she has said nothing, nothing is
+ * waiting to be said to her, and she is not in the middle of anything.
+ *
+ * It is asked before swapping her out. A session nobody has spoken to is not a
+ * conversation, so the girl standing in it can simply be a different one; once
+ * anything has been said, she cannot.
+ *
+ * A session that never opened counts as nobody's: there is nothing to interrupt
+ * and the screen has been telling him to start her again, so sending for one of
+ * the others is one of the few things left that could work.
+ */
+export const unspoken = (scene: Scene) =>
+  scene.lost !== null || (scene.line === '' && scene.held === null && !scene.isWorking)
+
+/**
  * A prompt, submitted. It waits on the scene rather than going anywhere: the
  * window takes sentences several seconds before there is a session to hand
  * them to, and the input has no way of knowing which side of that it is on.
