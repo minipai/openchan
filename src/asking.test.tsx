@@ -28,6 +28,7 @@ class Stand implements Conversation {
   decline() {}
   interrupt() {}
   resume() {}
+  begin() {}
   retry() {}
   close() {}
 }

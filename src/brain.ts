@@ -189,6 +189,28 @@ export function useMaid(open: OpenConversation = openMaid) {
       session.current?.resume(id)
     },
     /**
+     * A new conversation, in the same folder, with the same girl.
+     *
+     * Nothing is closed: it is one more session on the server she is already
+     * on, the same as picking an earlier one up. It is also the only way back
+     * out of an earlier one — the blank conversation a window opens with drops
+     * off the list as soon as it is left, because nothing was ever said in it.
+     *
+     * The scene is not touched from here: the session is the one that knows
+     * whether it got a new conversation to move into, and it says so.
+     */
+    startFresh() {
+      // Not while there is nobody to open one on. She is either still waking
+      // up, or whatever took her session is still in the way — and starting
+      // over from there would clear the note saying so off the screen, taking
+      // the one key that brings her back with it.
+      if (!scene.isReady) return
+      // What he let her go on doing was said in the conversation being left
+      // behind, and a new one has nothing said in it at all.
+      allowed.current = new Set()
+      session.current?.begin()
+    },
+    /**
      * Open her again, after something took her session down.
      *
      * Nothing is set from here: the attempt is the one that knows how it went,

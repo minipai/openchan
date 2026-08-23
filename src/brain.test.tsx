@@ -99,6 +99,7 @@ async function open() {
     raise: (event: BridgeEvent) => settle(() => sessions[sessions.length - 1]!.raise(event)),
     allowAlways: (askId: string) => settle(() => maid.allowAlways(askId)),
     resumeTo: (id: string) => settle(() => maid.resumeTo(id)),
+    startFresh: () => settle(() => maid.startFresh()),
     // Whoever is standing there now: after a swap that is the girl who walked
     // in, not the one whose session was closed behind her.
     wakeUp: () => settle(() => sessions[sessions.length - 1]!.wakeUp()),
@@ -585,6 +586,37 @@ test('a standing yes does not survive her being opened again', async () => {
   // yes was given inside the one that went away.
   expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
   expect(scene().permission?.askId).toBe('ask-2')
+})
+
+test('a standing yes does not follow her into a new conversation', async () => {
+  const { her, wakeUp, raise, allowAlways, startFresh, scene } = await open()
+  await wakeUp()
+
+  await raise(RUNS_GIT)
+  await allowAlways('ask-1')
+  await startFresh()
+  await raise({ ...RUNS_GIT, askId: 'ask-2' })
+
+  // What he let her go on doing was let go of with the conversation it was
+  // said in, and a new one is not that conversation.
+  expect(her.begun).toBe(1)
+  expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
+  expect(scene().permission?.askId).toBe('ask-2')
+})
+
+test('a new conversation is not started while there is nobody to open one on', async () => {
+  const { her, wakeUp, giveUp, startFresh, scene } = await open()
+  await wakeUp()
+  await giveUp()
+
+  await startFresh()
+
+  // The note saying she is gone is still up, and so is the one key that brings
+  // her back: a new conversation on a server that is not there would take both
+  // off the screen and leave nothing that works.
+  expect(her.begun).toBe(0)
+  expect(scene().trouble?.gone).toBe(true)
+  expect(scene().isReady).toBe(false)
 })
 
 test('a standing yes does not follow her into a conversation she is picking up again', async () => {

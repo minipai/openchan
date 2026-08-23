@@ -165,6 +165,14 @@ test('a key that means nothing from here is nothing', () => {
   expect(pressed(press('q'), working)).toBeNull()
 })
 
+test('a new conversation can be started at any time', () => {
+  // From wherever, and from the list of the earlier ones in particular: that
+  // is the list this is the way out of.
+  for (const where of [idle, working, asked, picking(idle), narrows(idle)]) {
+    expect(pressed(press('ctrl+n'), where)).toBe('fresh')
+  }
+})
+
 test('the look she is drawn in can be changed at any time', () => {
   for (const where of [idle, working, asked, up(idle)]) {
     expect(pressed(press('ctrl+b'), where)).toBe('blocks')
@@ -547,6 +555,8 @@ const EVERY_PRESS = [
   'down',
   'space',
   'type',
+  'ctrl+o',
+  'ctrl+n',
   'ctrl+b',
   'ctrl+c',
 ]

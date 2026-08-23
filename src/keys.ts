@@ -29,6 +29,7 @@ export type Does =
   | 'who'
   | 'where'
   | 'talks'
+  | 'fresh'
   | 'report'
   | 'scroll-up'
   | 'scroll-down'
@@ -223,6 +224,11 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'always', press: 'ctrl+g', does: 'who', says: 'who is on shift' },
   { when: 'always', press: 'ctrl+f', does: 'where', says: 'where she works' },
   { when: 'always', press: 'ctrl+o', does: 'talks', says: 'an earlier conversation' },
+  // The way out of one, as well as the way to start over: the conversation a
+  // window opens with is off that list the moment it is left, because nothing
+  // was ever said in it, so without this a conversation picked up is a
+  // conversation there is no leaving.
+  { when: 'always', press: 'ctrl+n', does: 'fresh', says: 'a new conversation' },
   { when: 'always', press: 'ctrl+b', does: 'blocks', says: 'swap how she is drawn' },
   { when: 'always', press: 'ctrl+c', does: 'leave', says: 'leave' },
 ]
