@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   checkingKeys,
   cornerFor,
+  meetingKeys,
   keyFor,
   keysNow,
   listKeys,
@@ -23,6 +24,7 @@ const idle: Where = {
   path: false,
   reading: false,
   checking: false,
+  meeting: false,
   hasReport: false,
   said: false,
   isWorking: false,
@@ -545,6 +547,30 @@ test('how the work stands is a glance: putting it away is the whole of it', () =
   expect(cornerFor(checking)).toBe('')
 })
 
+test('who she is is a page rather than a glance: it scrolls, and it is put away', () => {
+  const meeting: Where = { ...idle, meeting: true }
+  // The arrows are the page's own, the way an open report's are — listed here
+  // and handed on rather than taken.
+  expect(meetingKeys().map((key) => key.does)).toEqual(['close', 'close', 'scroll-up', 'scroll-down'])
+  for (const key of meetingKeys()) {
+    expect(pressed(press(key.press), meeting)).toBe(key.does)
+  }
+  // What is on screen is what ESC answers: the page goes away before she is
+  // stopped.
+  expect(pressed(press('escape'), { ...working, meeting: true })).toBe('close')
+  // The line underneath is blurred behind it, so nothing is offered on it.
+  expect(pressed(press('return'), meeting)).toBeNull()
+  expect(offered(meeting)).not.toContain('send')
+  // And the corner says nothing the page is not already saying better.
+  expect(cornerFor(meeting)).toBe('')
+})
+
+test('she can be read from anywhere, including before there is a session', () => {
+  for (const where of [idle, working, asked, gone, stuck, up(idle), picking(idle)]) {
+    expect(pressed(press('ctrl+s'), where)).toBe('persona')
+  }
+})
+
 test('the folder can be asked about from anywhere, including while she is busy', () => {
   for (const where of [idle, working, asked, gone, stuck, up(idle), picking(idle)]) {
     expect(pressed(press('ctrl+t'), where)).toBe('repo')
@@ -587,6 +613,7 @@ const EVERY_PRESS = [
   'ctrl+n',
   'ctrl+b',
   'ctrl+c',
+  'ctrl+s',
 ]
 const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
   // A list and a path being typed are one thing over the scene in two states:
@@ -610,7 +637,14 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
           { hasReport: true, reading: true },
         ].flatMap((written) =>
           [false, true].flatMap((said) =>
-            [false, true].flatMap((checking) =>
+            // Only ever one thing over the scene, so the panel of how the
+            // work stands and the page of who she is are two states of one
+            // axis rather than two flags of their own.
+            [
+              { checking: false, meeting: false },
+              { checking: true, meeting: false },
+              { checking: false, meeting: true },
+            ].flatMap((glance) =>
               (['stuck', 'gone', null] as const).map((trouble) => ({
                 up,
                 isWorking,
@@ -618,7 +652,7 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
                 standing,
                 trouble,
                 said,
-                checking,
+                ...glance,
                 ...over,
                 ...written,
               })),

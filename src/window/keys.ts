@@ -32,6 +32,7 @@ export type Does =
   | 'fresh'
   | 'report'
   | 'repo'
+  | 'persona'
   | 'scroll-up'
   | 'scroll-down'
   | 'previous'
@@ -67,7 +68,8 @@ export const takes = (does: Does) => !THEIRS.includes(does)
  * the open list takes several rows rather than one, while the open list can be
  * narrowed by typing at it, while it has been, while a path is being typed
  * into one, while there is something she wrote to read, while it is open,
- * while how the work stands is on screen, or while these keys are. */
+ * while how the work stands is on screen, while who she is is, or while these
+ * keys are. */
 type When =
   | 'always'
   | 'typing'
@@ -85,6 +87,7 @@ type When =
   | 'reported'
   | 'reading'
   | 'checking'
+  | 'meeting'
   | 'up'
 
 export type Shortcut = {
@@ -125,6 +128,8 @@ export type Where = {
   hasReport: boolean
   /** Whether how the work stands in her folder is what is on screen. */
   checking: boolean
+  /** Whether the words she is played from are what is on screen. */
+  meeting: boolean
   /** Whether there is a line of hers in the box to be copied. */
   said: boolean
   /** What is in the way, if anything is: something she is still standing
@@ -157,6 +162,15 @@ const KEYS: (Shortcut & { when: When })[] = [
   // otherwise be the one key on the window that does nothing at all.
   { when: 'checking', press: 'escape', does: 'close', says: 'put it away' },
   { when: 'checking', press: 'ctrl+t', does: 'close', says: 'put it away' },
+
+  // Who she is is the other way about: a document, longer than any box it can
+  // be drawn in, so it takes the arrows the way what she wrote does rather
+  // than being a glance. The key that opened it closes it as well, since the
+  // panel above it set that habit and a page is no different from inside.
+  { when: 'meeting', press: 'escape', does: 'close', says: 'put it away' },
+  { when: 'meeting', press: 'ctrl+s', does: 'close', says: 'put it away' },
+  { when: 'meeting', press: 'up', does: 'scroll-up', says: 'back up a bit' },
+  { when: 'meeting', press: 'down', does: 'scroll-down', says: 'on down a bit' },
 
   // A list takes the keys that move through it and the one that takes what it
   // is on, and it takes ESC before she does: the list is what is being answered
@@ -235,6 +249,17 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'always', press: 'ctrl+g', does: 'who', says: 'who is on shift' },
   { when: 'always', press: 'ctrl+f', does: 'where', says: 'where she works' },
   { when: 'always', press: 'ctrl+t', does: 'repo', says: 'how the work stands' },
+  // Not the same question as who is on shift: that one swaps her, this one is
+  // the words the girl already standing there is being played from.
+  //
+  // S for herself, rather than the W that "written" asks for: Ctrl-W is
+  // rubbing out the last word on the line she is spoken to on, and it is the
+  // only key that does — the other one the input answers to for it is
+  // Ctrl-Backspace, which a terminal too old for the kitty protocol cannot
+  // tell apart from plain Backspace. Taking Ctrl-K off that line costs a
+  // half-written sentence that can be selected and typed over; taking this
+  // would cost the key anybody rubbing out a word reaches for first.
+  { when: 'always', press: 'ctrl+s', does: 'persona', says: 'how she is written' },
   { when: 'always', press: 'ctrl+o', does: 'talks', says: 'an earlier conversation' },
   // The way out of one, as well as the way to start over: the conversation a
   // window opens with is off that list the moment it is left, because nothing
@@ -250,6 +275,7 @@ const HEADINGS: Record<When, string> = {
   up: 'While these are up',
   reading: 'While what she wrote is open',
   checking: 'While how the work stands is up',
+  meeting: 'While who she is is up',
   picking: 'While a list is open',
   ticking: 'While a list is open',
   narrows: 'While a list is open',
@@ -300,6 +326,7 @@ const holds = (when: When, where: Where) =>
   (when === 'up' && where.up) ||
   (when === 'reading' && where.reading) ||
   (when === 'checking' && where.checking) ||
+  (when === 'meeting' && where.meeting) ||
   (when === 'picking' && where.picking) ||
   (when === 'ticking' && where.picking && where.ticking) ||
   (when === 'narrows' && where.picking && where.narrows) ||
@@ -330,6 +357,7 @@ const holds = (when: When, where: Where) =>
     !where.path &&
     !where.reading &&
     !where.checking &&
+    !where.meeting &&
     !where.asked &&
     where.trouble === null) ||
   (when === 'asked' && answerable(where)) ||
@@ -354,6 +382,7 @@ export function keysNow(where: Where): Group[] {
     'up',
     'reading',
     'checking',
+    'meeting',
     'path',
     'narrows',
     'narrowed',
@@ -459,6 +488,17 @@ export function checkingKeys(): Shortcut[] {
   return KEYS.filter((one) => one.when === 'checking').map(({ when: _, ...key }) => key)
 }
 
+/**
+ * What the page of who she is answers to, printed by the page for the same
+ * reason the report prints its own — and the arrows matter more here than
+ * anywhere: her persona does not fit the box, and a page that showed the first
+ * screenful of it with nothing saying there was more would read as the whole
+ * of her.
+ */
+export function meetingKeys(): Shortcut[] {
+  return KEYS.filter((one) => one.when === 'meeting').map(({ when: _, ...key }) => key)
+}
+
 /** A key as it is worth printing: the terminal's names for them are not the
  * ones on the keyboard. */
 export function shownAs(press: string): string {
@@ -494,7 +534,7 @@ const HINT = `${shownAs('ctrl+k')} ${keyFor('keys').says}`
  * better.
  */
 export function cornerFor(where: Where): string {
-  if (where.up || where.reading || where.checking) return ''
+  if (where.up || where.reading || where.checking || where.meeting) return ''
   const escapes = pressed({ name: 'escape' }, where)
   if (escapes) return `${shownAs('escape')} ${keyFor(escapes).says}`
   // Something she wrote is the one thing worth saying from an idle corner — it
