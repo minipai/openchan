@@ -211,6 +211,9 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'gone', press: 'r', does: 'retry', says: 'try her again' },
   { when: 'troubled', press: 'escape', does: 'dismiss', says: 'put it away' },
 
+  // None of these reach her from behind anything: a page, a list or a path over
+  // the scene takes the whole keyboard, her question included — see `answerable`
+  // below, which is the one place that is said.
   { when: 'asked', press: 'y', does: 'allow', says: 'let her' },
   { when: 'asked', press: 'n', does: 'refuse', says: "don't" },
   // Yes, and yes to the same thing again without being asked, for as long as
@@ -303,23 +306,44 @@ const HEADINGS: Record<When, string> = {
 export type Group = { heading: string; keys: Shortcut[] }
 
 /**
- * Whether her question is what a key would be answering. Not while a path is
- * being written out, or a list is being typed at: y, n and a are letters in a
- * path, and a folder under `~/Sync` would otherwise answer her question halfway
- * through being typed. And her question is behind the note the same way the
- * line she is spoken to on is: still open on the server, not on screen, and so
- * not answerable until the note is put away.
+ * Whether anything is standing over the scene: these keys, a page of what she
+ * wrote or of who she is, the glance at how the work stands, a list, or a path
+ * being typed in place of one. All of them are drawn over the box, so while one
+ * of them holds the box is not what is being looked at.
  */
-const answerable = (where: Where) => where.asked && !where.path && !where.narrows && where.trouble === null
+const covered = (where: Where) =>
+  where.up || where.reading || where.checking || where.meeting || where.picking || where.path
+
+/**
+ * Whether her question is what a key would be answering. Only where nothing is
+ * over the scene: her question is drawn in the box and a page goes over the box,
+ * so a key pressed at the page would be granting a tool call the one pressing it
+ * cannot see. It is not lost by that — it is still open on the server, still
+ * where it was, and answerable again the moment the page is put away — it is
+ * only that the keyboard belongs to whatever is in front of it. Which is the
+ * same reason the letters were never hers while a path was being written out or
+ * a list typed at: y, n and a are letters, and a folder under `~/Sync` would
+ * otherwise answer her halfway through being typed.
+ *
+ * And her question is behind the note the same way the line she is spoken to on
+ * is: still open on the server, not on screen, and so not answerable until the
+ * note is put away.
+ *
+ * The box asks this as well as the window does. What is over the scene is drawn
+ * up the middle of it and the box is pinned to the bottom, so the bottom of the
+ * box shows under every one of them — and a row left saying "y let her" below a
+ * page that has taken y is the promise this was fixed to stop making.
+ */
+export const answerable = (where: Where) => where.asked && !covered(where) && where.trouble === null
 
 /**
  * Whether a group of keys is worth anything from where the window is.
  *
  * Having these keys on screen is not a state she is in — it is a sheet of paper
  * held up in front of one — so it takes ESC and the key that brought it, and
- * nothing else. Everything she was already waiting on is still waiting, and
- * still answerable: the most likely moment to want this list is while she is
- * asking to be allowed something.
+ * nothing else. Everything she was already waiting on is still waiting, and is
+ * waiting still when the paper comes down; what it is not, while the paper is
+ * up, is answerable, so none of it is listed here as though it were.
  */
 const holds = (when: When, where: Where) =>
   when === 'always' ||
@@ -351,15 +375,7 @@ const holds = (when: When, where: Where) =>
   // take Enter — so it is not offered while any of those hold.
   // …and not while she is waiting to be allowed something: what she is asking
   // about is drawn where the line is, so there is no line there to type on.
-  (when === 'typing' &&
-    !where.up &&
-    !where.picking &&
-    !where.path &&
-    !where.reading &&
-    !where.checking &&
-    !where.meeting &&
-    !where.asked &&
-    where.trouble === null) ||
+  (when === 'typing' && !covered(where) && !where.asked && where.trouble === null) ||
   (when === 'asked' && answerable(where)) ||
   // Offered only where there is something narrow to say yes to: a tool nothing
   // is known about has no scope to give, and a key that read as "always" and
