@@ -120,6 +120,87 @@ test('a paste with more in it than the line will hold says what did not fit', as
   expect(her.asked).toEqual(['x'.repeat(LINE_HOLDS - 4) + 'a pa'])
 })
 
+test('typed onto the end of a page-long line, every letter lands and is on screen', async () => {
+  const { her, wakeUp, paste, type, enter, frame } = await onScreen()
+  await wakeUp()
+
+  // Right up against what the line holds, which is where the cursor
+  // underneath used to run out of numbers: it stopped at 65,535 and stayed
+  // there, the line went on being drawn from where the cursor was rather than
+  // from where the words were, and of three letters typed only the first
+  // reached the sentence.
+  await paste('x'.repeat(LINE_HOLDS - 3))
+  await type('ZZZ')
+
+  // On screen as well as in the sentence — the end of the line is what a line
+  // this long is drawn from, and it going blank was how this showed.
+  expect(frame()).toContain('ZZZ')
+
+  await enter()
+  expect(her.asked).toEqual(['x'.repeat(LINE_HOLDS - 3) + 'ZZZ'])
+})
+
+test('a full line refuses the next letter out loud rather than swallowing it', async () => {
+  const { her, wakeUp, paste, type, enter, frame } = await onScreen()
+  await wakeUp()
+
+  await paste('x'.repeat(LINE_HOLDS))
+  await type('Z')
+
+  expect(frame()).toContain('the line is full')
+
+  await enter()
+  // And the Z is nowhere: refused is not the same as taken and lost, and only
+  // one of the two says so.
+  expect(her.asked).toEqual(['x'.repeat(LINE_HOLDS)])
+})
+
+test('a character too wide for the last of the room is refused whole, not halved', async () => {
+  const { her, wakeUp, paste, drop, enter, frame } = await onScreen()
+  await wakeUp()
+
+  // One unit of room left, and the next character is two of them wide. Half
+  // of it is not half a character — it is a broken one, and it arrives as a
+  // black diamond in place of what was typed.
+  //
+  // Pressed as the bytes a terminal sends for it rather than typed letter by
+  // letter: typing splits a text into its units, and half of this one is not
+  // a key anybody's keyboard has.
+  await paste('x'.repeat(LINE_HOLDS - 1))
+  await drop('😀')
+
+  expect(frame()).toContain('the line is full')
+
+  await enter()
+  expect(her.asked).toEqual(['x'.repeat(LINE_HOLDS - 1)])
+})
+
+test('a paste cut off at that same place is cut between characters', async () => {
+  const { her, wakeUp, paste, enter, frame } = await onScreen()
+  await wakeUp()
+
+  await paste('x'.repeat(LINE_HOLDS - 1))
+  await paste('😀')
+
+  // One character turned away, said as one: it is two of the units the line
+  // is measured in, and the units are not what anybody reading this counts.
+  expect(frame()).toContain('the last 1 character would not fit')
+
+  await enter()
+  expect(her.asked).toEqual(['x'.repeat(LINE_HOLDS - 1)])
+})
+
+test('a paste of more than a page keeps the whole of what it kept', async () => {
+  const { her, wakeUp, paste, enter, frame } = await onScreen()
+  await wakeUp()
+
+  await paste('x'.repeat(70_000))
+  expect(frame()).toContain(`the last ${70_000 - LINE_HOLDS} characters would not fit`)
+
+  await enter()
+  expect(her.asked).toEqual(['x'.repeat(LINE_HOLDS)])
+})
+
 test('ESC stops her, and the line is hers to be spoken to on again', async () => {
   const { her, wakeUp, type, enter, escape, frame } = await onScreen()
   await wakeUp()

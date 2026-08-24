@@ -1,5 +1,11 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { decodePasteBytes, stripAnsiSequences, type InputRenderable, type PasteEvent } from '@opentui/core'
+import {
+  decodePasteBytes,
+  stripAnsiSequences,
+  type InputRenderable,
+  type KeyEvent,
+  type PasteEvent,
+} from '@opentui/core'
 import { useKeyboard, usePaste, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './box/DialogueBox'
@@ -46,11 +52,68 @@ const A_BREAK = '↵'
  *
  * The input keeps a thousand characters unless it is told otherwise, and what
  * is past that it drops without a word — a pasted page arrives with its end
- * missing and nothing on screen says so. This is high enough that nothing
- * anybody says to her in one go reaches it, and what does reach it is said
- * rather than swallowed.
+ * missing and nothing on screen says so. So it is told otherwise, and this is
+ * as far as telling it goes.
+ *
+ * 65,535 is 2^16 - 1, and it is the cursor's ceiling rather than the text's.
+ * The input's cursor comes back out of the editor underneath as a sixteen-bit
+ * number: hand it a line longer than that and it stops at 65,535 and stays
+ * there. The characters past it are held perfectly well — they are simply
+ * somewhere the cursor cannot go, so the line is drawn from the wrong place
+ * and a letter typed at the end lands nowhere. What is on screen stops being
+ * what will be said, which is the one thing this line is for.
+ *
+ * A page anybody actually pastes to her is far short of it. Refusing what is
+ * past it, out loud, is the honest end of the line — the alternative is
+ * keeping the text ourselves and drawing it ourselves, which is writing the
+ * editor rather than using one.
  */
-export const LINE_HOLDS = 100_000
+export const LINE_HOLDS = 65_535
+
+/**
+ * What a key would put on the line, and nothing at all when it would put
+ * nothing.
+ *
+ * The input's own rule for it, which has to be read here because a full line
+ * has to refuse the key before the input silently declines to write it:
+ * anything not held down with a modifier, and not one of the control bytes an
+ * arrow or a Backspace arrives as.
+ *
+ * What it would write rather than whether it would, because how much room is
+ * left has to be measured against it — a character outside the common range
+ * is two of the units the line is counted in, and one unit of room is not
+ * half of it.
+ */
+const written = (key: KeyEvent) => {
+  if (key.ctrl || key.meta || key.super || key.hyper) return ''
+  if (key.name === 'space') return ' '
+  const first = key.sequence.charCodeAt(0)
+  return first >= 32 && first !== 127 ? key.sequence : ''
+}
+
+/**
+ * As much of a text as will fit in so much room, never cut through the middle
+ * of a character.
+ *
+ * The line is counted in sixteen-bit units and the characters past the common
+ * range are two of them. Cutting between the two halves does not leave half a
+ * character behind, it leaves a broken one — which arrives as `\uFFFD` and is
+ * the line lying about what it kept.
+ */
+const whole = (text: string, room: number) => {
+  if (text.length <= room) return text
+  const half = room > 0 && text.charCodeAt(room - 1) >= 0xd800 && text.charCodeAt(room - 1) <= 0xdbff
+  return text.slice(0, half ? room - 1 : room)
+}
+
+/** How many characters a text is, rather than how many of the units the line
+ * counts in it takes: the two are not the same number, and a character is the
+ * one of them anybody reading a note about it means. */
+const characters = (text: string) => {
+  let many = 0
+  for (const _ of text) many++
+  return many
+}
 
 /**
  * What can stand over the scene: the keyboard help, one of the four lists, the
@@ -306,6 +369,21 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     // these up would take the half-written sentence with it; Ctrl-B moves the
     // cursor. Which keys are the window's own is the table's to say.
     if (does && takes(does)) key.preventDefault()
+    // A line with no room left for what this key would write refuses it out
+    // loud. The input would take the key and quietly not write it — or write
+    // half of it, where the character is two units wide and one unit is left
+    // — and a keystroke that leaves no mark and draws no comment is the same
+    // silence a paste with its tail cut off used to arrive in. A line break
+    // is a character here like any other, so it is refused here too.
+    //
+    // What the key would write is worked out before the line is asked how
+    // long it is: reading the line copies the whole of it back out of the
+    // editor, and that is not worth doing for every arrow key.
+    const writing = does === 'new-line' ? A_BREAK : written(key)
+    if (spokenTo && writing && line.current!.value.length + writing.length > LINE_HOLDS) {
+      key.preventDefault()
+      return say(`the line is full at ${LINE_HOLDS.toLocaleString('en-US')} characters`)
+    }
     switch (does) {
       case 'keys':
         return setOver('keys')
@@ -393,9 +471,14 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     // The escape sequences a terminal would otherwise be driven by are taken
     // out of it, the same as the line takes them out of what it pastes itself.
     const text = stripAnsiSequences(decodePasteBytes(paste.bytes)).replace(/\r\n|\r|\n/g, A_BREAK)
-    const room = LINE_HOLDS - line.current!.value.length
-    line.current!.insertText(text.slice(0, room))
-    if (text.length > room) say(`the last ${text.length - room} characters would not fit`)
+    const fits = whole(text, LINE_HOLDS - line.current!.value.length)
+    line.current!.insertText(fits)
+    // Counted in characters rather than in the units the line is measured in:
+    // one emoji turned away is one character short, and being told two is the
+    // same note being wrong about the same thing it was added to be right
+    // about.
+    const missed = characters(text.slice(fits.length))
+    if (missed) say(`the last ${missed} character${missed === 1 ? '' : 's'} would not fit`)
   })
 
   // What the list open right now is a list of, and nothing at all when none is
