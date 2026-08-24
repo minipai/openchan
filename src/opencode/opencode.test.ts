@@ -580,6 +580,43 @@ test('a conversation the server will not answer for leaves her where she was, an
   expect(troubles().at(-1)?.gone).toBe(false)
 })
 
+test('the turn she is put back into still ends when it ends', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, stream, troubles } = await opened()
+  her.ask('where was the needle?')
+  wontRead = true
+
+  her.resume('ses_old')
+  await until('said it could not be opened', () => troubles().length > 0)
+  stream().say({ type: 'session.idle', properties: { sessionID: 'ses_1' } })
+
+  // She is back in the conversation she was already in, and the turn she was
+  // in the middle of is still running there. Its end is the only thing that
+  // puts her down — the note does not, because it is not about the turn — so
+  // it has to still be being listened for.
+  await until('closed the turn out', () => events.some((event) => event.kind === 'done'))
+})
+
+test('a turn that ended while she was between conversations is not left running either', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, stream, troubles } = await opened()
+  her.ask('where was the needle?')
+
+  holdReads()
+  her.resume('ses_old')
+  // The turn finishes while the server is still deciding whether it will say
+  // what was in the other conversation. Nobody is in the one it ended in at
+  // that moment, and the server says so once and never again.
+  stream().say({ type: 'session.idle', properties: { sessionID: 'ses_1' } })
+  wontRead = true
+  letReadsThrough()
+  await until('said it could not be opened', () => troubles().length > 0)
+
+  // She is back in it and it is over, which is only knowable from the event
+  // that went by while she was out of it.
+  await until('closed the turn out', () => events.some((event) => event.kind === 'done'))
+})
+
 test('a second conversation taken before the first has been read back is the one she is in', async () => {
   planted('ses_a', 'The colours of the sky', 20_000, 'Grey.')
   planted('ses_b', 'Where the needle was', 30_000, 'In the second haystack.')
