@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { CAST, remember, remembered, type Character } from '../her/cast'
+import {
+  CAST,
+  LANGUAGES,
+  remember,
+  remembered,
+  speak,
+  spoken,
+  type Character,
+  type Language,
+} from '../her/cast'
 import { folders, OPENED_IN, rememberFolder, troubleWith } from './folder'
 import { MaidSession } from '../opencode/opencode'
 import { handedOver, hold, hushed, next, OPENING, unspoken, type Scene } from './scene'
@@ -10,7 +19,8 @@ export type { Asked, Permission, Scene } from './scene'
 /** The only agent there is today. Written once rather than inline in the
  * default: a fresh one each render would be a fresh conversation each render
  * to anything that watched it. */
-const openMaid: OpenConversation = (say, who, folder) => new MaidSession(say, who, folder)
+const openMaid: OpenConversation = (say, who, folder, speaks) =>
+  new MaidSession(say, who, folder, speaks)
 
 /**
  * Her, for as long as the window is open.
@@ -27,6 +37,14 @@ export function useMaid(open: OpenConversation = openMaid) {
    * while there was a conversation going: then she is waiting for the next
    * session rather than walking into this one. */
   const [asked, setAsked] = useState<Character>(who)
+  /** What the open session was told to answer in, and nothing when it was told
+   * nothing. It goes in with her persona, so it cannot change under a session
+   * any more than she can. */
+  const [speaks, setSpeaks] = useState<Language | null>(spoken)
+  /** What the master has asked her to answer in. The same, unless he asked
+   * while there was a conversation going — then it is waiting for the next
+   * session, the way somebody sent for mid-conversation is. */
+  const [askedSpeaks, setAskedSpeaks] = useState<Language | null>(speaks)
   /** The folder the open session can see. It cannot change under a session
    * either — opencode fixes it when the session is opened — so moving her is
    * the same closing and reopening that sending for one of the others is. */
@@ -69,6 +87,7 @@ export function useMaid(open: OpenConversation = openMaid) {
       },
       who,
       folder,
+      speaks,
     )
     session.current = her
     void her.start()
@@ -83,7 +102,7 @@ export function useMaid(open: OpenConversation = openMaid) {
       her.close()
       session.current = null
     }
-  }, [open, who, folder])
+  }, [open, who, folder, speaks])
 
   // Nothing is sent from where it was typed. It waits on the scene until there
   // is a session to take it, and goes the moment there is — the window is up
@@ -105,6 +124,12 @@ export function useMaid(open: OpenConversation = openMaid) {
     /** Who the picker marks: whoever was asked for, whether or not she has been
      * able to come out yet. */
     nextShift: asked,
+    /** What she is answering in, which is what her persona was written in.
+     * Nothing, when she was asked for nothing. */
+    speaks,
+    /** What the picker marks: whatever was asked for, whether or not she has
+     * been able to start answering that way yet. */
+    nextSpeaks: askedSpeaks,
     /** The folder she is working in, which the list marks and the screen says. */
     folder,
     /** The folders worth offering her, most recent first. */
@@ -143,6 +168,38 @@ export function useMaid(open: OpenConversation = openMaid) {
       // session being closed, down to whether there is anyone to speak to.
       setScene(OPENING)
       setWho(her)
+      // Whatever else was waiting for a session walks into this one. There are
+      // two things a pick can be waiting on and one session for both of them to
+      // arrive in — leaving the other behind would strand it: the list would go
+      // on marking a language she is not being played in, with nothing left
+      // that was ever going to start her in it.
+      setSpeaks(askedSpeaks)
+    },
+    /**
+     * Ask her to answer in something else — or in nothing in particular, which
+     * is what taking the pick off comes to.
+     *
+     * The same waiting as sending for one of the others, and for the same
+     * reason: what she answers in is written into the agent's instructions as
+     * its server starts, so a language asked for mid-sentence cannot walk into
+     * that session either. The screen says which one it is for rather than
+     * letting the pick look like it did nothing.
+     *
+     * Written down either way, so the next window opens on it.
+     */
+    speakIn(id: string | null) {
+      const wanted = id === null ? null : LANGUAGES.find((one) => one.id === id)
+      if (wanted === undefined) return
+      setAskedSpeaks(wanted)
+      speak(wanted)
+      // Asking for what she is already answering in is not a change — and
+      // asking again for one that is waiting is, once there is nothing left to
+      // interrupt.
+      if (wanted?.id === speaks?.id || !unspoken(scene)) return
+      setScene(OPENING)
+      setSpeaks(wanted)
+      // And whoever was waiting comes out in it, the same way round.
+      setWho(asked)
     },
     /**
      * Move her to another folder.
@@ -154,9 +211,10 @@ export function useMaid(open: OpenConversation = openMaid) {
      * means, because opencode fixes a session's folder when it opens it.
      *
      * Where she was is written down as well as where she is going, so the list
-     * that took her away is also the list that brings her back. And whoever was
-     * sent for mid-conversation walks into it: this is the next session, which
-     * is the one she has been waiting for.
+     * that took her away is also the list that brings her back. And whatever
+     * was asked for mid-conversation walks into it — whoever was sent for, and
+     * whatever she was asked to answer in: this is the next session, which is
+     * the one both of them have been waiting for.
      */
     moveTo(where: string) {
       // A row for a folder that has been moved or deleted since it was written
@@ -170,6 +228,7 @@ export function useMaid(open: OpenConversation = openMaid) {
       // others: what is on screen belongs to the session being closed.
       setScene(OPENING)
       setWho(asked)
+      setSpeaks(askedSpeaks)
       setFolder(where)
     },
     /**

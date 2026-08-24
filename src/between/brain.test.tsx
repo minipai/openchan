@@ -64,8 +64,8 @@ async function open() {
   let maid!: Maid
   const setup = await testRender(
     <Window
-      open={(say, who, folder) => {
-        const her = new Stand(say, who, folder)
+      open={(say, who, folder, speaks) => {
+        const her = new Stand(say, who, folder, speaks)
         sessions.push(her)
         return her
       }}
@@ -251,7 +251,7 @@ test('sending for one of the others before anything is said brings her out now',
   // words it carries hers.
   expect(her.closed).toBe(true)
   expect(sessions.map((one) => one.who.id)).toEqual(['kotone', 'kurumi'])
-  expect(briefFor(sessions[1]!.who)).toContain('くるみ')
+  expect(briefFor(sessions[1]!.who, sessions[1]!.speaks)).toContain('くるみ')
   expect(onShift().id).toBe('kurumi')
 })
 
@@ -323,7 +323,7 @@ test('a girl sent for mid-conversation is written down for the next window', asy
   const later = await open()
   expect(later.onShift().id).toBe('kurumi')
   expect(later.sessions[0]!.who.id).toBe('kurumi')
-  expect(briefFor(later.sessions[0]!.who)).toContain('くるみ')
+  expect(briefFor(later.sessions[0]!.who, later.sessions[0]!.speaks)).toContain('くるみ')
 })
 
 test('asking again for the one who is waiting brings her out once there is nothing to interrupt', async () => {

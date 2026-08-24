@@ -15,8 +15,17 @@ export type Character = { id: string; name: string }
  * a choice of its own, and not this one. */
 const OUTFIT = 'uniform'
 
-/** What a persona file is called, and so what is left of one is her id. */
-const SUFFIX = '.en.md'
+/**
+ * The language every one of them is written in, and so the file the cast is
+ * counted off and the one she is played from until somebody asks for another.
+ * A girl with no English persona is not in the house at all; one with nothing
+ * else is simply a girl who only answers one way.
+ */
+const PLAINLY = 'en'
+
+/** What her plainest persona file is called, and so what is left of one is her
+ * id. */
+const SUFFIX = `.${PLAINLY}.md`
 
 /** The 26 faces they have been drawn with: the names are also the sprite
  * filenames, so a list that drifts silently stops them changing face. */
@@ -86,9 +95,100 @@ export function remember(who: Character) {
   fs.writeFileSync(SHIFT, who.id)
 }
 
-/** The one language they have, until the screen has more than one. Their
- * persona files and every word on screen are in it. */
-const SPEAKS = 'English'
+/**
+ * A language she can be asked to answer in: the tag her persona file is filed
+ * under, and what that language calls itself.
+ */
+export type Language = { id: string; name: string }
+
+/**
+ * What she can be asked to answer in: every language the whole house is
+ * written in.
+ *
+ * Worked out the way the cast is, and for the same reason — a language here is
+ * a persona file per girl rather than a name somebody remembered to add to a
+ * list. All of them rather than some: the pick outlives the girl standing in
+ * it, so a language only half the house is written in would be one that quietly
+ * stopped meaning anything the next time the master sent for one of the others.
+ *
+ * What each is called is asked of the platform's own table, in the language
+ * itself — a row for 中文 that read "Chinese" would be the one row on the list
+ * that the people it is there for cannot read. Which is also what settles
+ * whether a tag is a language at all: one the table will not name is a file
+ * somebody put there, not a language, and it is left out the same way a
+ * half-drawn girl is rather than taken as a house that will not open.
+ */
+export function languagesIn(from: string, cast: Character[]): Language[] {
+  const written = path.join(from, 'persona')
+  // The tag is the last thing before `.md` and her id is the whole of the rest,
+  // dots and all — which is what the cast is counted off, and the two have to
+  // agree about it. Read any other way, a girl with a dot in her id would be in
+  // the house with every language she is written in invisible, and nothing
+  // anywhere would say so.
+  const tags = new Set(
+    fs.readdirSync(written).flatMap((file) => file.match(/^.+\.([a-zA-Z0-9-]+)\.md$/)?.[1] ?? []),
+  )
+  return [...tags]
+    .filter((tag) => cast.every((who) => fs.existsSync(personaFile(written, who, tag))))
+    .flatMap((id) => {
+      const name = calls(id)
+      return name ? [{ id, name }] : []
+    })
+    .sort((one, other) => one.id.localeCompare(other.id))
+}
+
+/**
+ * What a language calls itself, and nothing at all for a tag that is not a
+ * language.
+ *
+ * Two questions rather than one, because the table has two ways of not knowing
+ * a tag and only one of them is loud: `traditional` throws, and `foo` comes
+ * back as `foo` — which is how a pair of files somebody named after nothing
+ * ends up a row on the list and `Respond in foo.` in her instructions. So
+ * whether it is a language is asked in English, where the table declines
+ * outright rather than echoing, and only then is it asked what it calls itself.
+ */
+function calls(tag: string): string | null {
+  try {
+    if (!new Intl.DisplayNames(['en'], { type: 'language', fallback: 'none' }).of(tag)) return null
+    return new Intl.DisplayNames([tag], { type: 'language' }).of(tag) ?? tag
+  } catch {
+    return null
+  }
+}
+
+export const LANGUAGES = languagesIn(home, CAST)
+
+/**
+ * What she was last asked to answer in, kept where the next window will find
+ * it. Beside the note saying who was last sent for, and settled at the same
+ * moment: the language rides into the agent with her persona as the server
+ * starts, so it is the next session's, not this one's.
+ *
+ * Saying nothing is one of the things the note can say, and it is written down
+ * as such — an empty note is what "however you write to her" looks like on
+ * disk. Without that there would be no way back: the pick could be changed and
+ * never taken off.
+ */
+const TONGUE = path.join(os.homedir(), '.openchan', 'speaks')
+
+/** What she has been asked to answer in, or nothing at all if she has not been
+ * asked — which is also the answer for a note naming a language the house is no
+ * longer written in. */
+export function spoken(): Language | null {
+  const asked = fs.existsSync(TONGUE) ? fs.readFileSync(TONGUE, 'utf8').trim() : ''
+  return LANGUAGES.find((one) => one.id === asked) ?? null
+}
+
+export function speak(what: Language | null) {
+  fs.mkdirSync(path.dirname(TONGUE), { recursive: true })
+  fs.writeFileSync(TONGUE, what?.id ?? '')
+}
+
+/** What she answers in, in the words the screen says it in — including the
+ * answer that is not a language: however she is written to. Short, because the
+ * line above her box says it in what the folder and the model leave of one. */
+export const answersIn = (speaks: Language | null) => speaks?.name ?? 'however you write'
 
 /**
  * Who she is, in the words handed to whatever is thinking for her.
@@ -98,14 +198,31 @@ const SPEAKS = 'English'
  * because they are not hers: the 【…】 every one of them signs with is what the
  * sprite layer is driven by, and it is looked up against the artwork's
  * filenames.
+ *
+ * What she answers in runs through the whole of it rather than being tacked on
+ * the end: she is played from the persona written in that language, the mood
+ * she signs with is asked for in it, and the closing line says it outright.
+ *
+ * Being asked for nothing is a real answer too, and it is the plainest one
+ * rather than a neutral one: she is played from the English file, because a
+ * persona has to be written in something, and nothing anywhere in the brief
+ * says what to answer in. That last part is the whole of what taking the pick
+ * off has to come to — with no line asking for a language, whatever is behind
+ * her goes on doing what it would have done.
  */
-export function briefFor(who: Character): string {
-  const cues = fs.readFileSync(path.join(home, 'persona', 'cues.md'), 'utf8').replace(/\$lang/g, SPEAKS)
+export function briefFor(who: Character, speaks: Language | null): string {
+  const cues = fs
+    .readFileSync(path.join(home, 'persona', 'cues.md'), 'utf8')
+    .replace(/\$lang/g, speaks?.name ?? 'your reply language')
   return [
     'Adopt this persona for the entire session — it overrides the default assistant voice:',
-    personaFor(who),
+    personaFor(who, speaks),
     cues,
-    `Respond in ${SPEAKS}.`,
+    // Nothing at all when nobody has asked for one: the line is what makes her
+    // answer in a language rather than in the master's, and an agent told
+    // nothing goes on doing whatever it was going to do. Which is the whole of
+    // what taking the pick off has to come to.
+    ...(speaks ? [`Respond in ${speaks.name}.`] : []),
   ].join('\n\n')
 }
 
@@ -122,8 +239,14 @@ export function briefFor(who: Character): string {
  * hers: her file is in this house next to her artwork, and it can be looked at
  * before a session has been opened, while one is busy, or with none at all.
  */
-export function personaFor(who: Character): string {
-  return filed(path.join(home, 'persona', `${who.id}${SUFFIX}`)).body.trim()
+export function personaFor(who: Character, speaks: Language | null): string {
+  return filed(personaFile(path.join(home, 'persona'), who, speaks?.id ?? PLAINLY)).body.trim()
+}
+
+/** Where one of them is written down in one language. The café package ships
+ * the pair, so this is a filename rather than a translation. */
+function personaFile(written: string, who: Character, tag: string) {
+  return path.join(written, `${who.id}.${tag}.md`)
 }
 
 /** Whether every face she could sign a reply with has been drawn for her. */

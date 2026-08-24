@@ -1,4 +1,4 @@
-import type { Character } from '../her/cast'
+import type { Character, Language } from '../her/cast'
 import type { BridgeEvent, Conversation, Model, Talk, Trouble } from '../between/protocol'
 
 /**
@@ -39,6 +39,7 @@ export class Stand implements Conversation {
     private say: (event: BridgeEvent) => void,
     readonly who: Character,
     readonly folder: string,
+    readonly speaks: Language | null,
   ) {}
   /** Nothing yet: she is several seconds behind the window that draws her, and
    * the test says when those are up. */

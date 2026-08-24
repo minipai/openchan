@@ -67,7 +67,7 @@ up never quietly spends money.
 | `src/window/keys.ts` | every key the window answers to, written down once — the overlay and the screen both read it off here |
 | `src/window/App.tsx` + `box/` / `strip/` / `over/` | the screen: her box and what goes in it, the line above it, and what can stand over the whole scene |
 | `src/her/expressions.ts` | the 26 faces, and the mood marker that names them |
-| `src/her/cast.ts` | who can be sent for: whoever is both written and drawn |
+| `src/her/cast.ts` | who can be sent for: whoever is both written and drawn — and what she can be asked to answer in |
 | `persona/` | who each of them is, appended to opencode's own instructions rather than replacing them |
 | `art/` | their sprites, one folder each |
 
@@ -83,9 +83,19 @@ sending for the other one mid-conversation puts her on the next session rather
 than rewriting the one you are in. The pick is kept in `~/.openchan/on-shift`,
 so the next window opens as her.
 
-Anyone with a persona file in `persona/` and all 26 faces in `art/` joins the
-list, and the cast is written down nowhere else. ことね is only the one who opens
-the door the first time.
+Anyone with an English persona file in `persona/` and all 26 faces in `art/`
+joins the list, and the cast is written down nowhere else. ことね is only the one
+who opens the door the first time.
+
+`Ctrl-L` says what she answers in, which is hers rather than the screen's — the
+window stays in English either way. The rows are whatever the whole house is
+written in: a language counts once every girl has a persona file in it, so the
+pick cannot outlive the girl it was made under, and each is named as that
+language names itself. Picking one plays her from that file and asks the agent
+for it outright; the top row asks for nothing at all, and then nothing in the
+brief mentions language and she answers however you write to her. Kept in
+`~/.openchan/speaks`, and settled when a session opens for the same reason the
+shift is.
 
 The code is MIT. The characters and the artwork are not: see `art/LICENSE` —
 yours to use and to alter, not to resell or to publish as your own character.

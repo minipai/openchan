@@ -7,7 +7,7 @@ const { onScreen } = windowTestKit()
 /** The opening of the girl on shift's own file, short enough that the page
  * cannot have wrapped it: finding it on screen means her words are there
  * rather than a heading that could have come from any of them. */
-const HER_OPENING = personaFor(kotone)
+const HER_OPENING = personaFor(kotone, null)
   .split('\n')
   .find((line) => line.startsWith('You are'))!
   .slice(0, 12)

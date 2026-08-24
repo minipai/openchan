@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import type { Choice } from './Picker'
 import { folderRows, troubleWith, TYPE_A_PATH } from '../../between/folder'
 import type { Scene } from '../../between/brain'
-import type { Character } from '../../her/cast'
+import { answersIn, LANGUAGES, type Character, type Language } from '../../her/cast'
 
 /**
  * The row on the list of conversations that is not one of them: taking it
@@ -37,8 +37,20 @@ function ago(when: number, now: number): string {
   return times(Math.round(days / 365), 'year')
 }
 
-/** Which of the four lists it is. */
-export type Picking = 'models' | 'shift' | 'folder' | 'talks'
+/**
+ * The row on the list of languages that is not one of them: taking it asks her
+ * for nothing in particular, and she answers whatever she is written to in. It
+ * is the row a house with no persona but the English one would have had on its
+ * own, and the only way back off a pick once one has been made.
+ *
+ * At the top, because it is where the list starts from rather than somewhere it
+ * ends up. Every other row's id is a language tag, so nothing can be mistaken
+ * for it.
+ */
+const AS_YOU_WRITE: Choice = { id: 'as you write', label: answersIn(null) }
+
+/** Which of the five lists it is. */
+export type Picking = 'models' | 'shift' | 'folder' | 'talks' | 'speaks'
 
 /**
  * What the list open right now is a list of: what it is called, what is in it,
@@ -58,11 +70,13 @@ export function useTheList({
   scene,
   cast,
   nextShift,
+  nextSpeaks,
   folder,
   been,
   narrowing,
   use,
   swapTo,
+  speakIn,
   moveTo,
   resumeTo,
   startFresh,
@@ -74,6 +88,9 @@ export function useTheList({
   scene: Scene
   cast: Character[]
   nextShift: Character
+  /** What the language list marks: whatever was asked for, and nothing when
+   * nothing has been. */
+  nextSpeaks: Language | null
   folder: string
   been: string[]
   /** What the lists that can be typed at have been narrowed to. Held by the
@@ -82,6 +99,9 @@ export function useTheList({
   narrowing: { typed: string; onType: (typed: string) => void }
   use: (model: string) => void
   swapTo: (id: string) => void
+  /** What she is to answer in from the next session on, and nothing at all for
+   * the row that asks her for nothing. */
+  speakIn: (id: string | null) => void
   moveTo: (where: string) => void
   resumeTo: (id: string) => void
   startFresh: () => void
@@ -141,6 +161,14 @@ export function useTheList({
     }
   if (which === 'shift')
     return { title: 'Who is on shift', items: shifts, chosen: nextShift.id, take: swapTo, narrowing: undefined }
+  if (which === 'speaks')
+    return {
+      title: 'What she answers in',
+      items: [AS_YOU_WRITE, ...LANGUAGES.map((one) => ({ id: one.id, label: one.name }))],
+      chosen: nextSpeaks?.id ?? AS_YOU_WRITE.id,
+      take: (id: string) => speakIn(id === AS_YOU_WRITE.id ? null : id),
+      narrowing: undefined,
+    }
   return {
     title: 'Where she works',
     items: folderRows(folder, been),

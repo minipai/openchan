@@ -369,7 +369,7 @@ afterEach(() => {
 /** Her, opened over the stand-in server, with everything she says kept. */
 async function opened() {
   const events: BridgeEvent[] = []
-  const her = new MaidSession((event) => events.push(event), CAST[0]!, '/somewhere')
+  const her = new MaidSession((event) => events.push(event), CAST[0]!, '/somewhere', null)
   sessionsOpened.push(her)
   await her.start()
   const troubles = () => events.filter((event) => event.kind === 'trouble').map((event) => event.trouble)
