@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, expect, test } from 'bun:test'
-import { briefFor, CAST, castIn, remember, remembered, spriteFor } from './cast'
+import { briefFor, CAST, castIn, personaFor, remember, remembered, spriteFor } from './cast'
 import { KAOMOJI, type Expression } from './expressions'
 
 /** One of them by name, so a test reads as being about her. */
@@ -83,6 +83,27 @@ test('the filing at the top of a persona file is not read out as an instruction'
   expect(brief).toContain('ことね')
   expect(brief).not.toContain('personality:')
   expect(brief).not.toContain('outfits:')
+})
+
+test('her own words are what she is being played from, and nothing but', () => {
+  const persona = personaFor(her('kotone'))
+
+  // Everything her file says under the filing block, down to the last line of
+  // it: read here off the file itself rather than off what the code did with
+  // it, so that a persona quietly cut short would show up as one.
+  const raw = fs.readFileSync(path.resolve(import.meta.dir, '../../persona/kotone.en.md'), 'utf8')
+  expect(raw.trimEnd().endsWith(persona)).toBe(true)
+  expect(raw.slice(raw.indexOf(persona)).trim()).toBe(persona)
+  // And the same words the session was opened with: the page and the brief
+  // cannot drift apart, because there is one place either of them reads.
+  expect(briefFor(her('kotone'))).toContain(persona)
+  // Filed at the top and instructions underneath: the filing is not writing of
+  // hers and is not on the page.
+  expect(persona).not.toContain('personality:')
+  expect(persona).not.toContain('outfits:')
+  // And the cues every one of them signs with are not hers either — they are
+  // handed to the agent, not written about her.
+  expect(persona).not.toContain(KAOMOJI.happy)
 })
 
 test('two of them are not handed the same words', () => {

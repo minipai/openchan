@@ -100,14 +100,30 @@ const SPEAKS = 'English'
  * filenames.
  */
 export function briefFor(who: Character): string {
-  const persona = path.join(home, 'persona')
-  const cues = fs.readFileSync(path.join(persona, 'cues.md'), 'utf8').replace(/\$lang/g, SPEAKS)
+  const cues = fs.readFileSync(path.join(home, 'persona', 'cues.md'), 'utf8').replace(/\$lang/g, SPEAKS)
   return [
     'Adopt this persona for the entire session — it overrides the default assistant voice:',
-    filed(path.join(persona, `${who.id}${SUFFIX}`)).body,
+    personaFor(who),
     cues,
     `Respond in ${SPEAKS}.`,
   ].join('\n\n')
+}
+
+/**
+ * Who she is, in her own words, for anybody who wants to read them.
+ *
+ * The same words `briefFor` hands the agent, off the same file and with the
+ * same filing block taken off the top — not a second copy written for the
+ * screen. A page that said something other than what she is actually being
+ * played from would be worth less than no page at all, so there is only one
+ * place either of them can read it from.
+ *
+ * It is read here rather than out of whatever is running her, because it is
+ * hers: her file is in this house next to her artwork, and it can be looked at
+ * before a session has been opened, while one is busy, or with none at all.
+ */
+export function personaFor(who: Character): string {
+  return filed(path.join(home, 'persona', `${who.id}${SUFFIX}`)).body.trim()
 }
 
 /** Whether every face she could sign a reply with has been drawn for her. */

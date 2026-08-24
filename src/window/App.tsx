@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   decodePasteBytes,
   stripAnsiSequences,
@@ -14,6 +14,7 @@ import { PathBox } from './over/PathBox'
 import { Picker } from './over/Picker'
 import { ReportReader } from './over/ReportReader'
 import { RepoBox } from './over/RepoBox'
+import { PersonaPage } from './over/PersonaPage'
 import { TroubleNote } from './box/TroubleNote'
 import { Whispers } from './box/Whispers'
 import { Asking, columns } from './box/Asking'
@@ -23,7 +24,7 @@ import { useHowItStands } from './over/repo'
 import { useHerQuestion } from './box/question'
 import { useNote } from './box/note'
 import { useMaid, type Scene } from '../between/brain'
-import type { Character } from '../her/cast'
+import { personaFor, type Character } from '../her/cast'
 import { asPath, shortened, troubleWith } from '../between/folder'
 import { shareOut } from './strip/strip'
 import type { OpenConversation } from '../between/protocol'
@@ -119,14 +120,14 @@ const characters = (text: string) => {
 
 /**
  * What can stand over the scene: the keyboard help, one of the four lists, the
- * line a folder is typed out on, what she wrote this turn, or how the work
- * stands in the folder she is in.
+ * line a folder is typed out on, what she wrote this turn, how the work stands
+ * in the folder she is in, or the words she is being played from.
  *
  * One value rather than a flag each, because only ever one of them is up. Held
  * apart, that rule had to be spelled out by every key that opened one — and
  * forgetting a single line left two of them on screen, both answering Enter.
  */
-type Over = Picking | 'keys' | 'path' | 'report' | 'repo' | null
+type Over = Picking | 'keys' | 'path' | 'report' | 'repo' | 'persona' | null
 
 /**
  * The frame whatever is over the scene stands in: the whole window, with the
@@ -348,6 +349,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     path: standing === 'path',
     reading: standing === 'report',
     checking: standing === 'repo',
+    meeting: standing === 'persona',
     hasReport: scene.report !== null,
     said: scene.line !== '',
     isWorking: scene.isWorking,
@@ -441,6 +443,11 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
       // she is not told it was looked at.
       case 'repo':
         return setOver('repo')
+      // Nor about this: her persona is what her session was opened with and
+      // settled before she said a word, so there is nothing to ask her and
+      // nothing of hers to interrupt.
+      case 'persona':
+        return setOver('persona')
       // Her words and only her words: the line as she said it, not as the box
       // wrapped it, and the page as she wrote it.
       case 'copy-line':
@@ -511,6 +518,16 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // How the work stands where she is, asked of git the moment the panel is
   // opened and not before.
   const work = useHowItStands(folder, standing === 'repo')
+
+  // Her own words, off the file she is played from and only while the page is
+  // open: it is a file on disk rather than anything the scene carries, and
+  // reading it every frame would be reading it for every keystroke typed at
+  // her. Read afresh for whoever is standing there — after a swap that is the
+  // girl who walked in.
+  const persona = useMemo(
+    () => (standing === 'persona' ? personaFor(onShift) : null),
+    [standing, onShift],
+  )
 
   // 760px of a 960px window, and never wider than the terminal has room for.
   const boxWidth = Math.min(90, width - 6)
@@ -690,6 +707,21 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
       {standing === 'repo' && (
         <OverTheScene width={width} height={height}>
           <RepoBox theme={theme} folder={folder} work={work} width={Math.min(60, width - 6)} />
+        </OverTheScene>
+      )}
+
+      {/* Who she is rather than what she said: as much of the window as the
+          report gets, because her persona is a document and the point of a page
+          is that there is room to read it. */}
+      {standing === 'persona' && persona !== null && (
+        <OverTheScene width={width} height={height}>
+          <PersonaPage
+            theme={theme}
+            who={onShift}
+            persona={persona}
+            width={Math.min(90, width - 6)}
+            height={Math.min(height, Math.max(9, height - 6))}
+          />
         </OverTheScene>
       )}
 
