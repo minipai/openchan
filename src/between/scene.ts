@@ -53,7 +53,8 @@ export type Scene = {
    * is not doing it. Usually she speaks at the end of a turn and that is what
    * puts it down — the ones that end without a word are what this is for, and
    * there are three of them: the turn simply ending, something getting in the
-   * way of it, and her being stopped from the keyboard.
+   * way that she cannot come back from, and her being stopped from the
+   * keyboard.
    */
   narration: string | null
   /** The words up beside her, oldest first: what she has just put down, and
@@ -144,19 +145,28 @@ export function next(was: Scene, event: BridgeEvent): Scene {
       const id = was.whispered + 1
       return { ...was, whispered: id, whispers: [...was.whispers, { ...event.whisper, id }].slice(-AT_MOST) }
     }
-    // Something she cannot get past — or word that it is over. Whatever she was
-    // in the middle of is not going to finish, and a question raised by the
-    // thing that broke has nobody left to answer it, so both go with it. What
-    // was said to her is kept: opening her again is a live possibility from
-    // here, and a sentence that survives the retry is the point of holding it.
+    // Something in the way — or word that it is over. Whether it reaches the
+    // turn is the trouble's own to say: the ones that take the server with them
+    // end whatever she was in the middle of, and a question raised by the thing
+    // that broke has nobody left to answer it, so both go with them. What was
+    // said to her is kept either way: opening her again is a live possibility
+    // from here, and a sentence that survives the retry is the point of
+    // holding it.
     case 'trouble':
       if (!event.trouble) return { ...was, trouble: null }
       return {
         ...was,
         trouble: event.trouble,
         isReady: event.trouble.gone ? false : was.isReady,
-        isWorking: false,
-        narration: null,
+        // Only what she cannot come back from ends the turn. A note that
+        // leaves her standing — a conversation the server would not open, one
+        // it would not read back — is about something beside the turn: the
+        // tool she picked up is still running and her answer is still coming,
+        // and saying she has stopped puts the box back to being spoken on
+        // while she is mid-sentence. The 地の文 goes wherever isWorking does,
+        // so it is the same question twice.
+        isWorking: event.trouble.gone ? false : was.isWorking,
+        narration: event.trouble.gone ? null : was.narration,
         // A question is only let go of when there is nobody left to answer it.
         // One raised on a session that is still standing is still open on the
         // server, waiting — it is behind the note while that is up, and back to

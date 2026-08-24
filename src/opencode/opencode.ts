@@ -151,6 +151,12 @@ export class MaidSession implements Conversation {
    * between two moments is worth anything, and there is one thing it is
    * asked: whether the turn running now is the one that was running then. */
   private turns = 0
+  /** The conversation whose turn ended while nobody was in it, since the last
+   * one was picked up. A turn goes on running in the conversation being left
+   * while that one is being read back, and its end is a single event that
+   * belongs to nobody at the moment it arrives — so it is kept here in case
+   * the read fails and she is put back into it. */
+  private ended: string | null = null
 
   /** What kind of part each id turned out to be, and the words held for it. */
   private parts = new Map<string, { kind: string; held: string }>()
@@ -374,7 +380,10 @@ export class MaidSession implements Conversation {
         if (this.spent(mine)) return
         const props = (event as { properties?: Record<string, unknown> }).properties ?? {}
         const from = sessionOf(props)
-        if (from && from !== this.sessionId) continue
+        if (from && from !== this.sessionId) {
+          if ((event as { type?: unknown }).type === 'session.idle') this.ended = from
+          continue
+        }
         this.read(event as { type: string; properties: Record<string, never> })
       }
     } catch (trouble) {
@@ -651,9 +660,15 @@ export class MaidSession implements Conversation {
     // meant for the conversation that was picked, and posting it into the one
     // being left would lose it and her answer to it with no sign of either.
     this.sessionId = id
+    // Whether she was in the middle of something on the way out. Read before
+    // it is let go of, because the read back can fail and put her back in it —
+    // and a turn nobody is watching for the end of never ends on screen.
+    const mid = this.working
+    // Nothing ended while nobody was in it before this pick was asked for.
+    this.ended = null
     this.forget()
     if (before) this.letGo(client, before)
-    void this.pickUp(client, id, before, ++this.picking, this.opening)
+    void this.pickUp(client, id, before, ++this.picking, this.opening, mid)
   }
 
   /**
@@ -781,6 +796,7 @@ export class MaidSession implements Conversation {
     before: string | null,
     mine: number,
     attempt: number,
+    mid: boolean,
   ) {
     const found = await client.session.messages({ path: { id }, query: { limit: READ_BACK } }).catch(() => null)
     // Or another row was taken over the top of this one, and this answer is
@@ -795,7 +811,19 @@ export class MaidSession implements Conversation {
       // again. Then all that failed is the reading back, and that is all this
       // says.
       const moved = this.working
-      if (!moved) this.sessionId = before
+      if (!moved) {
+        this.sessionId = before
+        // Back in the turn as well as in the conversation: it is still running
+        // there, and its end is what puts her down on screen. Let go of on the
+        // way out and not taken back up, that end arrives to nobody and she is
+        // left working for ever.
+        this.working = mid
+        // Unless it is already over. A read back the server is slow to refuse
+        // is long enough for that turn to finish, and the word that it has is
+        // one event that came while she was between conversations. It is said
+        // here instead, which is the first moment there is anyone to say it to.
+        if (this.ended === before) this.finish()
+      }
       return this.raise({
         title: moved ? 'That conversation could not be read back' : 'That conversation could not be opened',
         body: moved

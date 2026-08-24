@@ -19,6 +19,14 @@ const STUCK: Trouble = {
   gone: false,
 }
 
+/** Something beside the turn: she asked for a new conversation and the server
+ * would not open one. She is exactly where she was, still answering. */
+const REFUSED: Trouble = {
+  title: 'A new conversation could not be started',
+  body: 'The server behind her would not open one. She is still in the one she was already in, and what is said next goes into that.',
+  gone: false,
+}
+
 /** Mid-turn: she has been asked something and has not finished answering. */
 const working: Scene = { ...OPENING, isWorking: true, isReady: true }
 
@@ -65,11 +73,12 @@ test('the turn closing puts the narration down, even if she never said anything'
   expect(next(busy, { kind: 'done' }).narration).toBeNull()
 })
 
-test('something in the way puts the narration down too: she is not doing it any more either', () => {
+test('something in the way she cannot come back from puts the narration down too', () => {
   const busy = next(working, { kind: 'doing', label: 'reading brain.ts' })
 
   expect(next(busy, { kind: 'trouble', trouble: LOST }).narration).toBeNull()
-  expect(next(busy, { kind: 'trouble', trouble: STUCK }).narration).toBeNull()
+  // And one she can leaves it standing: the tool it is about is still running.
+  expect(next(busy, { kind: 'trouble', trouble: REFUSED }).narration).toBe('reading brain.ts')
 })
 
 /** A tool put down, as the session says it. */
@@ -312,6 +321,28 @@ test('trouble she is still standing behind leaves her there to be spoken to', ()
 
   expect(scene.trouble).toEqual(STUCK)
   expect(scene.isReady).toBe(true)
+})
+
+test('trouble beside the turn leaves her working through it', () => {
+  const busy = next(working, { kind: 'doing', label: 'reading brain.ts' })
+
+  const scene = next(busy, { kind: 'trouble', trouble: REFUSED })
+
+  // Nothing about this stopped her: the tool is still running and her answer is
+  // still on its way. Saying she had stopped would put the box back to being
+  // spoken on mid-sentence, and what arrives after that lands on a screen that
+  // has already written her off.
+  expect(scene.isWorking).toBe(true)
+  expect(scene.narration).toBe('reading brain.ts')
+})
+
+test('trouble that takes the session with it still puts her down', () => {
+  const busy = next(working, { kind: 'doing', label: 'reading brain.ts' })
+
+  const scene = next(busy, { kind: 'trouble', trouble: LOST })
+
+  expect(scene.isWorking).toBe(false)
+  expect(scene.narration).toBeNull()
 })
 
 test('a question raised before it has nobody left to answer it', () => {
