@@ -1,34 +1,15 @@
 # Working on openchan
 
-## One issue at a time
+## Taking an issue
 
 Work is tracked in Linear (team Starcoder, project OpenChan). One issue, one
-branch, one PR, then the next — do not wait for a merge.
+branch, one PR, then the next — do not wait for a merge. The procedure for
+carrying one ticket that far is the `work-an-issue` skill — load it when you
+have a ticket.
 
-1. Set the issue **In Progress** and assign it to yourself. Branch with the name
-   Linear gives the issue.
-2. Implement. `bun test` and `bun run check` both green.
-3. **Get your own code review** before anyone else sees it: a `code-reviewer`
-   subagent over the branch diff. Judge what it says — disagreeing is fine, but
-   be able to say why.
-4. **Test it running**, see below.
-5. Open the PR. If the previous issue's branch is not merged yet, branch off it
-   and point `--base` at it; GitHub retargets to `main` when the parent merges.
-6. **Codex reviews automatically when the PR opens**, and there is no second
-   pass after a later push. Findings land as inline review comments —
-   `gh pr view --comments` shows nothing — so read both places:
-   `gh api repos/minipai/openchan/pulls/<n>/comments` for the inline ones and
-   `gh api repos/minipai/openchan/issues/<n>/comments` for the verdict it
-   leaves when it found nothing. If it has said nothing at all after twenty
-   minutes it is stuck rather than thinking; `@codex review` as a comment
-   wakes it.
-7. Act on the findings **once**. Nothing here is worth a round trip unless it is
-   actually broken.
-8. Set the issue **In Review**, then read it back — Linear's GitHub integration
-   pushes it to In Progress again when the PR moves, so setting it is not the
-   same as it sticking.
-
-Merging is the master's. Never merge your own PR.
+Never merge your own PR. Merging belongs to the repo's owner, or to whoever
+dispatched the work once they have verified it themselves — see the
+`dispatch` skill for that side of it.
 
 `~/Dev/openchan` itself stays on `main` — someone else is usually reading it.
 Each issue gets its own worktree beside it (`~/Dev/openchan-sta-NN`), so two
@@ -47,7 +28,7 @@ She is a picture in a terminal. Open a **new herdr tab** and run `bun run dev`
 there:
 
 ```sh
-herdr tab create --cwd /Users/art/Dev/openchan --label <issue>-test
+herdr tab create --cwd <your own checkout> --label <what>-test
 herdr pane run <pane_id> 'bun run dev'
 ```
 
@@ -62,9 +43,8 @@ text and a `return` as two steps instead.
 ## Commits
 
 One PR, one commit. Fixing what a review found is `git commit --amend` and a
-force-push, not a second commit — what the master reads is one finished change,
-and "then I fixed the review comments" is not part of the history. Split only
-when the change is genuinely two things.
+force-push, not a second commit — what lands on `main` is one finished change,
+not a change plus its corrections. Split only when it is genuinely two things.
 
 The exception is a stacked branch: if another branch is already growing on top
 of yours, amending pulls the ground out from under it. Check before you amend.
