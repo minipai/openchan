@@ -44,6 +44,36 @@ test('a page taken back from under the reader takes the reader with it', async (
   expect(frame()).toContain('hello')
 })
 
+test('a letter pressed at what she wrote is not a yes to a tool she asked about', async () => {
+  const { her, wakeUp, type, enter, raise, hold, press, escape, frame } = await onScreen()
+  await wakeUp()
+  await type('tidy up')
+  await enter()
+  await raise({ kind: 'reports', report: REPORT })
+  await raise({
+    kind: 'ask-permission',
+    askId: 'ask-1',
+    toolName: 'bash',
+    summary: 'rm -rf node_modules',
+  })
+
+  // The page goes over the box she asks from, so what she is asking for is not
+  // on screen — and y, pressed at the page, grants nothing.
+  await hold('r')
+  expect(frame()).toContain('needle')
+  // The row of keys that answer her goes with it: none of them are hers while
+  // the page has the keyboard, so none of them are printed as though they were.
+  expect(frame()).not.toContain('y let her')
+  await press('y')
+  expect(her.answered).toEqual([])
+
+  // Put it away and she is still waiting, with the same question.
+  await escape()
+  expect(frame()).toContain('She wants to use bash: rm -rf node_modules')
+  await press('y')
+  expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
+})
+
 test('the keys cover the scene, and uncover it', async () => {
   const { wakeUp, hold, escape, frame } = await onScreen()
   await wakeUp()

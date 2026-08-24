@@ -76,6 +76,51 @@ test('a paste while she is waiting to be allowed something is not hers to take',
   expect(frame()).not.toContain('later')
 })
 
+test('a page over the scene is not a way to grant something nobody can see', async () => {
+  const { her, hold, press, escape, frame } = await asking()
+
+  // Who she is is a document several screens long, and reading it is leaning on
+  // keys that are not about her question — which is behind it, off screen.
+  await hold('s')
+  expect(frame()).toContain('# Personality')
+  // The keys that answer her go with the question being covered: the page is
+  // narrower than the box, so a row left saying "y let her" under it would be
+  // offering exactly the key this fix took away.
+  expect(frame()).not.toContain('y let her')
+
+  await press('y')
+  await press('n')
+  expect(her.answered).toEqual([])
+  // And the letters did nothing to the page either: they were not anybody's.
+  expect(frame()).toContain('# Personality')
+
+  // Put the page away and the question is where it was left — it was covered,
+  // not lost — and answerable again.
+  await escape()
+  expect(frame()).toContain('She wants to use bash: rm -rf node_modules')
+  expect(frame()).toContain('y let her')
+  await press('y')
+  expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
+})
+
+test('the keys held up in front of her question do not offer to answer it', async () => {
+  const { her, hold, press, escape, frame } = await asking()
+
+  // The likeliest moment to want this list is while she is asking to be allowed
+  // something — so it is the moment it matters that the list does not say y
+  // still works, and that pressing it does nothing.
+  await hold('k')
+  expect(frame()).toContain('put these away')
+  expect(frame()).not.toContain('let her')
+  await press('y')
+  expect(her.answered).toEqual([])
+
+  await escape()
+  expect(frame()).toContain('y let her')
+  await press('y')
+  expect(her.answered).toEqual([{ askId: 'ask-1', allow: true }])
+})
+
 test('a tool she is waiting to be allowed is refused from the keyboard', async () => {
   const { her, press, frame } = await asking()
 

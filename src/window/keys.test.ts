@@ -52,6 +52,11 @@ const typingPath = (where: Where): Where => ({ ...where, path: true })
 const wrote = (where: Where): Where => ({ ...where, hasReport: true })
 /** …and it is open, which it can only be if there is one. */
 const reading = (where: Where): Where => ({ ...where, hasReport: true, reading: true })
+/** How the work stands in her folder, on screen over the scene. */
+const checking = (where: Where): Where => ({ ...where, checking: true })
+/** …and the page of the words she is played from, which is over it the same
+ * way. */
+const meeting = (where: Where): Where => ({ ...where, meeting: true })
 /** She has said something, so there is a line in the box. */
 const said = (where: Where): Where => ({ ...where, said: true })
 /** Something in the way with her session gone with it, and something in the way
@@ -107,13 +112,9 @@ test('while a list is open, escape puts it away rather than stopping her', () =>
 test('what a list is picked from is offered under its own heading', () => {
   expect(headings(picking(idle))).toEqual(['While a list is open', 'Whenever'])
   // The list is the thing being answered, so what she is in the middle of is
-  // behind it — but she is still hers to be answered.
-  expect(headings(picking(asked))).toEqual([
-    'While a list is open',
-    'While she is waiting to be allowed',
-    'Whenever',
-  ])
-  expect(pressed(press('y'), picking(asked))).toBe('allow')
+  // behind it — and behind it is not answerable, so it is not listed either.
+  expect(headings(picking(asked))).toEqual(['While a list is open', 'Whenever'])
+  expect(pressed(press('y'), picking(asked))).toBeNull()
 })
 
 test('nothing is offered on the line that is behind an open list', () => {
@@ -189,16 +190,32 @@ test('only the keys that mean something from here are listed', () => {
   expect(headings(asked)).toEqual(['While she is waiting to be allowed', 'Whenever'])
 })
 
-test('the list does not stop her being answered while it is up', () => {
-  // The likeliest reason to want it is her asking to be allowed something, so
-  // her question is still on the list and still answerable.
-  expect(headings(up(asked))).toEqual([
-    'While these are up',
-    'While she is waiting to be allowed',
-    'Whenever',
-  ])
-  expect(pressed(press('y'), up(asked))).toBe('allow')
-  expect(pressed(press('n'), up(asked))).toBe('refuse')
+test('the list does not answer her question for whoever is reading it', () => {
+  // The likeliest reason to want it is her asking to be allowed something —
+  // which is exactly why y must not carry through it: what she is asking for is
+  // drawn in the box, and the box is behind this.
+  expect(headings(up(asked))).toEqual(['While these are up', 'Whenever'])
+  expect(pressed(press('y'), up(asked))).toBeNull()
+  expect(pressed(press('n'), up(asked))).toBeNull()
+  // Put away, and she is where she was: nothing about opening these lost her
+  // question.
+  expect(pressed(press('y'), asked)).toBe('allow')
+})
+
+test('nothing over the scene answers a question drawn behind it', () => {
+  // All of them, because the hole belongs to how anything over the scene shares
+  // the keyboard with the box rather than to any one page: these keys, what she
+  // wrote, how the work stands, who she is, a list, a path being typed into one.
+  for (const behind of [up, reading, checking, meeting, picking, typingPath]) {
+    expect(pressed(press('y'), behind(narrow))).toBeNull()
+    expect(pressed(press('n'), behind(narrow))).toBeNull()
+    expect(pressed(press('a'), behind(narrow))).toBeNull()
+    expect(pressed(press('tab'), behind(narrow))).toBeNull()
+    // …and still hers to answer the moment it is put away. The question was
+    // never lost, only covered.
+    expect(pressed(press('y'), narrow)).toBe('allow')
+    expect(pressed(press('a'), narrow)).toBe('always')
+  }
 })
 
 test('the only thing the list takes from her is the key that closes it', () => {
@@ -385,7 +402,6 @@ test('a list that can be typed at says so, and ESC clears what was typed before 
 test('a letter typed at a list is not an answer to what she is waiting to be allowed', () => {
   // The same rule as a path: y, n and r are letters, and "anthropic" has two
   // of them. Her question is still there to be answered once the list is away.
-  expect(pressed(press('y'), picking(asked))).toBe('allow')
   expect(pressed(press('y'), narrows(asked))).toBeNull()
   expect(pressed(press('n'), narrows(asked))).toBeNull()
   expect(pressed(press('r'), narrows(gone))).toBeNull()
@@ -529,40 +545,38 @@ test('what an open report answers to is what the page itself prints', () => {
 })
 
 test('how the work stands is a glance: putting it away is the whole of it', () => {
-  const checking: Where = { ...idle, checking: true }
   // Two keys and one thing to do: ESC, and the key that opened it — pressed
   // again it puts it away rather than opening what is already open.
   expect(checkingKeys().map((key) => key.does)).toEqual(['close', 'close'])
-  expect(pressed(press('escape'), checking)).toBe('close')
-  expect(pressed(press('ctrl+t'), checking)).toBe('close')
+  expect(pressed(press('escape'), checking(idle))).toBe('close')
+  expect(pressed(press('ctrl+t'), checking(idle))).toBe('close')
   // What is on screen is what ESC answers: the panel goes away before she is
   // stopped, the same as every other thing held up in front of her.
-  expect(pressed(press('escape'), { ...working, checking: true })).toBe('close')
+  expect(pressed(press('escape'), checking(working))).toBe('close')
   // The panel is one thing over the scene like the rest: the line underneath
   // is blurred behind it, so nothing is offered on it.
-  expect(pressed(press('return'), checking)).toBeNull()
-  expect(offered(checking)).not.toContain('send')
+  expect(pressed(press('return'), checking(idle))).toBeNull()
+  expect(offered(checking(idle))).not.toContain('send')
   // And the corner is behind it, saying nothing the panel is not already
   // saying better.
-  expect(cornerFor(checking)).toBe('')
+  expect(cornerFor(checking(idle))).toBe('')
 })
 
 test('who she is is a page rather than a glance: it scrolls, and it is put away', () => {
-  const meeting: Where = { ...idle, meeting: true }
   // The arrows are the page's own, the way an open report's are — listed here
   // and handed on rather than taken.
   expect(meetingKeys().map((key) => key.does)).toEqual(['close', 'close', 'scroll-up', 'scroll-down'])
   for (const key of meetingKeys()) {
-    expect(pressed(press(key.press), meeting)).toBe(key.does)
+    expect(pressed(press(key.press), meeting(idle))).toBe(key.does)
   }
   // What is on screen is what ESC answers: the page goes away before she is
   // stopped.
-  expect(pressed(press('escape'), { ...working, meeting: true })).toBe('close')
+  expect(pressed(press('escape'), meeting(working))).toBe('close')
   // The line underneath is blurred behind it, so nothing is offered on it.
-  expect(pressed(press('return'), meeting)).toBeNull()
-  expect(offered(meeting)).not.toContain('send')
+  expect(pressed(press('return'), meeting(idle))).toBeNull()
+  expect(offered(meeting(idle))).not.toContain('send')
   // And the corner says nothing the page is not already saying better.
-  expect(cornerFor(meeting)).toBe('')
+  expect(cornerFor(meeting(idle))).toBe('')
 })
 
 test('she can be read from anywhere, including before there is a session', () => {

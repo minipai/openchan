@@ -16,6 +16,7 @@ export function Asking({
   theme,
   permission,
   open,
+  answerable,
   width,
   rows,
 }: {
@@ -23,6 +24,14 @@ export function Asking({
   permission: Permission
   /** Whether the whole of what she would do is being shown. */
   open: boolean
+  /** Whether the keys under it would answer it from where the window is. Off
+   * while something is over the scene, and then the rows go with it: what is
+   * over the scene is drawn up the middle and this box is pinned to the bottom,
+   * so these rows show under every page there is — and an unanswerable "y let
+   * her" sitting there is a promise nothing would keep. What she is asking for
+   * stays where it is: it is still what she is waiting on, and the page says
+   * how to get back to it. */
+  answerable: boolean
   /** The box's own width, borders and all. */
   width: number
   /** How many rows there are above the question before the box runs off the
@@ -71,16 +80,18 @@ export function Asking({
       )}
 
       <text fg={theme.foreground}>{cut(wants, room)}</text>
-      <box flexDirection="row" gap={2}>
-        <text fg={theme.primary}>{allow}</text>
-        <text fg={theme.muted}>{refuse}</text>
-        {permission.detail !== null && <text fg={theme.faint}>{details}</text>}
-      </box>
+      {answerable && (
+        <box flexDirection="row" gap={2}>
+          <text fg={theme.primary}>{allow}</text>
+          <text fg={theme.muted}>{refuse}</text>
+          {permission.detail !== null && <text fg={theme.faint}>{details}</text>}
+        </box>
+      )}
       {/* A row of its own, because what it covers is the whole point of it and
           the keys above have left nothing of the width to say it in: shortened
           to what was over from them, a path came out as an ellipsis and the key
           read as "always" with nothing after it. */}
-      {always !== null && <text fg={theme.muted}>{always}</text>}
+      {answerable && always !== null && <text fg={theme.muted}>{always}</text>}
     </box>
   )
 }

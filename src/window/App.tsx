@@ -18,7 +18,7 @@ import { PersonaPage } from './over/PersonaPage'
 import { TroubleNote } from './box/TroubleNote'
 import { Whispers } from './box/Whispers'
 import { Asking, columns } from './box/Asking'
-import { cornerFor, pressed, takes } from './keys'
+import { answerable, cornerFor, pressed, takes } from './keys'
 import { useTheList, type Picking } from './over/list'
 import { useHowItStands } from './over/repo'
 import { useHerQuestion } from './box/question'
@@ -590,6 +590,10 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
                 theme={theme}
                 permission={asked}
                 open={showing}
+                // Whether the keys it prints would do anything from here is the
+                // keys table's to say, the same as everywhere else the window
+                // writes a key down.
+                answerable={answerable(where)}
                 width={boxWidth}
                 rows={roomToOpen(height, boxWidth, scene.line, asked.standing !== null)}
               />
@@ -726,7 +730,9 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
       )}
 
       {/* A sheet of paper held up in front of everything: what is underneath is
-          still waiting and still answerable, and these say so. */}
+          still waiting, and waiting still when this comes down — but it is this
+          the keyboard is aimed at while it is up, so these list only what is
+          theirs. */}
       {standing === 'keys' && (
         <OverTheScene width={width} height={height}>
           <KeysOverlay theme={theme} where={where} width={Math.min(46, width - 6)} />
