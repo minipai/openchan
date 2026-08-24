@@ -5,6 +5,9 @@ import type { Question, Standing } from '../between/protocol'
  * it: one request, carrying one or more questions, each with its options. */
 export type AskedQuestion = {
   id: string
+  /** The tool call she asked it through, where she asked it through one: the
+   * turn it belongs to, and the only thing that says whose turn that is. */
+  tool?: { messageID?: string }
   questions: {
     question: string
     header: string
@@ -34,6 +37,13 @@ export function questionsIn(asked: AskedQuestion): Question[] {
  * for is under `metadata`, shaped by the tool. */
 export type AskedPermission = {
   id: string
+  /** The turn asking, as the server knows it: her side of a sentence somebody
+   * sent, rather than the sentence. The running server sends it under `tool`
+   * with the call that wants the permission; the SDK this is built against
+   * describes it beside `sessionID` and knows nothing of `tool`. Both are
+   * written down, because both are what somebody's server sends. */
+  tool?: { messageID?: string }
+  messageID?: string
   permission?: string
   type?: string
   title?: string

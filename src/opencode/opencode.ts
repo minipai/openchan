@@ -90,6 +90,21 @@ function said(trouble: unknown) {
 }
 
 /**
+ * Which turn a permission belongs to, wherever the server put it.
+ *
+ * The running server puts it under `tool`, beside the call that wants the
+ * permission, and sends nothing beside `sessionID`. The SDK this is built
+ * against says the opposite: `messageID` on the permission itself and no `tool`
+ * at all. They have drifted the same way `asked` and `updated` have, so both
+ * are read rather than picking a side — reading only the one the types describe
+ * is reading a field that never arrives, and everything that rests on it
+ * quietly stops happening.
+ */
+function whoseTurn(asked: AskedPermission) {
+  return asked.tool?.messageID ?? asked.messageID
+}
+
+/**
  * Which conversation an event belongs to.
  *
  * Most of them say it on the event itself. A part announcing itself is the one
@@ -174,6 +189,21 @@ export class MaidSession implements Conversation {
   private asked = new Set<string>()
   /** The questions with choices on screen, for the same reason. */
   private choosing = new Set<string>()
+  /** Every sentence sent from this window, by the id it went out under.
+   *
+   * The id is minted here rather than left to the server, and that is the whole
+   * of what makes the turn it starts recognisable afterwards: her side of it
+   * announces itself as the answer to this one, and from then on everything
+   * that turn asks for is asked under her id. */
+  private sent = new Set<string>()
+  /** Her side of each of them, by the id the server gave it: the turns this
+   * window started, and the only thing in the stream that says so.
+   *
+   * Never emptied, and it does not need to be. A message id is never used
+   * twice, so an id kept for ever can only ever match the turn it was minted
+   * for — which is what keeps another window's work in the same folder safe
+   * from this one by construction rather than by care. */
+  private hers = new Set<string>()
   /** Calls already narrated. A tool announces itself again every time its
    * state moves — and one that had to wait to be allowed announces itself on
    * both sides of the wait — but she only picks it up once. */
@@ -376,15 +406,21 @@ export class MaidSession implements Conversation {
   /** Every event the server has, filtered down to this conversation. */
   private async listen(events: AsyncIterable<unknown>, mine: number) {
     try {
-      for await (const event of events) {
+      for await (const heard of events) {
         if (this.spent(mine)) return
-        const props = (event as { properties?: Record<string, unknown> }).properties ?? {}
+        const event = heard as { type: string; properties?: Record<string, unknown> }
+        const props = event.properties ?? {}
         const from = sessionOf(props)
+        // Taken wherever it comes from: this is what makes a turn started here
+        // recognisable, and the ones that matter most announce themselves in a
+        // conversation she has already walked out of.
+        if (event.type === 'message.updated') this.readMessage(props.info)
         if (from && from !== this.sessionId) {
-          if ((event as { type?: unknown }).type === 'session.idle') this.ended = from
+          if (event.type === 'session.idle') this.ended = from
+          this.turnDown(from, event.type, props)
           continue
         }
-        this.read(event as { type: string; properties: Record<string, never> })
+        this.read(heard as { type: string; properties: Record<string, never> })
       }
     } catch (trouble) {
       return this.dropped(mine, said(trouble))
@@ -582,6 +618,12 @@ export class MaidSession implements Conversation {
       void this.name(this.client, this.sessionId, prompt, mine)
     }
     this.working = true
+    // Under an id of this window's minting, which is what makes the turn it
+    // starts this window's to recognise afterwards. Any id will do — a
+    // conversation is kept in the order things happened in it rather than by
+    // id — and all that matters is that no two of them are ever the same.
+    const sentAs = `msg_${crypto.randomUUID()}`
+    this.sent.add(sentAs)
     this.turns++
     this.said = ''
     this.saying = null
@@ -595,7 +637,7 @@ export class MaidSession implements Conversation {
         // The model goes with the prompt rather than being set on the session:
         // that is the whole of what makes swapping it take from the next turn on
         // without anything being restarted.
-        body: { model: halves(this.model), parts: [{ type: 'text', text: prompt }] },
+        body: { messageID: sentAs, model: halves(this.model), parts: [{ type: 'text', text: prompt }] },
       })
       // A sentence that could not even be posted says the same thing the stream
       // is about to take a few seconds to work out, and says it while he is
@@ -667,7 +709,7 @@ export class MaidSession implements Conversation {
     // Nothing ended while nobody was in it before this pick was asked for.
     this.ended = null
     this.forget()
-    if (before) this.letGo(client, before)
+    if (before) this.letGo(before)
     void this.pickUp(client, id, before, ++this.picking, this.opening, mid)
   }
 
@@ -734,7 +776,9 @@ export class MaidSession implements Conversation {
       if (stopping !== null && stopping === this.turns) {
         void client.session.abort({ path: { id: before } }).catch(() => null)
       }
-      this.letGo(client, before)
+      // Still listened to even where it was told to stop: a turn does not end
+      // the moment the abort is posted, and it can get a question in first.
+      this.letGo(before)
     }
     this.sessionId = id
     // Named by the first thing said in it, the same as the one the window
@@ -760,7 +804,9 @@ export class MaidSession implements Conversation {
   }
 
   /**
-   * Whatever the conversation being left was waiting on, refused on the way out.
+   * Whatever the conversation being left was waiting on, refused on the way
+   * out — and the turn left running there kept an ear on, for whatever it asks
+   * for next.
    *
    * A tool she is waiting to be allowed holds the turn open on the server until
    * somebody answers it, and after this nobody can: the question is off the
@@ -769,18 +815,80 @@ export class MaidSession implements Conversation {
    * ends where it belongs. Left, it waits for ever, and so does anything said
    * into that conversation afterwards.
    */
-  private letGo(client: OpencodeClient, from: string) {
-    for (const askId of this.asked) {
-      void client
-        .postSessionIdPermissionsPermissionId({
-          path: { id: from, permissionID: askId },
-          body: { response: 'reject' },
-        })
-        .catch(() => null)
-    }
+  private letGo(from: string) {
+    for (const askId of this.asked) this.refuse(from, askId)
     this.asked.clear()
-    for (const askId of this.choosing) void this.answering?.question.reject({ requestID: askId }).catch(() => null)
+    for (const askId of this.choosing) this.refuseChoice(askId)
     this.choosing.clear()
+  }
+
+  /**
+   * Her side of a sentence sent from here, announcing itself.
+   *
+   * The server mints its own id for it, and that is the id everything the turn
+   * goes on to ask for is asked under — so this is where a turn started here
+   * becomes recognisable, and it is the only place it can be. The link is the
+   * sentence it is answering, which was sent under an id of this window's.
+   */
+  private readMessage(info: unknown) {
+    const message = info as { id?: unknown; role?: unknown; parentID?: unknown } | undefined
+    if (message?.role !== 'assistant') return
+    if (typeof message.parentID !== 'string' || !this.sent.has(message.parentID)) return
+    if (typeof message.id === 'string') this.hers.add(message.id)
+  }
+
+  /**
+   * A turn asking for something in a conversation she is not in — and, where it
+   * is one of this window's own, turned down where it stands.
+   *
+   * A turn is deliberately left running when she walks out on it: its answer is
+   * worth having when the conversation is opened again. But it can go on
+   * wanting a tool allowed or a question of hers answered for as long as it
+   * runs, and that cannot be put on screen — it belongs to a conversation
+   * nobody is in. Refused, the same way anything it was already waiting on was
+   * refused on the way out, it carries on and ends where it belongs; left, it
+   * holds the turn open for ever.
+   *
+   * Which it is comes off the id it asks under, and that is the whole of the
+   * question. It is not whether that conversation is busy — this window cannot
+   * know that, and what the server says about it lags what it has taken by a
+   * few hundred milliseconds anyway. It is whether this window started the turn
+   * doing the asking, which it does know, because it minted the id the turn
+   * grew out of. Anything else is somebody else's opencode working in the same
+   * folder, and theirs to answer.
+   */
+  private turnDown(from: string, type: string, props: Record<string, unknown>) {
+    switch (type) {
+      case 'permission.asked':
+      case 'permission.updated': {
+        const asked = props as unknown as AskedPermission
+        if (this.hers.has(whoseTurn(asked) ?? '')) this.refuse(from, asked.id)
+        return
+      }
+      case 'question.asked': {
+        const asked = props as unknown as AskedQuestion
+        // A question raised by the tool she asks with says which turn asked it.
+        // One raised any other way says nothing, and there is nothing to go on.
+        if (this.hers.has(asked.tool?.messageID ?? '')) this.refuseChoice(asked.id)
+      }
+    }
+  }
+
+  /** One tool she is waiting to be allowed, turned down. */
+  private refuse(from: string, askId: string) {
+    void this.client
+      ?.postSessionIdPermissionsPermissionId({
+        path: { id: from, permissionID: askId },
+        body: { response: 'reject' },
+      })
+      .catch(() => null)
+  }
+
+  /** One question of hers, turned down. It goes by the request it was raised
+   * as and nothing else: the newer client answers a question wherever it was
+   * asked. */
+  private refuseChoice(askId: string) {
+    void this.answering?.question.reject({ requestID: askId }).catch(() => null)
   }
 
   /**
@@ -865,6 +973,8 @@ export class MaidSession implements Conversation {
     this.putDown.clear()
     this.asked.clear()
     this.choosing.clear()
+    // Whatever was left running belonged to the server that has just been shut,
+    // and there is nothing left of it to listen to.
     this.raise(null)
     void this.start()
   }
