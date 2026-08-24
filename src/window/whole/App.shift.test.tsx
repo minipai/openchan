@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import path from 'node:path'
-import { OPENED_IN } from '../between/folder'
+import { OPENED_IN } from '../../between/folder'
 import { elsewhereFolder, windowTestKit } from './windowTestKit'
 
 const { onScreen } = windowTestKit()

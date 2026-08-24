@@ -4,8 +4,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { act } from 'react'
 import { testRender } from '@opentui/react/test-utils'
-import type { Expression } from '../her/cast'
-import { spriteColumns } from './SpriteLayer'
+import type { Expression } from '../../her/cast'
+import { spriteColumns } from '../SpriteLayer'
 
 /**
  * Her, written down rather than drawn.
@@ -16,7 +16,7 @@ import { spriteColumns } from './SpriteLayer'
  * rest of the window was not. This one puts the face into the grid as a word,
  * worded so that finding it on screen means that and nothing else.
  */
-mock.module('./SpriteLayer', () => ({
+mock.module('../SpriteLayer', () => ({
   spriteColumns,
   SpriteLayer: ({ expression }: { expression: Expression }) => (
     <box position="absolute" top={0} left={0}>
@@ -25,11 +25,11 @@ mock.module('./SpriteLayer', () => ({
   ),
 }))
 
-import { App } from './App'
-import { CAST, remember, remembered } from '../her/cast'
-import { OPENED_IN } from '../between/folder'
-import type { BridgeEvent } from '../between/protocol'
-import { Stand } from '../opencode/stand'
+import { App } from '../App'
+import { CAST, remember, remembered } from '../../her/cast'
+import { OPENED_IN } from '../../between/folder'
+import type { BridgeEvent } from '../../between/protocol'
+import { Stand } from '../../opencode/stand'
 
 /** What a terminal is unless someone has resized it. */
 const TERMINAL = { width: 80, height: 24 }

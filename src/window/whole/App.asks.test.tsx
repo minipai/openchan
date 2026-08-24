@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { STUCK } from '../opencode/stand'
+import { STUCK } from '../../opencode/stand'
 import { windowTestKit } from './windowTestKit'
 
 const { onScreen } = windowTestKit()

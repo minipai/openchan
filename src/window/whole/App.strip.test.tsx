@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { OPENED_IN, shortened } from '../between/folder'
-import { MODELS } from '../opencode/stand'
+import { OPENED_IN, shortened } from '../../between/folder'
+import { MODELS } from '../../opencode/stand'
 import { HERE, strip, windowTestKit } from './windowTestKit'
 
 const { onScreen } = windowTestKit()

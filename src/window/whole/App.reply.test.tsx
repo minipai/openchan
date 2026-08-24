@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import type { BridgeEvent } from '../between/protocol'
-import { WHISPERED_FOR } from './box/Whispers'
+import type { BridgeEvent } from '../../between/protocol'
+import { WHISPERED_FOR } from '../box/Whispers'
 import { REPORT, windowTestKit } from './windowTestKit'
 
 const { onScreen } = windowTestKit()

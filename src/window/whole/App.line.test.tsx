@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { LINE_HOLDS } from './App'
+import { LINE_HOLDS } from '../App'
 import { windowTestKit } from './windowTestKit'
 
 const { onScreen } = windowTestKit()

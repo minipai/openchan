@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Asked } from '../between/brain'
+import type { Asked } from '../../between/brain'
 
 /**
  * Her question, while it is being answered.

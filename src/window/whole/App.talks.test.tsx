@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { OPENED_IN } from '../between/folder'
-import { MODELS, TALKS } from '../opencode/stand'
+import { OPENED_IN } from '../../between/folder'
+import { MODELS, TALKS } from '../../opencode/stand'
 import { kotone, windowTestKit } from './windowTestKit'
 
 const { onScreen } = windowTestKit()
