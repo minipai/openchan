@@ -595,6 +595,7 @@ const EVERY_PRESS = [
   'ctrl+k',
   'ctrl+p',
   'ctrl+g',
+  'ctrl+l',
   'ctrl+f',
   'ctrl+r',
   'ctrl+t',

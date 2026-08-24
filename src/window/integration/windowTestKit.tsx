@@ -26,7 +26,7 @@ mock.module('../SpriteLayer', () => ({
 }))
 
 import { App } from '../App'
-import { CAST, remember, remembered } from '../../her/cast'
+import { CAST, remember, remembered, speak, spoken } from '../../her/cast'
 import { OPENED_IN } from '../../between/folder'
 import type { BridgeEvent } from '../../between/protocol'
 import { Stand } from '../../opencode/stand'
@@ -67,6 +67,12 @@ export function windowTestKit() {
   const kept = remembered()
   afterAll(() => remember(kept))
   beforeEach(() => remember(kotone))
+  // And whatever she was last asked to answer in, the same way: every window
+  // here opens having been asked for nothing, so a test that asks for
+  // something is the only reason one of these is ever answering in it.
+  const asked = spoken()
+  afterAll(() => speak(asked))
+  beforeEach(() => speak(null))
 
   /** Every window a test opened, so the next test starts on an empty terminal
    * rather than on top of the last one's. */
@@ -94,8 +100,8 @@ export function windowTestKit() {
     const setup = await testRender(
       <App
         behind={undefined}
-        open={(say, who, folder) => {
-          const her = new Stand(say, who, folder)
+        open={(say, who, folder, speaks) => {
+          const her = new Stand(say, who, folder, speaks)
           sessions.push(her)
           return her
         }}

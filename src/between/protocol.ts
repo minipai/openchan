@@ -1,4 +1,4 @@
-import type { Character } from '../her/cast'
+import type { Character, Language } from '../her/cast'
 import type { Expression } from '../her/expressions'
 
 /**
@@ -249,4 +249,5 @@ export type OpenConversation = (
   say: (event: BridgeEvent) => void,
   who: Character,
   folder: string,
+  speaks: Language | null,
 ) => Conversation

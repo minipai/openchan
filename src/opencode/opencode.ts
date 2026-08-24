@@ -4,7 +4,7 @@ import path from 'node:path'
 import net from 'node:net'
 import { createOpencodeClient, createOpencodeServer, type OpencodeClient } from '@opencode-ai/sdk'
 import { createOpencodeClient as createLive, type OpencodeClient as Live } from '@opencode-ai/sdk/v2/client'
-import { briefFor, type Character } from '../her/cast'
+import { briefFor, type Character, type Language } from '../her/cast'
 import type { BridgeEvent, Conversation, Model, Trouble } from '../between/protocol'
 import { asking, questionsIn } from './asking'
 import {
@@ -48,12 +48,13 @@ const PERMISSION = { bash: 'ask', edit: 'ask', webfetch: 'ask' } as const
  * ことね — or くるみ — on top of it. Replacing the prompt would make her charming
  * and useless.
  *
- * A file per girl rather than one file overwritten: swapping closes one server
- * and starts another, and for a moment both of them are reading.
+ * A file per girl and per language rather than one file overwritten: swapping
+ * either of them closes one server and starts another, and for a moment both of
+ * them are reading.
  */
-function writePersona(who: Character) {
-  const file = path.join(os.tmpdir(), `openchan-persona-${who.id}.md`)
-  fs.writeFileSync(file, briefFor(who))
+function writePersona(who: Character, speaks: Language | null) {
+  const file = path.join(os.tmpdir(), `openchan-persona-${who.id}-${speaks?.id ?? 'as-it-comes'}.md`)
+  fs.writeFileSync(file, briefFor(who, speaks))
   return file
 }
 
@@ -243,14 +244,16 @@ export class MaidSession implements Conversation {
    * attempt finds and reopens, and the note would go with the attempt. */
   private startedOver = false
 
-  /** Both of the things a session is fixed to are settled here: the persona
-   * goes into the server as it starts and the folder goes into the session as
-   * it is opened, so a session is one girl in one folder from end to end.
-   * Moving either of them is this one being closed and another opened. */
+  /** Everything a session is fixed to is settled here: the persona goes into
+   * the server as it starts — her words and the language she is asked for them
+   * in, which is the same file — and the folder goes into the session as it is
+   * opened, so a session is one girl answering one way in one folder from end
+   * to end. Moving any of them is this one being closed and another opened. */
   constructor(
     private onEvent: (event: BridgeEvent) => void,
     private who: Character,
     private folder: string,
+    private speaks: Language | null,
   ) {}
 
   async start() {
@@ -285,7 +288,7 @@ export class MaidSession implements Conversation {
     const stopListening = new AbortController()
     const started = await createOpencodeServer({
       port: await freePort(),
-      config: { model: MODEL, instructions: [writePersona(this.who)], permission: PERMISSION },
+      config: { model: MODEL, instructions: [writePersona(this.who, this.speaks)], permission: PERMISSION },
     })
     // What this attempt started, let go of. It is asked after every wait rather
     // than only the first: an attempt given up on halfway leaves a server

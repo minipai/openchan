@@ -27,6 +27,7 @@ export type Does =
   | 'leave'
   | 'models'
   | 'who'
+  | 'speaks'
   | 'where'
   | 'talks'
   | 'fresh'
@@ -247,6 +248,9 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'always', press: 'ctrl+k', does: 'keys', says: 'these keys' },
   { when: 'always', press: 'ctrl+p', does: 'models', says: 'what she thinks with' },
   { when: 'always', press: 'ctrl+g', does: 'who', says: 'who is on shift' },
+  // L for the language, and it is free where the obvious letters are not: the
+  // line she is spoken to on wants Ctrl-A, Ctrl-E and Ctrl-U for itself.
+  { when: 'always', press: 'ctrl+l', does: 'speaks', says: 'what she answers in' },
   { when: 'always', press: 'ctrl+f', does: 'where', says: 'where she works' },
   { when: 'always', press: 'ctrl+t', does: 'repo', says: 'how the work stands' },
   // Not the same question as who is on shift: that one swaps her, this one is

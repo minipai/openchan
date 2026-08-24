@@ -24,7 +24,7 @@ import { useHowItStands } from './over/repo'
 import { useHerQuestion } from './box/question'
 import { useNote } from './box/note'
 import { useMaid, type Scene } from '../between/brain'
-import { personaFor, type Character } from '../her/cast'
+import { answersIn, personaFor, type Character, type Language } from '../her/cast'
 import { asPath, shortened, troubleWith } from '../between/folder'
 import { shareOut } from './strip/strip'
 import type { OpenConversation } from '../between/protocol'
@@ -119,7 +119,7 @@ const characters = (text: string) => {
 }
 
 /**
- * What can stand over the scene: the keyboard help, one of the four lists, the
+ * What can stand over the scene: the keyboard help, one of the five lists, the
  * line a folder is typed out on, what she wrote this turn, how the work stands
  * in the folder she is in, or the words she is being played from.
  *
@@ -219,15 +219,27 @@ function invitation(scene: Scene): string {
  * anything — that what was said to her is being kept. It goes there rather than
  * in the input because it has to survive the next thing being typed.
  *
- * It is also where someone sent for mid-conversation waits. She cannot come out
- * until this session is over, and a pick that changed nothing anybody can see
- * would read as the list being broken — so the screen says who is next while
- * there is nothing more pressing to say.
+ * It is also where a pick that cannot take effect yet waits: someone sent for
+ * mid-conversation, and a language she has been asked to answer in. Neither can
+ * reach this session — both go into the agent as its server starts — and a pick
+ * that changed nothing anybody can see would read as the list being broken, so
+ * the screen says what is next while there is nothing more pressing to say.
  */
-function above(scene: Scene, next: Character | null): string | null {
+function above(
+  scene: Scene,
+  next: Character | null,
+  saying: Language | null | undefined,
+): string | null {
   if (!scene.isReady && scene.held !== null) return 'waiting for her to wake up'
   if (scene.narration) return scene.narration
-  return next && `${next.name} takes the next shift`
+  // Whoever is waiting comes first: a different girl walking in is the bigger
+  // surprise of the two, and there is one line here for both of them. What she
+  // is to answer in goes on being marked on its own list meanwhile.
+  if (next) return `${next.name} takes the next shift`
+  // What she will answer in comes first and the waiting second, because this
+  // line is written in whatever the folder and the model leave of one — and
+  // what survives being cut short should be the answer rather than the wait.
+  return saying === undefined ? null : `${answersIn(saying)} next time`
 }
 
 /**
@@ -245,6 +257,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     cast,
     onShift,
     nextShift,
+    speaks,
+    nextSpeaks,
     folder,
     been,
     ask,
@@ -255,6 +269,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     stop,
     use,
     swapTo,
+    speakIn,
     moveTo,
     resumeTo,
     startFresh,
@@ -301,10 +316,14 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // explain why. So what is standing there is not quite what was opened.
   const standing: Over = over === 'report' && scene.report === null ? null : over
   // Which list it is, when it is one of them. The frame, the keys and putting
-  // it away are the same for all four — only the rows and where a chosen one
+  // it away are the same for all five — only the rows and where a chosen one
   // goes differ.
   const picking =
-    standing === 'models' || standing === 'shift' || standing === 'folder' || standing === 'talks'
+    standing === 'models' ||
+    standing === 'shift' ||
+    standing === 'speaks' ||
+    standing === 'folder' ||
+    standing === 'talks'
       ? standing
       : null
   // The lists that can be typed at, and only once there are rows to narrow: what
@@ -435,6 +454,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         return startFresh()
       case 'who':
         return setOver('shift')
+      case 'speaks':
+        return setOver('speaks')
       case 'where':
         return setOver('folder')
       case 'report':
@@ -503,11 +524,13 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     scene,
     cast,
     nextShift,
+    nextSpeaks,
     folder,
     been,
     narrowing: { typed: narrowedTo, onType: setNarrowedTo },
     use,
     swapTo,
+    speakIn,
     moveTo,
     resumeTo,
     startFresh,
@@ -525,8 +548,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // her. Read afresh for whoever is standing there — after a swap that is the
   // girl who walked in.
   const persona = useMemo(
-    () => (standing === 'persona' ? personaFor(onShift) : null),
-    [standing, onShift],
+    () => (standing === 'persona' ? personaFor(onShift, speaks) : null),
+    [standing, onShift, speaks],
   )
 
   // 760px of a 960px window, and never wider than the terminal has room for.
@@ -575,7 +598,11 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
           model={shownModel}
           width={boxWidth}
           line={scene.line}
-          narration={above(scene, nextShift.id === onShift.id ? null : nextShift)}
+          narration={above(
+            scene,
+            nextShift.id === onShift.id ? null : nextShift,
+            nextSpeaks?.id === speaks?.id ? undefined : nextSpeaks,
+          )}
           mood={scene.mood}
           isWorking={scene.isWorking}
           corner={cornerFor(where)}
