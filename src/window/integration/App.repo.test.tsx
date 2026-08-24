@@ -5,6 +5,7 @@ import path from 'node:path'
 import { elsewhereFolder, windowTestKit } from './windowTestKit'
 import { OPENED_IN } from '../../between/folder'
 import { howItStands } from '../../between/repo'
+import { branchLine } from '../over/RepoBox'
 
 const { onScreen } = windowTestKit()
 /** Somewhere real that nobody keeps in git: the master's temp folder is not
@@ -15,15 +16,27 @@ const elsewhere = elsewhereFolder()
  * other one passes. */
 const aRepo = elsewhereFolder()
 
+/** The room the panel leaves the branch line, in the 80-column terminal these
+ * tests open: the same `Math.min(60, width - 6)` the window caps the box at,
+ * less the frame and padding `RepoBox` takes off its own width. */
+const ROOM = Math.min(60, 80 - 6) - 4
+
 /** The line the panel writes about the window's own folder — the tests are run
  * in this repository, so opening the panel over it is opening it over a real
  * one. Taken from git rather than written down: what the branch is called
  * changes with the work, and the tests are run from a HEAD that is not on one
  * often enough — mid-rebase, or on a checkout somebody else made — that
- * writing the branch into the test would be writing down the wrong thing. */
+ * writing the branch into the test would be writing down the wrong thing.
+ *
+ * Put through the same cutting the panel does, and not just the tail of it: a
+ * bare tail can be sitting on screen already — the panel's own title has "the
+ * work" in it — and a wait that matched on that would call the row settled
+ * while it still said "looking…". `branchLine` has its own unit test in
+ * `RepoBox.test.ts`, so reusing it here is not the only thing standing
+ * between this test and a truncation bug going unnoticed. */
 const branchHere = async () => {
   const work = (await howItStands(OPENED_IN))!
-  return work.branch === null ? 'not on a branch' : `on ${work.branch}`
+  return branchLine(work.branch, ROOM)
 }
 
 /**

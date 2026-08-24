@@ -12,6 +12,12 @@ const ASKING = 'looking…'
  * the panel opened over one has simply nothing to count. */
 const NO_REPOSITORY = 'nothing kept in git here'
 
+/** The branch line, cut to what is left of the row once "on " has taken its
+ * own room — exported so a test can ask what the panel would say about a real
+ * branch without writing the branch's own name, or its length, down. */
+export const branchLine = (branch: string | null, room: number) =>
+  branch ? `on ${fitted(branch, room - 3)}` : 'not on a branch'
+
 /**
  * A line cut to the room there is for it, from the end.
  *
@@ -93,9 +99,7 @@ export function RepoBox({
             ? ASKING
             : work === null
               ? NO_REPOSITORY
-              : work.branch
-                ? `on ${fitted(work.branch, room - 3)}`
-                : 'not on a branch'}
+              : branchLine(work.branch, room)}
         </text>
       </box>
 
