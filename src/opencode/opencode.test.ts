@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import type { BridgeEvent } from '../between/protocol'
+import type { Heard } from './wire'
 
 /**
  * opencode, with nothing behind it.
@@ -84,12 +85,17 @@ const refused: { id: string; permissionID: string; response: string }[] = []
 const aborted: string[] = []
 /** Whether the next session asked for cannot be opened. */
 let wontOpen = false
+/** How many events the server here has published. Every one it sends carries an
+ * id of its own and no two are the same; nothing in the window reads them, but
+ * a stream that repeated one would be a server that does not exist. */
+let published = 0
+const minted = () => `evt_${++published}`
 
 /** The event stream: nothing, until the test says something over it or cuts
  * it. */
 class Stream {
   private waiting: (() => void) | null = null
-  private queued: unknown[] = []
+  private queued: Heard[] = []
   private cut: Error | null = null
   async *[Symbol.asyncIterator]() {
     for (;;) {
@@ -98,8 +104,10 @@ class Stream {
       await new Promise<void>((go) => (this.waiting = go))
     }
   }
-  /** One event, as the server would publish it. */
-  say(event: unknown) {
+  /** One event, as the server would publish it — and only what it would
+   * publish: a fixture is a claim about the server, and this is where the
+   * compiler is given the chance to say the claim is false. */
+  say(event: Heard) {
     this.queued.push(event)
     this.wake()
   }
@@ -268,6 +276,7 @@ beforeEach(() => {
   aborted.length = 0
   promptedAs.length = 0
   wontOpen = false
+  published = 0
 })
 
 /** Until something is true of what she has said, or it has had long enough.
@@ -286,13 +295,49 @@ async function until(what: string, check: () => boolean, every = 0) {
  * learns a turn by. The server mints the id for it, and it says which sentence
  * it is answering; the window sent that one under an id of its own.
  *
+ * The conversation is named on the event as well as inside the message, which
+ * is what the server sends and is what makes this an event the window can place
+ * — one of these arriving in a conversation she has walked out of is the whole
+ * point of the message being read before the conversation is checked.
+ *
+ * The rest is what the server fills in around a turn. Nothing here reads it,
+ * but leaving it out would make this a shape the server never sends.
+ *
  * `to` is which sentence it answers, counted from the first: they are one to
  * one, and a test that sends two needs to say which.
  */
-const herSideOf = (to: number, hers: string, session = 'ses_1') => ({
+const herSideOf = (to: number, hers: string, session = 'ses_1') => sideOf(promptedAs[to], hers, session)
+
+/**
+ * The same event for a turn this window never started: somebody else's opencode
+ * working in the same folder, answering a sentence of theirs. It comes down the
+ * same stream and looks like hers in every way but the sentence it answers.
+ */
+const theirSideOf = (theirs: string, session: string) => sideOf('msg_they_sent', theirs, session)
+
+/** One assistant message announcing itself, whichever window's turn it belongs
+ * to: the sentence it answers is the only thing that says. */
+const sideOf = (answering: string, id: string, session: string) => ({
+  id: minted(),
   type: 'message.updated',
-  properties: { info: { role: 'assistant', id: hers, sessionID: session, parentID: promptedAs[to] } },
-})
+  properties: {
+    sessionID: session,
+    info: {
+      role: 'assistant',
+      id,
+      sessionID: session,
+      parentID: answering,
+      time: { created: NOW },
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet-4-5',
+      mode: 'build',
+      agent: 'build',
+      path: { cwd: '/somewhere', root: '/somewhere' },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    },
+  },
+}) satisfies Heard
 
 /**
  * What a turn asks for: a tool it wants allowed, under the id of the turn
@@ -302,6 +347,7 @@ const herSideOf = (to: number, hers: string, session = 'ses_1') => ({
  * from, and there is no `messageID` beside `sessionID` at all.
  */
 const wantsToRun = (askId: string, hers: string, session = 'ses_1') => ({
+  id: minted(),
   type: 'permission.asked',
   properties: {
     id: askId,
@@ -312,7 +358,7 @@ const wantsToRun = (askId: string, hers: string, session = 'ses_1') => ({
     always: ['ls *'],
     tool: { messageID: hers, callID: 'call-1' },
   },
-})
+}) satisfies Heard
 
 /** Every session a test opened, closed afterwards. */
 const sessionsOpened: MaidSession[] = []
@@ -589,10 +635,7 @@ test('a sentence sent while the new conversation is being opened is left running
 
 test('a tool she was waiting to be allowed is refused when a new conversation is started', async () => {
   const { her, events, stream } = await opened()
-  stream().say({
-    type: 'permission.asked',
-    properties: { id: 'ask-1', sessionID: 'ses_1', permission: 'bash', metadata: { command: 'ls' } },
-  })
+  stream().say(wantsToRun('ask-1', 'msg_hers'))
   await until('put the question up', () => events.some((event) => event.kind === 'ask-permission'))
 
   her.begin()
@@ -693,7 +736,7 @@ test('the turn she is put back into still ends when it ends', async () => {
 
   her.resume('ses_old')
   await until('said it could not be opened', () => troubles().length > 0)
-  stream().say({ type: 'session.idle', properties: { sessionID: 'ses_1' } })
+  stream().say({ id: minted(), type: 'session.idle', properties: { sessionID: 'ses_1' } })
 
   // She is back in the conversation she was already in, and the turn she was
   // in the middle of is still running there. Its end is the only thing that
@@ -712,7 +755,7 @@ test('a turn that ended while she was between conversations is not left running 
   // The turn finishes while the server is still deciding whether it will say
   // what was in the other conversation. Nobody is in the one it ended in at
   // that moment, and the server says so once and never again.
-  stream().say({ type: 'session.idle', properties: { sessionID: 'ses_1' } })
+  stream().say({ id: minted(), type: 'session.idle', properties: { sessionID: 'ses_1' } })
   wontRead = true
   letReadsThrough()
   await until('said it could not be opened', () => troubles().length > 0)
@@ -781,10 +824,7 @@ test('a sentence already sent into the picked conversation keeps her in it when 
 test('a tool she was waiting to be allowed is refused when the conversation it was in is left', async () => {
   planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
   const { her, events, stream } = await opened()
-  stream().say({
-    type: 'permission.asked',
-    properties: { id: 'ask-1', sessionID: 'ses_1', permission: 'bash', metadata: { command: 'ls' } },
-  })
+  stream().say(wantsToRun('ask-1', 'msg_hers'))
   await until('put the question up', () => events.some((event) => event.kind === 'ask-permission'))
 
   her.resume('ses_old')
@@ -829,12 +869,22 @@ test('a question the turn she walked away from asks later is refused too', async
   const after = events.length
 
   stream().say({
+    id: minted(),
     type: 'question.asked',
     properties: {
       id: 'q-1',
       sessionID: 'ses_1',
       tool: { messageID: 'msg_hers', callID: 'call-1' },
-      questions: [{ question: 'Which one?', header: 'Pick', options: [{ label: 'this' }, { label: 'that' }] }],
+      questions: [
+        {
+          question: 'Which one?',
+          header: 'Pick',
+          options: [
+            { label: 'this', description: 'The near one.' },
+            { label: 'that', description: 'The far one.' },
+          ],
+        },
+      ],
     },
   })
   await until('turned it down', () => rejected.length > 0)
@@ -887,6 +937,29 @@ test('a turn this window never started is left alone', async () => {
   expect(events.some((event) => event.kind === 'ask-permission')).toBe(false)
 })
 
+test('a turn somebody else started, announcing itself, is still left alone', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  planted('ses_theirs', 'Somebody else at work', 15_000, 'Mine, not yours.')
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(herSideOf(0, 'msg_hers'))
+
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+
+  // Every turn on the server announces itself down this stream, theirs
+  // included, and both of these arrive in a conversation she is not standing
+  // in — which is the only way she ever sees the one that is hers. What tells
+  // them apart is the sentence each answers: this window minted the id the
+  // first grew out of and never saw the second.
+  stream().say(theirSideOf('msg_theirs', 'ses_theirs'))
+  stream().say(wantsToRun('ask-11', 'msg_theirs', 'ses_theirs'))
+  stream().say(wantsToRun('ask-12', 'msg_hers'))
+  await until('turned its own down', () => refused.length > 0)
+
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-12', response: 'reject' }])
+})
+
 test('a tool the turn left behind by a new conversation asks for later is refused too', async () => {
   const { her, events, stream } = await opened()
   her.ask('go and read everything in here')
@@ -937,7 +1010,7 @@ test('a second turn in the same conversation is answered for after the first has
   await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
 
   // The first of them ends. The second has not, and it is the one that asks.
-  stream().say({ type: 'session.idle', properties: { sessionID: 'ses_1' } })
+  stream().say({ id: minted(), type: 'session.idle', properties: { sessionID: 'ses_1' } })
   stream().say(wantsToRun('ask-8', 'msg_hers_2'))
   await until('turned it down', () => refused.length > 0)
 
@@ -995,7 +1068,7 @@ test('a list the server will not give is not said as a folder with nothing in it
 
   const before = said()
   wontList = true
-  stream().say({ type: 'session.idle', properties: { sessionID: 'ses_1' } })
+  stream().say({ id: minted(), type: 'session.idle', properties: { sessionID: 'ses_1' } })
   await new Promise((tick) => setTimeout(tick, 10))
 
   // The list on screen is right, and saying nothing is better than saying there
@@ -1003,11 +1076,35 @@ test('a list the server will not give is not said as a folder with nothing in it
   expect(said()).toBe(before)
 })
 
+/** How a tool call is going, as much of it as a test has anything to say
+ * about. The server puts more on every one of them and none of it is read
+ * here, so it is filled in rather than written out at each of these. */
+type Going =
+  | { status: 'running' }
+  | { status: 'completed'; title: string; output: string }
+  | { status: 'error'; error: string }
+
+/** The whole of that state, as the server sends it: the input the call went out
+ * with, and the clock it puts on all of them. */
+const going = (state: Going) => {
+  const input = { command: 'bun test' }
+  const start = NOW
+  switch (state.status) {
+    case 'running':
+      return { ...state, input, time: { start } }
+    case 'completed':
+      return { ...state, input, metadata: {}, time: { start, end: start + 1 } }
+    case 'error':
+      return { ...state, input, time: { start, end: start + 1 } }
+  }
+}
+
 /** One tool part, as the server publishes it every time anything on it moves.
  * The conversation it belongs to is named twice — on the event and on the part
  * — which is what the server sends, and it is always named, so the one she
  * opens in is what this says unless a test says otherwise. */
-const toolPart = (call: string, state: Record<string, unknown>, session = 'ses_1') => ({
+const toolPart = (call: string, state: Going, session = 'ses_1') => ({
+  id: minted(),
   type: 'message.part.updated',
   properties: {
     sessionID: session,
@@ -1019,10 +1116,10 @@ const toolPart = (call: string, state: Record<string, unknown>, session = 'ses_1
       tool: 'bash',
       messageID: 'msg_hers',
       sessionID: session,
-      state: { input: { command: 'bun test' }, ...state },
+      state: going(state),
     },
   },
-})
+}) satisfies Heard
 
 test('a tool put down is a word of its own, said once however often the part says so', async () => {
   const { events, stream } = await opened()
