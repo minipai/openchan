@@ -13,12 +13,12 @@ dispatched the work once they have verified it themselves — see the
 
 `~/Dev/openchan` itself stays on `main` — someone else is usually reading it.
 Each issue gets its own worktree beside it (`~/Dev/openchan-sta-NN`), so two
-of us working at once never share a checkout. Update main there with
-`git fetch origin main:main`, not by checking anything out.
+of us working at once never share a checkout. Update it with `git pull --ff-only`
+— it is sitting on `main`, so there is nothing to check out.
 
-Inside a worktree that same command is refused — git will not write a branch
-another checkout is sitting on, and the main repo is sitting on `main`. Rebase
-onto the remote instead: `git fetch origin main` then `git rebase origin/main`.
+Inside a worktree, `git fetch origin main:main` is refused for that very reason:
+git will not write a branch another checkout is sitting on. Rebase onto the
+remote instead: `git fetch origin main` then `git rebase origin/main`.
 On a branch stacked on another issue's, rebase onto that parent instead —
 `origin/main` would rewrite the parent's commits into yours.
 

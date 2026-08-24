@@ -107,8 +107,13 @@ one backstop per pane running in the background:
     herdr wait agent-status <pane_id> --status done --timeout 3600000
 
 Exit 0 when it lands, exit 1 on timeout; it returns at once if the pane is
-already there, so re-running is safe. Wait for `done` — herdr's `idle` is
-somewhere a working agent passes through between turns, not a finish line.
+already there, so re-running is safe.
+
+Treat it as a liveness check and nothing more. Neither status is a finish line:
+`idle` is where a working agent sits between turns, and `done` fires as soon as
+it stops typing — a worker waiting on Codex in a background monitor reaches
+`done` and then carries on for several more minutes. What ends the job is the
+worker's own report arriving.
 
 When the closing lines aren't enough, the whole conversation is on disk.
 `herdr agent get <pane_id>` carries `agent_session.value`, the worker's Claude
