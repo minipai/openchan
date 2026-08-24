@@ -278,7 +278,11 @@ export function useMaid(open: OpenConversation = openMaid) {
     },
     stop() {
       session.current?.interrupt()
-      setScene((was) => ({ ...was, isWorking: false, permission: null, asked: null }))
+      // Stopped here rather than waited for: the session gives up on the turn
+      // before the abort has been round-tripped, so nothing comes back to say
+      // it is over. Whatever she was in the middle of is not what she is doing
+      // any more, and the 地の文 goes down with the rest of it.
+      setScene((was) => ({ ...was, isWorking: false, narration: null, permission: null, asked: null }))
     },
   }
 }

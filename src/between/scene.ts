@@ -45,7 +45,16 @@ export type Scene = {
   expression: Expression
   /** The 【…】 she signed with, as she wrote it. */
   mood: string | null
-  /** 地の文 — what she is doing, in the words the session gives it. */
+  /**
+   * 地の文 — what she is doing, in the words the session gives it.
+   *
+   * It goes down wherever she stops working, and so it travels with
+   * `isWorking`: the line says what she is *doing*, and someone who has stopped
+   * is not doing it. Usually she speaks at the end of a turn and that is what
+   * puts it down — the ones that end without a word are what this is for, and
+   * there are three of them: the turn simply ending, something getting in the
+   * way of it, and her being stopped from the keyboard.
+   */
   narration: string | null
   /** The words up beside her, oldest first: what she has just put down, and
    * whether it went through. Each of them comes off again on its own. */
@@ -147,6 +156,7 @@ export function next(was: Scene, event: BridgeEvent): Scene {
         trouble: event.trouble,
         isReady: event.trouble.gone ? false : was.isReady,
         isWorking: false,
+        narration: null,
         // A question is only let go of when there is nobody left to answer it.
         // One raised on a session that is still standing is still open on the
         // server, waiting — it is behind the note while that is up, and back to
@@ -196,8 +206,14 @@ export function next(was: Scene, event: BridgeEvent): Scene {
       }
     case 'ask-choice':
       return { ...was, asked: { askId: event.askId, questions: event.questions } }
+    // The turn is over, so the 地の文 goes with it — see the note on the scene
+    // for why that goes wherever she stops working. Most turns end with her
+    // speaking, which puts the line down anyway; the ones that end without a
+    // word are what left it standing. Turning her question down is exactly
+    // one: the last thing narrated was her asking, and after ESC there is
+    // nothing on screen still asking anything.
     case 'done':
-      return { ...was, isWorking: false, permission: null, asked: null, line: event.error ?? was.line }
+      return { ...was, isWorking: false, narration: null, permission: null, asked: null, line: event.error ?? was.line }
   }
 }
 
