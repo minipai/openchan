@@ -55,7 +55,12 @@ up never quietly spends money.
 
 | | |
 |---|---|
-| `src/opencode/opencode.ts` | the only file that knows opencode exists — it turns the server's event stream into her vocabulary |
+| `src/opencode/` | the only folder that knows opencode exists — it turns the server's event stream into her vocabulary |
+| `src/opencode/opencode.ts` | the session itself: starts the server, holds the event stream, and everything the window can ask her to do |
+| `src/opencode/models.ts` | splits a model name into its two halves, and lists what every provider offers |
+| `src/opencode/talks.ts` | names a conversation, lists the past ones, and reads back where one was left |
+| `src/opencode/narrate.ts` | what she is doing and what she just did, in words rather than the tool's own name |
+| `src/opencode/asking.ts` | what a question or a permission the server raised is asking, and how wide a standing yes for it goes |
 | `src/between/protocol.ts` | that vocabulary: she said something, she picked something up, she wants permission, she wants something picked, she is done — and what the screen may ask of her in return |
 | `src/between/scene.ts` | what an event leaves on the scene: the latest of each, and nothing decided |
 | `src/between/brain.ts` | holds her open for as long as the window is, and hands the screen one scene |
