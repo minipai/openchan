@@ -38,6 +38,9 @@ function planted(id: string, title: string, when: number, said: string, parentID
 }
 /** Every prompt posted, by the session it went into. */
 const prompted: string[] = []
+/** And the id each of them went out under — minted by the window, which is what
+ * lets a test be her side of one. */
+const promptedAs: string[] = []
 /** The model each of them went out under, in order. */
 const promptedOn: (string | null)[] = []
 const streams: Stream[] = []
@@ -176,9 +179,10 @@ mock.module('@opencode-ai/sdk', () => ({
         body,
       }: {
         path: { id: string }
-        body?: { model?: { providerID: string; modelID: string } }
+        body?: { messageID?: string; model?: { providerID: string; modelID: string } }
       }) => {
         prompted.push(path.id)
+        promptedAs.push(body?.messageID ?? '')
         const model = body?.model
         promptedOn.push(model ? `${model.providerID}/${model.modelID}` : null)
         // The real server touches a session whenever anything lands in it,
@@ -218,6 +222,22 @@ mock.module('@opencode-ai/sdk', () => ({
   }),
 }))
 
+/** Every question of hers turned down, by the request it was raised as. The
+ * newer client over the same server is the only thing that can answer one. */
+const rejected: string[] = []
+
+mock.module('@opencode-ai/sdk/v2/client', () => ({
+  createOpencodeClient: () => ({
+    question: {
+      reply: async () => ({}),
+      reject: async ({ requestID }: { requestID: string }) => {
+        rejected.push(requestID)
+        return {}
+      },
+    },
+  }),
+}))
+
 import { MaidSession } from './opencode'
 import type { PastMessage, PastSession } from './talks'
 import { CAST } from '../her/cast'
@@ -237,15 +257,57 @@ beforeEach(() => {
   letRead = null
   lookupSays = null
   refused.length = 0
+  rejected.length = 0
   aborted.length = 0
+  promptedAs.length = 0
   wontOpen = false
 })
 
-/** Until something is true of what she has said, or it has had long enough. */
-async function until(what: string, check: () => boolean) {
-  for (let tries = 0; tries < 100 && !check(); tries++) await new Promise((tick) => setTimeout(tick, 0))
+/** Until something is true of what she has said, or it has had long enough.
+ *
+ * `every` is how long to leave between looks: nothing, for what is only a few
+ * turns of the event loop away, and longer for the one thing that is not — the
+ * window leaves a moment between asking the server what a conversation is doing
+ * and asking it again. */
+async function until(what: string, check: () => boolean, every = 0) {
+  for (let tries = 0; tries < 100 && !check(); tries++) await new Promise((tick) => setTimeout(tick, every))
   if (!check()) throw new Error(`she never ${what}`)
 }
+
+/**
+ * Her side of a sentence that was sent, announcing itself — the event the window
+ * learns a turn by. The server mints the id for it, and it says which sentence
+ * it is answering; the window sent that one under an id of its own.
+ *
+ * `to` is which sentence it answers, counted from the first: they are one to
+ * one, and a test that sends two needs to say which.
+ */
+const herSideOf = (to: number, hers: string, session = 'ses_1') => ({
+  type: 'message.updated',
+  properties: { info: { role: 'assistant', id: hers, sessionID: session, parentID: promptedAs[to] } },
+})
+
+/**
+ * What a turn asks for: a tool it wants allowed, under the id of the turn
+ * asking.
+ *
+ * As the running server sends it, which is not as the SDK this is built against
+ * describes it — the id is under `tool`, with the call it came from, and there
+ * is no `messageID` beside `sessionID` at all. Written the other way, this
+ * fixture agrees with the types and with nothing that will ever arrive.
+ */
+const wantsToRun = (askId: string, hers: string, session = 'ses_1') => ({
+  type: 'permission.asked',
+  properties: {
+    id: askId,
+    sessionID: session,
+    permission: 'bash',
+    patterns: ['ls'],
+    metadata: { command: 'ls' },
+    always: ['ls *'],
+    tool: { messageID: hers, callID: 'call-1' },
+  },
+})
 
 /** Every session a test opened, closed afterwards. */
 const sessionsOpened: MaidSession[] = []
@@ -689,6 +751,198 @@ test('a tool she was waiting to be allowed is refused when the conversation it w
   // question is off the screen with the conversation it belongs to, and there
   // is nobody left who could answer it.
   expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-1', response: 'reject' }])
+})
+
+test('a tool the turn she walked away from asks for later is refused too', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(herSideOf(0, 'msg_hers'))
+
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+  const after = events.length
+
+  // The turn is still going where she left it, and it wants a command allowed.
+  // Nobody can say yes — it is a conversation nobody is in — so nobody would
+  // ever say no either, and it would sit there holding that turn open.
+  stream().say(wantsToRun('ask-2', 'msg_hers'))
+  await until('turned it down', () => refused.length > 0)
+
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-2', response: 'reject' }])
+  // And it was turned down without being put in front of her: it belongs to the
+  // conversation she left, not to the one she is standing in.
+  expect(events.slice(after).some((event) => event.kind === 'ask-permission')).toBe(false)
+})
+
+test('a question the turn she walked away from asks later is refused too', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, stream } = await opened()
+  her.ask('pick one of them for me')
+  stream().say(herSideOf(0, 'msg_hers'))
+
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+  const after = events.length
+
+  stream().say({
+    type: 'question.asked',
+    properties: {
+      id: 'q-1',
+      sessionID: 'ses_1',
+      tool: { messageID: 'msg_hers', callID: 'call-1' },
+      questions: [{ question: 'Which one?', header: 'Pick', options: [{ label: 'this' }, { label: 'that' }] }],
+    },
+  })
+  await until('turned it down', () => rejected.length > 0)
+
+  expect(rejected).toEqual(['q-1'])
+  expect(events.slice(after).some((event) => event.kind === 'ask-choice')).toBe(false)
+})
+
+test('a sentence sent on the way out is still answered for', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, stream } = await opened()
+  // Said and left in the same breath: she is out of that conversation before
+  // the server has said anything at all about the turn it is starting there.
+  her.ask('go and read everything in here')
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+
+  // So her side of it arrives in a conversation nobody is in — and it is still
+  // the answer to a sentence this window sent, which is the whole of what says
+  // the turn is this window's to answer for.
+  stream().say(herSideOf(0, 'msg_hers'))
+  stream().say(wantsToRun('ask-3', 'msg_hers'))
+  await until('turned it down', () => refused.length > 0)
+
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-3', response: 'reject' }])
+})
+
+test('a turn this window never started is left alone', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  planted('ses_theirs', 'Somebody else at work', 15_000, 'Mine, not yours.')
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(herSideOf(0, 'msg_hers'))
+
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+
+  // Somebody else with this folder open, working in a conversation of their
+  // own. It is on the same server and comes down the same stream, and it is
+  // theirs to answer: a window that refused it would be answering for somebody
+  // who is sitting there waiting to say yes.
+  stream().say(wantsToRun('ask-4', 'msg_theirs', 'ses_theirs'))
+  // And the turn this window did leave behind, to be waited for: events arrive
+  // in the order they were said, so by the time this is turned down the other
+  // has been past the guard.
+  stream().say(wantsToRun('ask-5', 'msg_hers'))
+  await until('turned its own down', () => refused.length > 0)
+
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-5', response: 'reject' }])
+  expect(events.some((event) => event.kind === 'ask-permission')).toBe(false)
+})
+
+test('a tool the turn left behind by a new conversation asks for later is refused too', async () => {
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(herSideOf(0, 'msg_hers'))
+
+  // Stopped on the way out rather than left to finish — and a turn does not end
+  // the moment the abort is posted, so it can still get a question in.
+  her.begin()
+  await until('opened a new conversation', () => events.some((event) => event.kind === 'picks-up'))
+  expect(aborted).toEqual(['ses_1'])
+
+  stream().say(wantsToRun('ask-6', 'msg_hers'))
+  await until('turned it down', () => refused.length > 0)
+
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-6', response: 'reject' }])
+})
+
+test('a turn told to stop is still answered for while it is stopping', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(herSideOf(0, 'msg_hers'))
+
+  // Stopping her puts the 地の文 down at once, but the abort takes a moment to
+  // reach the server — and she is out of the conversation before it has.
+  her.interrupt()
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+
+  stream().say(wantsToRun('ask-7', 'msg_hers'))
+  await until('turned it down', () => refused.length > 0)
+
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-7', response: 'reject' }])
+})
+
+test('a second turn in the same conversation is answered for after the first has ended', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, stream } = await opened()
+  // Two sentences, the second sent while she is still working on the first.
+  // Whether that joins the turn that is running or starts one of its own is the
+  // server's to decide as it goes — here it starts one, and both are hers.
+  her.ask('go and read everything in here')
+  her.ask('and what did the second one say?')
+  stream().say(herSideOf(0, 'msg_hers_1'))
+  stream().say(herSideOf(1, 'msg_hers_2'))
+
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+
+  // The first of them ends. The second has not, and it is the one that asks.
+  stream().say({ type: 'session.idle', properties: { sessionID: 'ses_1' } })
+  stream().say(wantsToRun('ask-8', 'msg_hers_2'))
+  await until('turned it down', () => refused.length > 0)
+
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-8', response: 'reject' }])
+})
+
+test('a conversation she walks back into and out of again is still answered for', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  planted('ses_other', 'The other thing', 10_000, 'That one is done.')
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(herSideOf(0, 'msg_hers'))
+
+  // Out, back in, and out again — all while that turn is still going.
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+  her.resume('ses_1')
+  await until('went back', () => events.filter((event) => event.kind === 'picks-up').length > 1)
+  her.resume('ses_other')
+  await until('picked the other one up', () => events.filter((event) => event.kind === 'picks-up').length > 2)
+
+  stream().say(wantsToRun('ask-9', 'msg_hers'))
+  await until('turned it down', () => refused.length > 0)
+
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-9', response: 'reject' }])
+})
+
+test('the conversation a failed read back puts her back into is still one she can walk out of', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  planted('ses_other', 'The other thing', 10_000, 'That one is done.')
+  const { her, events, stream, troubles } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(herSideOf(0, 'msg_hers'))
+  wontRead = true
+
+  // The conversation she picked could not be read back, so she is put back in
+  // the one she was in — turn and all, because it is still running there.
+  her.resume('ses_old')
+  await until('said it could not be opened', () => troubles().length > 0)
+
+  // And out of it again, which is the second time that same turn has been
+  // walked out on.
+  her.resume('ses_other')
+  await until('picked the other one up', () => events.some((event) => event.kind === 'picks-up'))
+  stream().say(wantsToRun('ask-10', 'msg_hers'))
+  await until('turned it down', () => refused.length > 0)
+
+  expect(refused).toEqual([{ id: 'ses_1', permissionID: 'ask-10', response: 'reject' }])
 })
 
 test('a list the server will not give is not said as a folder with nothing in it', async () => {
