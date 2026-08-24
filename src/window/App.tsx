@@ -1,43 +1,28 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  CliRenderEvents,
-  decodePasteBytes,
-  stripAnsiSequences,
-  type InputRenderable,
-  type PasteEvent,
-  type Selection,
-} from '@opentui/core'
-import { useKeyboard, usePaste, useRenderer, useTerminalDimensions } from '@opentui/react'
+import { useRef, useState, type ReactNode } from 'react'
+import { decodePasteBytes, stripAnsiSequences, type InputRenderable, type PasteEvent } from '@opentui/core'
+import { useKeyboard, usePaste, useTerminalDimensions } from '@opentui/react'
 import { SpriteLayer, spriteColumns } from './SpriteLayer'
 import { DialogueBox } from './box/DialogueBox'
 import { KeysOverlay } from './over/KeysOverlay'
 import { PathBox } from './over/PathBox'
-import { Picker, type Choice } from './over/Picker'
+import { Picker } from './over/Picker'
 import { ReportReader } from './over/ReportReader'
 import { TroubleNote } from './box/TroubleNote'
 import { Whispers } from './box/Whispers'
 import { Asking, columns } from './box/Asking'
 import { cornerFor, pressed, takes } from './keys'
+import { useTheList, type Picking } from './over/list'
+import { useHerQuestion } from './question'
+import { useNote } from './note'
 import { useMaid, type Scene } from '../between/brain'
 import type { Character } from '../her/cast'
-import { asPath, folderRows, shortened, troubleWith, TYPE_A_PATH } from '../between/folder'
+import { asPath, shortened, troubleWith } from '../between/folder'
 import { shareOut } from './strip/strip'
 import type { OpenConversation } from '../between/protocol'
 import { paletteOver } from './theme'
 
 /** The strip the window leaves under the dialogue box. */
 const UNDER_THE_BOX = 1
-
-/** How long a word about what just happened stays under the box. */
-const SAID_FOR = 2000
-
-/**
- * What the window says when a clipboard write comes to nothing. The renderer
- * asks the terminal what it can take and the terminal answered that it cannot
- * take this — it is said, because a copy that quietly did nothing looks exactly
- * like one that worked until it is pasted.
- */
-const WILL_NOT_TAKE = 'this terminal will not take a clipboard write'
 
 /**
  * What a line break is drawn as on the one line she is spoken to on.
@@ -68,17 +53,6 @@ const A_BREAK = '↵'
 export const LINE_HOLDS = 100_000
 
 /**
- * The row on the list of conversations that is not one of them: taking it
- * starts a new one instead of going back into an old one. Every other row's id
- * is a session id, so nothing can be mistaken for it.
- *
- * At the top of the list rather than the bottom, unlike the row that asks for a
- * folder: the folders are eight at most, and this is every conversation the
- * folder has ever had — a row under those is a row to be scrolled to.
- */
-const A_NEW_ONE: Choice = { id: 'a new conversation', label: 'Start a new conversation' }
-
-/**
  * What can stand over the scene: the keyboard help, one of the four lists, the
  * line a folder is typed out on, or what she wrote this turn.
  *
@@ -86,7 +60,7 @@ const A_NEW_ONE: Choice = { id: 'a new conversation', label: 'Start a new conver
  * apart, that rule had to be spelled out by every key that opened one — and
  * forgetting a single line left two of them on screen, both answering Enter.
  */
-type Over = 'keys' | 'models' | 'shift' | 'folder' | 'talks' | 'path' | 'report' | null
+type Over = Picking | 'keys' | 'path' | 'report' | null
 
 /**
  * The frame whatever is over the scene stands in: the whole window, with the
@@ -174,28 +148,6 @@ function invitation(scene: Scene): string {
 }
 
 /**
- * How long ago a conversation was last spoken in, in the words anyone would say
- * it in.
- *
- * It is what tells two rows of the list apart: a conversation is named after
- * the first thing said in it, and a week of work in one folder starts several
- * of them the same way. Rounded rather than exact — nobody picking up where he
- * left off is counting minutes, and the row has one line for it.
- */
-function ago(when: number, now: number): string {
-  const minutes = Math.round((now - when) / 60_000)
-  if (minutes < 1) return 'just now'
-  const times = (many: number, what: string) => `${many} ${what}${many === 1 ? '' : 's'} ago`
-  if (minutes < 60) return times(minutes, 'minute')
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return times(hours, 'hour')
-  const days = Math.round(hours / 24)
-  if (days < 7) return times(days, 'day')
-  if (days < 365) return times(Math.round(days / 7), 'week')
-  return times(Math.round(days / 365), 'year')
-}
-
-/**
  * The line above the box: what she is doing, or — before there is anyone to do
  * anything — that what was said to her is being kept. It goes there rather than
  * in the input because it has to survive the next thing being typed.
@@ -218,7 +170,6 @@ function above(scene: Scene, next: Character | null): string | null {
  */
 export function App({ behind, open: openMaid }: { behind: string | undefined; open?: OpenConversation }) {
   const { width, height } = useTerminalDimensions()
-  const renderer = useRenderer()
   // Her box is coloured against the terminal, the same answer that keeps her
   // out of a black slab.
   const theme = paletteOver(behind)
@@ -274,44 +225,9 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // thing she asks for is a fresh question and starts shut, however the last
   // one was left.
   const [opened, setOpened] = useState<string | null>(null)
-  // A word about what the window just did, for a moment. Wrapped rather than
-  // bare so that the same word twice running is two words, each with its own
-  // moment — the second copy would otherwise inherit what was left of the
-  // first's.
-  const [note, setNote] = useState<{ text: string } | null>(null)
-  useEffect(() => {
-    if (note === null) return
-    const gone = setTimeout(() => setNote(null), SAID_FOR)
-    return () => clearTimeout(gone)
-  }, [note])
-  // Out through the terminal's own clipboard escape (OSC 52): the window has
-  // no hands of its own and the terminal is the one thing between it and the
-  // master's clipboard. Either way it says what happened — the renderer knows
-  // when the terminal has said no, and a copy that did nothing and said
-  // nothing looks like one that worked.
-  const copy = (text: string, what: string) => {
-    const taken = renderer.copyToClipboardOSC52(text)
-    setNote({ text: taken ? `copied ${what}` : WILL_NOT_TAKE })
-  }
-  // The renderer tracks a drag over any text on screen and draws it, and says
-  // so when it is let go of — and that was the whole of it: what was selected
-  // was then dropped. This is the other half. A click is let go of too, and
-  // selects nothing; nothing is said about nothing.
-  //
-  // An event rather than a closure: the listener is hung on the renderer once
-  // and stays, and what it calls has to be what this render would have called.
-  const letGo = useEffectEvent((selection: Selection) => {
-    const text = selection.getSelectedText()
-    if (text) copy(text, 'the selection')
-  })
-  useEffect(() => {
-    renderer.on(CliRenderEvents.SELECTION, letGo)
-    return () => void renderer.off(CliRenderEvents.SELECTION, letGo)
-  }, [renderer])
-  // What has been picked so far of a question she asked in several parts, and
-  // which question it was picked for: the next thing she asks is a fresh one
-  // and starts from nothing, the same as the one before it being opened up.
-  const [picks, setPicks] = useState<{ of: string; answers: string[][] }>({ of: '', answers: [] })
+  // A word about what the window just did, and the copies it is mostly said
+  // about.
+  const { note, say, copy } = useNote()
   // What she wrote is the one of them that can be taken out from under itself:
   // the next thing she is asked takes the report with it, and a reader left
   // standing over nothing would go on swallowing ESC with no page on screen to
@@ -341,10 +257,10 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
   // highlight are the list's own, and a list taken down and put up again
   // would come back with neither.
   const choosing = scene.asked
-  const answers = choosing && picks.of === choosing.askId ? picks.answers : []
   // Which of her questions is up, when she asked several at once: they are
-  // taken one at a time, in the order she asked them.
-  const question = choosing?.questions[answers.length] ?? null
+  // taken one at a time, in the order she asked them, and what has been picked
+  // of it so far is kept until the last of them is answered.
+  const { question, answered, pick, nobodyWillPick } = useHerQuestion(choosing, { choose, decline })
   // Whether the question is the thing being answered right now, rather than
   // waiting under something else. Something in the way counts: the note goes
   // over it the same way it goes over her permission question, and ESC is the
@@ -455,8 +371,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
       // same as being told nothing was picked.
       case 'cancel':
         if (!answering) return setOver(null)
-        setPicks({ of: '', answers: [] })
-        return decline(choosing!.askId)
+        return nobodyWillPick()
     }
   })
 
@@ -480,85 +395,27 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     const text = stripAnsiSequences(decodePasteBytes(paste.bytes)).replace(/\r\n|\r|\n/g, A_BREAK)
     const room = LINE_HOLDS - line.current!.value.length
     line.current!.insertText(text.slice(0, room))
-    if (text.length > room) setNote({ text: `the last ${text.length - room} characters would not fit` })
+    if (text.length > room) say(`the last ${text.length - room} characters would not fit`)
   })
-
-  // Everyone who could be standing there, as rows. The list knows nothing about
-  // what is in it, so the id it hands back is hers and the label is her name.
-  const shifts: Choice[] = useMemo(
-    () => cast.map((one) => ({ id: one.id, label: one.name })),
-    [cast],
-  )
-
-  // The conversations she has had here, as rows: what each came to be called,
-  // and under it when it was last spoken in — which is what tells two of them
-  // apart. How long ago is worked out when the rows are, so a list left open
-  // does not tick.
-  const talks: Choice[] = useMemo(
-    () => scene.talks.map((one) => ({ id: one.id, label: one.title, description: ago(one.when, Date.now()) })),
-    [scene.talks],
-  )
-  // The rows as they were when the list was opened, and left alone while it is.
-  // She goes on answering underneath it, and the end of a turn puts the
-  // conversation it happened in back at the top — rows sliding out from under
-  // the highlight is a conversation opened by accident. Kept up to date at
-  // every other moment, and taken as they come while there are none: a list
-  // opened before she is up would otherwise stay empty for as long as it is up.
-  const rows = useRef(talks)
-  if (picking !== 'talks' || !rows.current.length) rows.current = talks
 
   // What the list open right now is a list of, and nothing at all when none is
   // open.
-  const list =
-    picking === null
-      ? null
-      : picking === 'models'
-        ? {
-            title: 'What she thinks with',
-            items: scene.models,
-            chosen: scene.model,
-            take: use,
-            narrowing: { typed: narrowedTo, onType: setNarrowedTo },
-          }
-        : picking === 'talks'
-          ? {
-              title: 'What you talked about before',
-              // The one row that is not a conversation starts one. It is not
-              // held with the others — the rows are frozen while the list is
-              // open and this one has nothing to freeze — and it is not there
-              // at all until they are: a list with one row that only offers
-              // itself is not a list, and everything the list knows how to do
-              // it works out from having rows.
-              items: rows.current.length ? [A_NEW_ONE, ...rows.current] : [],
-              chosen: scene.talk,
-              take: (id: string) => (id === A_NEW_ONE.id ? startFresh() : resumeTo(id)),
-              narrowing: { typed: narrowedTo, onType: setNarrowedTo },
-            }
-          : picking === 'shift'
-            ? { title: 'Who is on shift', items: shifts, chosen: nextShift.id, take: swapTo, narrowing: undefined }
-            : {
-                title: 'Where she works',
-                items: folderRows(folder, been),
-                chosen: folder,
-                narrowing: undefined,
-                // The one row that is not a folder asks for one instead: the
-                // folder wanted is very often one she has never been in, and
-                // the list can only offer the ones she has.
-                take: (id: string) => {
-                  if (id === TYPE_A_PATH) {
-                    setTrouble(null)
-                    return setOver('path')
-                  }
-                  // A row written down for a folder that has been moved or
-                  // deleted since. Closing the list on it would look exactly
-                  // like the move having worked, so it says what happened and
-                  // leaves a line to type somewhere else on.
-                  const why = troubleWith(id)
-                  setTrouble(why)
-                  if (why === null) moveTo(id)
-                  else setOver('path')
-                },
-              }
+  const list = useTheList({
+    which: picking,
+    scene,
+    cast,
+    nextShift,
+    folder,
+    been,
+    narrowing: { typed: narrowedTo, onType: setNarrowedTo },
+    use,
+    swapTo,
+    moveTo,
+    resumeTo,
+    startFresh,
+    sayTrouble: setTrouble,
+    typeAPath: () => setOver('path'),
+  })
 
   // 760px of a 960px window, and never wider than the terminal has room for.
   const boxWidth = Math.min(90, width - 6)
@@ -681,7 +538,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
             // One list per question: the next one is a fresh list, with no
             // ticks carried over from the last and the highlight back at the
             // top.
-            key={`${choosing.askId}/${answers.length}`}
+            key={`${choosing.askId}/${answered}`}
             theme={theme}
             title={question.header}
             asks={question.question}
@@ -691,15 +548,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
             focused={answering}
             width={Math.min(60, width - 6)}
             room={height}
-            onPick={(labels) => {
-              const all = [...answers, labels]
-              // The last one answered hands the whole of it back, and what
-              // was kept for it is let go of — a question asked again under
-              // the same id is a fresh question.
-              if (all.length < choosing.questions.length) return setPicks({ of: choosing.askId, answers: all })
-              setPicks({ of: '', answers: [] })
-              choose(choosing.askId, all)
-            }}
+            onPick={pick}
           />
         </OverTheScene>
       )}
@@ -754,7 +603,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
           that stand over the scene — the keys list the key, a page is dragged
           over — and a word half hidden behind one of them reads as a word cut
           off. The strip is the one row none of them reach. */}
-      {note && (
+      {note !== null && (
         <box
           position="absolute"
           bottom={0}
@@ -764,7 +613,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
           paddingX={2}
           zIndex={9}
         >
-          <text fg={theme.muted}>{note.text}</text>
+          <text fg={theme.muted}>{note}</text>
         </box>
       )}
     </box>
