@@ -13,11 +13,13 @@ import { KeysOverlay } from './over/KeysOverlay'
 import { PathBox } from './over/PathBox'
 import { Picker } from './over/Picker'
 import { ReportReader } from './over/ReportReader'
+import { RepoBox } from './over/RepoBox'
 import { TroubleNote } from './box/TroubleNote'
 import { Whispers } from './box/Whispers'
 import { Asking, columns } from './box/Asking'
 import { cornerFor, pressed, takes } from './keys'
 import { useTheList, type Picking } from './over/list'
+import { useHowItStands } from './over/repo'
 import { useHerQuestion } from './box/question'
 import { useNote } from './box/note'
 import { useMaid, type Scene } from '../between/brain'
@@ -117,13 +119,14 @@ const characters = (text: string) => {
 
 /**
  * What can stand over the scene: the keyboard help, one of the four lists, the
- * line a folder is typed out on, or what she wrote this turn.
+ * line a folder is typed out on, what she wrote this turn, or how the work
+ * stands in the folder she is in.
  *
  * One value rather than a flag each, because only ever one of them is up. Held
  * apart, that rule had to be spelled out by every key that opened one — and
  * forgetting a single line left two of them on screen, both answering Enter.
  */
-type Over = Picking | 'keys' | 'path' | 'report' | null
+type Over = Picking | 'keys' | 'path' | 'report' | 'repo' | null
 
 /**
  * The frame whatever is over the scene stands in: the whole window, with the
@@ -344,6 +347,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     narrowed: narrows && narrowedTo !== '',
     path: standing === 'path',
     reading: standing === 'report',
+    checking: standing === 'repo',
     hasReport: scene.report !== null,
     said: scene.line !== '',
     isWorking: scene.isWorking,
@@ -433,6 +437,10 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         return setOver('folder')
       case 'report':
         return setOver('report')
+      // Nothing is said to her about it: the folder is read where it lies, and
+      // she is not told it was looked at.
+      case 'repo':
+        return setOver('repo')
       // Her words and only her words: the line as she said it, not as the box
       // wrapped it, and the page as she wrote it.
       case 'copy-line':
@@ -499,6 +507,10 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     sayTrouble: setTrouble,
     typeAPath: () => setOver('path'),
   })
+
+  // How the work stands where she is, asked of git the moment the panel is
+  // opened and not before.
+  const work = useHowItStands(folder, standing === 'repo')
 
   // 760px of a 960px window, and never wider than the terminal has room for.
   const boxWidth = Math.min(90, width - 6)
@@ -670,6 +682,14 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
             width={Math.min(90, width - 6)}
             height={Math.min(height, Math.max(9, height - 6))}
           />
+        </OverTheScene>
+      )}
+
+      {/* A glance at the folder rather than at her: what git says about where
+          she works, read when this is opened and nothing to do with her turn. */}
+      {standing === 'repo' && (
+        <OverTheScene width={width} height={height}>
+          <RepoBox theme={theme} folder={folder} work={work} width={Math.min(60, width - 6)} />
         </OverTheScene>
       )}
 

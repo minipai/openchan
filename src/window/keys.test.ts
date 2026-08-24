@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import {
+  checkingKeys,
   cornerFor,
   keyFor,
   keysNow,
@@ -21,6 +22,7 @@ const idle: Where = {
   narrowed: false,
   path: false,
   reading: false,
+  checking: false,
   hasReport: false,
   said: false,
   isWorking: false,
@@ -524,6 +526,31 @@ test('what an open report answers to is what the page itself prints', () => {
   }
 })
 
+test('how the work stands is a glance: putting it away is the whole of it', () => {
+  const checking: Where = { ...idle, checking: true }
+  // Two keys and one thing to do: ESC, and the key that opened it — pressed
+  // again it puts it away rather than opening what is already open.
+  expect(checkingKeys().map((key) => key.does)).toEqual(['close', 'close'])
+  expect(pressed(press('escape'), checking)).toBe('close')
+  expect(pressed(press('ctrl+t'), checking)).toBe('close')
+  // What is on screen is what ESC answers: the panel goes away before she is
+  // stopped, the same as every other thing held up in front of her.
+  expect(pressed(press('escape'), { ...working, checking: true })).toBe('close')
+  // The panel is one thing over the scene like the rest: the line underneath
+  // is blurred behind it, so nothing is offered on it.
+  expect(pressed(press('return'), checking)).toBeNull()
+  expect(offered(checking)).not.toContain('send')
+  // And the corner is behind it, saying nothing the panel is not already
+  // saying better.
+  expect(cornerFor(checking)).toBe('')
+})
+
+test('the folder can be asked about from anywhere, including while she is busy', () => {
+  for (const where of [idle, working, asked, gone, stuck, up(idle), picking(idle)]) {
+    expect(pressed(press('ctrl+t'), where)).toBe('repo')
+  }
+})
+
 test('an unread report is what the corner says, once nothing narrower does', () => {
   expect(cornerFor(wrote(idle))).toBe('Ctrl-R read what she wrote')
   // Stopping her is the more pressing of the two while she is still at it.
@@ -544,6 +571,7 @@ const EVERY_PRESS = [
   'ctrl+g',
   'ctrl+f',
   'ctrl+r',
+  'ctrl+t',
   'ctrl+y',
   'y',
   'n',
@@ -582,16 +610,19 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
           { hasReport: true, reading: true },
         ].flatMap((written) =>
           [false, true].flatMap((said) =>
-            (['stuck', 'gone', null] as const).map((trouble) => ({
-              up,
-              isWorking,
-              asked,
-              standing,
-              trouble,
-              said,
-              ...over,
-              ...written,
-            })),
+            [false, true].flatMap((checking) =>
+              (['stuck', 'gone', null] as const).map((trouble) => ({
+                up,
+                isWorking,
+                asked,
+                standing,
+                trouble,
+                said,
+                checking,
+                ...over,
+                ...written,
+              })),
+            ),
           ),
         ),
       ),
