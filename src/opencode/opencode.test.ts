@@ -197,17 +197,6 @@ mock.module('@opencode-ai/sdk', () => ({
         return {}
       },
     },
-    event: {
-      subscribe: async () => {
-        if (wontListen) {
-          wontListen = false
-          throw new Error('the server went away')
-        }
-        const stream = new Stream()
-        streams.push(stream)
-        return { stream }
-      },
-    },
     config: { providers: async () => ({ data: { providers: [] } }) },
     postSessionIdPermissionsPermissionId: async ({
       path,
@@ -225,9 +214,25 @@ mock.module('@opencode-ai/sdk', () => ({
 /** Every question of hers turned down, by the request it was raised as. The
  * newer client over the same server is the only thing that can answer one. */
 const rejected: string[] = []
+/** What the server behind her says it is, when it is asked. The version she is
+ * written against unless a test says otherwise — a stand-in server that claims
+ * to be something else would put a note on every screen in this file. */
+let serverIs = SPEAKS
 
 mock.module('@opencode-ai/sdk/v2/client', () => ({
   createOpencodeClient: () => ({
+    global: { health: async () => ({ data: { healthy: true, version: serverIs } }) },
+    event: {
+      subscribe: async () => {
+        if (wontListen) {
+          wontListen = false
+          throw new Error('the server went away')
+        }
+        const stream = new Stream()
+        streams.push(stream)
+        return { stream }
+      },
+    },
     question: {
       reply: async () => ({}),
       reject: async ({ requestID }: { requestID: string }) => {
@@ -239,6 +244,7 @@ mock.module('@opencode-ai/sdk/v2/client', () => ({
 }))
 
 import { MaidSession } from './opencode'
+import { SPEAKS } from './wire'
 import type { PastMessage, PastSession } from './talks'
 import { CAST } from '../her/cast'
 
@@ -258,6 +264,7 @@ beforeEach(() => {
   lookupSays = null
   refused.length = 0
   rejected.length = 0
+  serverIs = SPEAKS
   aborted.length = 0
   promptedAs.length = 0
   wontOpen = false
@@ -291,10 +298,8 @@ const herSideOf = (to: number, hers: string, session = 'ses_1') => ({
  * What a turn asks for: a tool it wants allowed, under the id of the turn
  * asking.
  *
- * As the running server sends it, which is not as the SDK this is built against
- * describes it — the id is under `tool`, with the call it came from, and there
- * is no `messageID` beside `sessionID` at all. Written the other way, this
- * fixture agrees with the types and with nothing that will ever arrive.
+ * As the running server sends it: the id is under `tool`, with the call it came
+ * from, and there is no `messageID` beside `sessionID` at all.
  */
 const wantsToRun = (askId: string, hers: string, session = 'ses_1') => ({
   type: 'permission.asked',
@@ -347,6 +352,28 @@ async function opened() {
   }
 }
 
+test('a server she was not written against is said out loud', async () => {
+  // The whole failure this guards against is a quiet one: an event whose shape
+  // has moved is read as an event with nothing in it, so she goes on looking
+  // fine while whatever rested on that field stops happening. Nothing here can
+  // tell which fields moved — only that nobody has checked this one.
+  serverIs = '1.19.0'
+  const { troubles } = await opened()
+
+  expect(troubles()).toEqual([
+    {
+      title: 'She is talking to opencode 1.19.0',
+      body: expect.stringContaining(SPEAKS),
+      gone: false,
+    },
+  ])
+})
+
+test('the server she was written against is worth no words at all', async () => {
+  const { troubles } = await opened()
+  expect(troubles()).toEqual([])
+})
+
 test('opening her again after the server went away carries on the same conversation', async () => {
   const { her, lose, retry, troubles } = await opened()
   her.ask('my secret word is pineapple')
@@ -383,6 +410,22 @@ test('a conversation the server has no record of is started over, and she says s
   expect(note?.gone).toBe(false)
   const kinds = events.map((event) => event.kind)
   expect(kinds.lastIndexOf('trouble')).toBeLessThan(kinds.lastIndexOf('ready'))
+})
+
+test('the version she is on is not said over a note about this minute', async () => {
+  // Both come up as she opens: one says a conversation is gone and one says
+  // nobody has read her against this server. There is one slot on the screen
+  // for either, and the one that just happened to somebody is the one to keep.
+  serverIs = '1.19.0'
+  const { her, lose, retry, troubles } = await opened()
+  expect(troubles().at(-1)?.title).toBe('She is talking to opencode 1.19.0')
+
+  her.ask('my secret word is pineapple')
+  await lose()
+  onDisk.clear()
+  await retry()
+
+  expect(troubles().at(-1)?.title).toBe('She is starting over')
 })
 
 test('a lost conversation is still said to be lost when the attempt that replaced it did not get through', async () => {
@@ -961,17 +1004,20 @@ test('a list the server will not give is not said as a folder with nothing in it
 })
 
 /** One tool part, as the server publishes it every time anything on it moves.
- * The conversation it belongs to is named on the part and nowhere else, which
- * is where the SDK this is built against puts it — and it is always named, so
- * the one she opens in is what this says unless a test says otherwise. */
+ * The conversation it belongs to is named twice — on the event and on the part
+ * — which is what the server sends, and it is always named, so the one she
+ * opens in is what this says unless a test says otherwise. */
 const toolPart = (call: string, state: Record<string, unknown>, session = 'ses_1') => ({
   type: 'message.part.updated',
   properties: {
+    sessionID: session,
+    time: 0,
     part: {
       id: `prt_${call}`,
       type: 'tool',
       callID: call,
       tool: 'bash',
+      messageID: 'msg_hers',
       sessionID: session,
       state: { input: { command: 'bun test' }, ...state },
     },

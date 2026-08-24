@@ -1,20 +1,6 @@
 import path from 'node:path'
 import type { Question, Standing } from '../between/protocol'
-
-/** A question she asked with the answers written out, as the server raises
- * it: one request, carrying one or more questions, each with its options. */
-export type AskedQuestion = {
-  id: string
-  /** The tool call she asked it through, where she asked it through one: the
-   * turn it belongs to, and the only thing that says whose turn that is. */
-  tool?: { messageID?: string }
-  questions: {
-    question: string
-    header: string
-    options: { label: string; description?: string }[]
-    multiple?: boolean
-  }[]
-}
+import type { AskedPermission, AskedQuestion } from './wire'
 
 /**
  * Her questions, in the window's vocabulary: the same shape the server gives
@@ -32,24 +18,6 @@ export function questionsIn(asked: AskedQuestion): Question[] {
   }))
 }
 
-/** A tool she may not use until he says so. The server names the tool under
- * `permission`, and older ones under `type` or `title`; what it would be used
- * for is under `metadata`, shaped by the tool. */
-export type AskedPermission = {
-  id: string
-  /** The turn asking, as the server knows it: her side of a sentence somebody
-   * sent, rather than the sentence. The running server sends it under `tool`
-   * with the call that wants the permission; the SDK this is built against
-   * describes it beside `sessionID` and knows nothing of `tool`. Both are
-   * written down, because both are what somebody's server sends. */
-  tool?: { messageID?: string }
-  messageID?: string
-  permission?: string
-  type?: string
-  title?: string
-  metadata?: Record<string, unknown>
-}
-
 /**
  * What she would actually do with the tool she is asking for, off the
  * permission the server raised: the one line the box has room for, and the
@@ -63,15 +31,18 @@ export type AskedPermission = {
  * rest of it gets read.
  */
 export function asking(
-  toolName: string | undefined,
-  metadata: Record<string, unknown>,
+  toolName: string,
+  metadata: AskedPermission['metadata'],
 ): { summary?: string; detail?: string; standing?: Standing } {
-  // A tool the server did not name cannot be given a standing yes: the scope
-  // would be the same scope every other tool it forgot to name is remembered
-  // under, and a yes to one of them would be a yes to all of them.
+  // A standing yes is remembered under the tool's name, so a tool without one
+  // is remembered under nothing: two of them would otherwise share a scope, and
+  // a yes to one would be a yes to the other. The server always names it — but
+  // what a yes is filed under is not a thing to take on trust.
   const stands = (what: string, covers: string): Standing | undefined =>
     toolName ? { scope: `${toolName} ${what}`, covers } : undefined
-  const { command, filepath, diff, url } = metadata as Record<string, string | undefined>
+  // Each of them is whatever the tool put there, so each is asked what it is
+  // before it is read as anything.
+  const { command, filepath, diff, url } = metadata
   if (typeof command === 'string') {
     // The program, not the command: yes to `git status` is yes to git, and it
     // is not yes to whatever else she thinks of next.
