@@ -149,3 +149,60 @@ test('the list of models is narrowed by typing, and ESC takes the typing back be
   expect(frame()).toContain(MODELS[0]!.label)
   expect(frame()).not.toContain('› opus')
 })
+
+/** Two of her questions asked in one breath, so that one can be answered and
+ * the next turned down — which is where the reported line was last written and
+ * never rewritten. */
+const WHICH = [
+  { header: 'Which first', question: 'Which should I start on?', options: [{ label: 'The tests' }], multiple: false },
+  { header: 'Which ones', question: 'Which are worth doing?', options: [{ label: 'The docs' }], multiple: false },
+]
+
+test('a question turned down leaves nothing on the strip still saying she is asking', async () => {
+  const { her, wakeUp, type, enter, raise, escape, frame } = await onScreen()
+  await wakeUp()
+  await type('tidy up')
+  await enter()
+
+  // Her asking is narrated like anything else she picks up, and it is the last
+  // thing narrated: nothing comes after a question but the answer.
+  await raise({ kind: 'doing', label: 'asking' })
+  expect(strip(frame())).toContain('asking')
+  await raise({ kind: 'ask-choice', askId: 'ask-2', questions: WHICH })
+
+  // The first answered, and the second up: this is the half-answered question
+  // the report was found in, rather than a question turned down on its first
+  // row.
+  await enter()
+  expect(frame()).toContain('Which ones')
+
+  // The rest turned down — and her turn ends there rather than going on to say
+  // anything that would write over the line.
+  await escape()
+  await raise({ kind: 'done' })
+
+  expect(her.chosen).toEqual([{ askId: 'ask-2', answers: 'declined' }])
+  // Nothing is asking, so nothing on the line says anything is. The rest of
+  // what it carries is untouched: only the 地の文 had a moment to lose.
+  expect(strip(frame())).not.toContain('asking')
+  expect(strip(frame())).toContain(HERE)
+  expect(strip(frame())).toContain(MODELS[0]!.label)
+})
+
+test('stopping her from the keyboard puts the 地の文 down as well', async () => {
+  const { her, wakeUp, type, enter, raise, escape, frame } = await onScreen()
+  await wakeUp()
+  await type('run the tests')
+  await enter()
+  await raise({ kind: 'doing', label: 'running bun test' })
+  expect(strip(frame())).toContain('running')
+
+  // ESC with no question up is ESC to her. She is stopped where she stands and
+  // nothing comes back to say the turn is over, so the line has to go here —
+  // she is not running anything any more.
+  await escape()
+
+  expect(her.interrupted).toBe(1)
+  expect(strip(frame())).not.toContain('running')
+  expect(strip(frame())).toContain(HERE)
+})

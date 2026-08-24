@@ -59,6 +59,19 @@ test('speaking again puts the narration down', () => {
   expect(next(busy, { kind: 'says', line: 'Found it' }).narration).toBeNull()
 })
 
+test('the turn closing puts the narration down, even if she never said anything', () => {
+  const busy = next(working, { kind: 'doing', label: 'reading brain.ts' })
+
+  expect(next(busy, { kind: 'done' }).narration).toBeNull()
+})
+
+test('something in the way puts the narration down too: she is not doing it any more either', () => {
+  const busy = next(working, { kind: 'doing', label: 'reading brain.ts' })
+
+  expect(next(busy, { kind: 'trouble', trouble: LOST }).narration).toBeNull()
+  expect(next(busy, { kind: 'trouble', trouble: STUCK }).narration).toBeNull()
+})
+
 /** A tool put down, as the session says it. */
 const put = (text: string, kind: 'did' | 'failed' = 'did') =>
   ({ kind: 'whispers', whisper: { text, kind } }) as const
