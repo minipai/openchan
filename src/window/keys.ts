@@ -31,6 +31,7 @@ export type Does =
   | 'talks'
   | 'fresh'
   | 'report'
+  | 'repo'
   | 'scroll-up'
   | 'scroll-down'
   | 'previous'
@@ -65,8 +66,8 @@ export const takes = (does: Does) => !THEIRS.includes(does)
  * — with or without her session left standing — while a list is open, while
  * the open list takes several rows rather than one, while the open list can be
  * narrowed by typing at it, while it has been, while a path is being typed
- * into one, while there is something she wrote to read, while it is open, or
- * while these keys are on screen. */
+ * into one, while there is something she wrote to read, while it is open,
+ * while how the work stands is on screen, or while these keys are. */
 type When =
   | 'always'
   | 'typing'
@@ -83,6 +84,7 @@ type When =
   | 'path'
   | 'reported'
   | 'reading'
+  | 'checking'
   | 'up'
 
 export type Shortcut = {
@@ -121,6 +123,8 @@ export type Where = {
   reading: boolean
   /** Whether she has written something there is a report to open at all. */
   hasReport: boolean
+  /** Whether how the work stands in her folder is what is on screen. */
+  checking: boolean
   /** Whether there is a line of hers in the box to be copied. */
   said: boolean
   /** What is in the way, if anything is: something she is still standing
@@ -146,6 +150,13 @@ const KEYS: (Shortcut & { when: When })[] = [
   // The same key that takes her line takes the page while the page is what is
   // open: what is on screen is what is copied.
   { when: 'reading', press: 'ctrl+y', does: 'copy-page', says: 'copy it' },
+
+  // How the work stands is a glance rather than a page: there is nothing on it
+  // to move through and nothing to copy. The key that opened it closes it as
+  // well, the way the keys overlay's does — pressed a second time it would
+  // otherwise be the one key on the window that does nothing at all.
+  { when: 'checking', press: 'escape', does: 'close', says: 'put it away' },
+  { when: 'checking', press: 'ctrl+t', does: 'close', says: 'put it away' },
 
   // A list takes the keys that move through it and the one that takes what it
   // is on, and it takes ESC before she does: the list is what is being answered
@@ -223,6 +234,7 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'always', press: 'ctrl+p', does: 'models', says: 'what she thinks with' },
   { when: 'always', press: 'ctrl+g', does: 'who', says: 'who is on shift' },
   { when: 'always', press: 'ctrl+f', does: 'where', says: 'where she works' },
+  { when: 'always', press: 'ctrl+t', does: 'repo', says: 'how the work stands' },
   { when: 'always', press: 'ctrl+o', does: 'talks', says: 'an earlier conversation' },
   // The way out of one, as well as the way to start over: the conversation a
   // window opens with is off that list the moment it is left, because nothing
@@ -237,6 +249,7 @@ const KEYS: (Shortcut & { when: When })[] = [
 const HEADINGS: Record<When, string> = {
   up: 'While these are up',
   reading: 'While what she wrote is open',
+  checking: 'While how the work stands is up',
   picking: 'While a list is open',
   ticking: 'While a list is open',
   narrows: 'While a list is open',
@@ -286,6 +299,7 @@ const holds = (when: When, where: Where) =>
   when === 'always' ||
   (when === 'up' && where.up) ||
   (when === 'reading' && where.reading) ||
+  (when === 'checking' && where.checking) ||
   (when === 'picking' && where.picking) ||
   (when === 'ticking' && where.picking && where.ticking) ||
   (when === 'narrows' && where.picking && where.narrows) ||
@@ -315,6 +329,7 @@ const holds = (when: When, where: Where) =>
     !where.picking &&
     !where.path &&
     !where.reading &&
+    !where.checking &&
     !where.asked &&
     where.trouble === null) ||
   (when === 'asked' && answerable(where)) ||
@@ -338,6 +353,7 @@ export function keysNow(where: Where): Group[] {
   for (const when of [
     'up',
     'reading',
+    'checking',
     'path',
     'narrows',
     'narrowed',
@@ -434,6 +450,15 @@ export function readingKeys(): Shortcut[] {
   return KEYS.filter((one) => one.when === 'reading').map(({ when: _, ...key }) => key)
 }
 
+/**
+ * What the panel of how the work stands answers to, printed by the panel for
+ * the same reason the list and the report print their own: bringing the overlay
+ * up puts the panel away, so the two are never on screen together.
+ */
+export function checkingKeys(): Shortcut[] {
+  return KEYS.filter((one) => one.when === 'checking').map(({ when: _, ...key }) => key)
+}
+
 /** A key as it is worth printing: the terminal's names for them are not the
  * ones on the keyboard. */
 export function shownAs(press: string): string {
@@ -469,7 +494,7 @@ const HINT = `${shownAs('ctrl+k')} ${keyFor('keys').says}`
  * better.
  */
 export function cornerFor(where: Where): string {
-  if (where.up || where.reading) return ''
+  if (where.up || where.reading || where.checking) return ''
   const escapes = pressed({ name: 'escape' }, where)
   if (escapes) return `${shownAs('escape')} ${keyFor(escapes).says}`
   // Something she wrote is the one thing worth saying from an idle corner — it
