@@ -90,6 +90,23 @@ function said(trouble: unknown) {
 }
 
 /**
+ * Which conversation an event belongs to.
+ *
+ * Most of them say it on the event itself. A part announcing itself is the one
+ * that may not: the servers this talks to have moved the id onto the event
+ * since, but the SDK this is built against still describes `message.part.updated`
+ * as carrying nothing but the part — and the part has always said which session
+ * it is in. Looking in one place only, whichever place that is, is what lets a
+ * turn left running in the conversation being left go on narrating into the one
+ * that replaced it.
+ */
+function sessionOf(props: Record<string, unknown>) {
+  const part = props.part as { sessionID?: unknown } | undefined
+  const id = props.sessionID ?? part?.sessionID
+  return typeof id === 'string' ? id : null
+}
+
+/**
  * What is said when she is up again but the conversation is not: the server
  * that came up has no record of the session the last one went down under. She
  * is standing there and can be spoken to, so this is the kind that is put away
@@ -356,7 +373,8 @@ export class MaidSession implements Conversation {
       for await (const event of events) {
         if (this.spent(mine)) return
         const props = (event as { properties?: Record<string, unknown> }).properties ?? {}
-        if (props.sessionID && props.sessionID !== this.sessionId) continue
+        const from = sessionOf(props)
+        if (from && from !== this.sessionId) continue
         this.read(event as { type: string; properties: Record<string, never> })
       }
     } catch (trouble) {

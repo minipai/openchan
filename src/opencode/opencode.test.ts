@@ -669,11 +669,21 @@ test('a list the server will not give is not said as a folder with nothing in it
   expect(said()).toBe(before)
 })
 
-/** One tool part, as the server publishes it every time anything on it moves. */
-const toolPart = (call: string, state: Record<string, unknown>) => ({
+/** One tool part, as the server publishes it every time anything on it moves.
+ * The conversation it belongs to is named on the part and nowhere else, which
+ * is where the SDK this is built against puts it — and it is always named, so
+ * the one she opens in is what this says unless a test says otherwise. */
+const toolPart = (call: string, state: Record<string, unknown>, session = 'ses_1') => ({
   type: 'message.part.updated',
   properties: {
-    part: { id: `prt_${call}`, type: 'tool', callID: call, tool: 'bash', state: { input: { command: 'bun test' }, ...state } },
+    part: {
+      id: `prt_${call}`,
+      type: 'tool',
+      callID: call,
+      tool: 'bash',
+      sessionID: session,
+      state: { input: { command: 'bun test' }, ...state },
+    },
   },
 })
 
@@ -707,4 +717,37 @@ test('a tool that came back wrong is not said to have been done', async () => {
   // Still what she was at rather than what she did: a command refused at the
   // box comes back this way too, and it never ran at all.
   expect(whispers()[0]).toEqual({ kind: 'whispers', whisper: { text: 'running bun test', kind: 'failed' } })
+})
+
+test('a turn left running says nothing into the conversation that replaced it', async () => {
+  planted('ses_old', 'Where the needle was', 20_000, 'It was in the second haystack.')
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(toolPart('call_1', { status: 'running' }, 'ses_1'))
+  await until('said what she was doing', () => events.some((event) => event.kind === 'doing'))
+
+  // An earlier conversation taken while she is at it. The turn is deliberately
+  // left where it is — it belongs to the one being left, and it finishes there.
+  her.resume('ses_old')
+  await until('picked the old conversation up', () => events.some((event) => event.kind === 'picks-up'))
+  const after = events.length
+
+  // So it goes on: the tool finishes and she picks another one up, both of them
+  // in a conversation that is no longer on screen. The third belongs to the one
+  // she is in and is here to be waited for — events arrive in the order they
+  // were said, so by the time she has answered that one the other two have been
+  // past the guard and had their chance.
+  stream().say(toolPart('call_1', { status: 'completed', title: 'bun test', output: 'ok' }, 'ses_1'))
+  stream().say(toolPart('call_2', { status: 'running' }, 'ses_1'))
+  stream().say(toolPart('call_3', { status: 'running' }, 'ses_old'))
+  await until('said what she was doing in the one she is in', () =>
+    events.slice(after).some((event) => event.kind === 'doing'),
+  )
+
+  // And none of it reached the conversation that replaced it: the one word
+  // about what she is doing is the one that belongs here, and nothing is
+  // whispered about work done somewhere else.
+  const since = events.slice(after).map((event) => event.kind)
+  expect(since.filter((kind) => kind === 'doing')).toHaveLength(1)
+  expect(since).not.toContain('whispers')
 })
