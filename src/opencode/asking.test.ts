@@ -5,6 +5,7 @@ import { asking, questionsIn } from './asking'
 test('a question the server raises comes through as she asked it, less the empty parts', () => {
   const questions = questionsIn({
     id: 'q-1',
+    sessionID: 'ses_1',
     questions: [
       {
         question: 'Which first?',
@@ -104,13 +105,14 @@ test('a command that runs whatever it is handed is not offered a standing yes ei
   expect(asking('bash', { command: 'git status --short' }).standing?.scope).toBe('bash git')
 })
 
-test('a tool the server did not name is remembered under nothing', () => {
-  // Two tools it forgot to name would otherwise share one scope, and a yes to
-  // one of them would be a yes to the other.
-  expect(asking(undefined, { filepath: '/etc/hosts' }).standing).toBeUndefined()
-  expect(asking(undefined, { command: 'git status' }).standing).toBeUndefined()
+test('a tool the server left unnamed is remembered under nothing', () => {
+  // The name is what a standing yes is filed under. Two tools it named with
+  // nothing would otherwise share one scope, and a yes to one of them would be
+  // a yes to the other.
+  expect(asking('', { filepath: '/etc/hosts' }).standing).toBeUndefined()
+  expect(asking('', { command: 'git status' }).standing).toBeUndefined()
   // The question is still asked, in the words there are for it.
-  expect(asking(undefined, { filepath: '/etc/hosts' }).summary).toBe('/etc/hosts')
+  expect(asking('', { filepath: '/etc/hosts' }).summary).toBe('/etc/hosts')
 })
 
 test('a tool nothing is known about is offered no standing yes at all', () => {

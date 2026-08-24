@@ -3,10 +3,21 @@ import os from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
 import { createOpencodeClient, createOpencodeServer, type OpencodeClient } from '@opencode-ai/sdk'
-import { createOpencodeClient as createAnswering, type OpencodeClient as Answering } from '@opencode-ai/sdk/v2/client'
+import { createOpencodeClient as createLive, type OpencodeClient as Live } from '@opencode-ai/sdk/v2/client'
 import { briefFor, type Character } from '../her/cast'
 import type { BridgeEvent, Conversation, Model, Trouble } from '../between/protocol'
-import { asking, questionsIn, type AskedPermission, type AskedQuestion } from './asking'
+import { asking, questionsIn } from './asking'
+import {
+  sessionOf,
+  SPEAKS,
+  type AskedPermission,
+  type AskedQuestion,
+  type Heard,
+  type Message,
+  type Part,
+  type SaidMore,
+  type SessionTrouble,
+} from './wire'
 import { halves, modelsIn } from './models'
 import { justDid, narrate } from './narrate'
 import { readMood, splitReport } from './reply'
@@ -61,10 +72,6 @@ function freePort(): Promise<number> {
   })
 }
 
-/** What the server says went wrong, as it names it. Only the names matter here
- * — one of them is trouble of its own and the rest are this turn's business. */
-type SessionError = { name?: string; data?: { providerID?: string; message?: string } }
-
 /**
  * How many times the event stream may put itself back together before the
  * server behind it counts as gone.
@@ -90,35 +97,29 @@ function said(trouble: unknown) {
 }
 
 /**
- * Which turn a permission belongs to, wherever the server put it.
+ * The server that answered is not the one she was written against.
  *
- * The running server puts it under `tool`, beside the call that wants the
- * permission, and sends nothing beside `sessionID`. The SDK this is built
- * against says the opposite: `messageID` on the permission itself and no `tool`
- * at all. They have drifted the same way `asked` and `updated` have, so both
- * are read rather than picking a side — reading only the one the types describe
- * is reading a field that never arrives, and everything that rests on it
- * quietly stops happening.
- */
-function whoseTurn(asked: AskedPermission) {
-  return asked.tool?.messageID ?? asked.messageID
-}
-
-/**
- * Which conversation an event belongs to.
+ * Said out loud rather than shrugged at, because the way this goes wrong is
+ * that nothing looks wrong: an event whose shape has moved is read as an event
+ * with nothing in it, and she goes on smiling while whatever rested on that
+ * field silently stops happening.
  *
- * Most of them say it on the event itself. A part announcing itself is the one
- * that may not: the servers this talks to have moved the id onto the event
- * since, but the SDK this is built against still describes `message.part.updated`
- * as carrying nothing but the part — and the part has always said which session
- * it is in. Looking in one place only, whichever place that is, is what lets a
- * turn left running in the conversation being left go on narrating into the one
- * that replaced it.
+ * It does not say how bad it is, because it cannot know. On a version whose
+ * events happen not to have moved she is perfect; on one where the permission
+ * event is called something else she never asks and the turn waits for ever.
+ * All that is actually known here is that nobody has checked her against this
+ * one, so that is what it says.
+ *
+ * And it does not stop her, for the same reason: refusing to start over a
+ * patch release nobody has got round to reading would be the more expensive
+ * mistake of the two.
  */
-function sessionOf(props: Record<string, unknown>) {
-  const part = props.part as { sessionID?: unknown } | undefined
-  const id = props.sessionID ?? part?.sessionID
-  return typeof id === 'string' ? id : null
+function wrongVersion(running: string): Trouble {
+  return {
+    title: `She is talking to opencode ${running}`,
+    body: `She is written against ${SPEAKS}, and nobody has read her against this one. Where the events have moved between them she will not fail loudly — she will go on looking fine and quietly stop noticing things. Run her against opencode ${SPEAKS}, or have her checked against the one that is here.`,
+    gone: false,
+  }
 }
 
 /**
@@ -147,11 +148,12 @@ const FRESH_START: Trouble = {
  */
 export class MaidSession implements Conversation {
   private client: OpencodeClient | null = null
-  /** The newer client over the same server, for the one thing the older one
-   * cannot say: the answer to a question she asked with choices. Everything
-   * else stays on the older one — it is the one everything else is written
-   * against, and swapping the whole of it over is not this file's errand. */
-  private answering: Answering | null = null
+  /** The client whose types are the running server's, for the two things that
+   * have to be right about it: every event she is read by, and the answer to a
+   * question she asked with choices. Everything else stays on the older one —
+   * it is what the calls are written against, its endpoints are all still there
+   * on 1.18.21, and swapping the whole of it over is not this file's errand. */
+  private live: Live | null = null
   private server: Awaited<ReturnType<typeof createOpencodeServer>> | null = null
   private sessionId: string | null = null
   private closed = false
@@ -231,6 +233,10 @@ export class MaidSession implements Conversation {
    * waiting to be named after the first thing that is. Nothing, once it has
    * been — a conversation is named once, by how it started. */
   private unnamed: string | null = null
+  /** Whether something is in the way on screen. The window has one slot for it
+   * and the last thing raised is what is in it, so anything with no hurry about
+   * it asks first rather than painting over what is there. */
+  private troubled = false
   /** Whether a conversation was lost and it has not been said yet. Kept on her
    * rather than worked out inside the attempt: an attempt that opened the new
    * session and then died before announcing her leaves a session the next
@@ -334,17 +340,23 @@ export class MaidSession implements Conversation {
     // spends opening one there is no answer — an earlier conversation picked up
     // in that window would be opened and then written straight over by the
     // session this attempt goes on to open.
+    const live = createLive({ baseUrl: started.url, directory: this.folder })
     this.client = client
-    this.answering = createAnswering({ baseUrl: started.url, directory: this.folder })
+    this.live = live
 
     // Listening is waited for rather than left running, and she is only
     // announced once it has taken: whoever was waiting to speak to her speaks
     // the moment this lands, and a prompt sent before the stream is open loses
     // the front of her answer.
-    const stream = await client.event.subscribe({
-      signal: stopListening.signal,
-      sseMaxRetryAttempts: RECONNECTS,
-    })
+    //
+    // Over the newer client, which is the whole of what makes the events below
+    // readable: it is the same `/event` on the same server, and the difference
+    // is only that what comes off it arrives shaped the way the server actually
+    // sends it.
+    const stream = await live.event.subscribe(
+      {},
+      { signal: stopListening.signal, sseMaxRetryAttempts: RECONNECTS },
+    )
     if (this.spent(mine)) return drop()
     void this.listen(stream.stream, mine)
     // Said before she is announced rather than after: what was said to her
@@ -372,6 +384,21 @@ export class MaidSession implements Conversation {
     // will not say — not being able to offer the old conversations is no reason
     // to say she never woke up.
     await this.tellTalks(client, mine)
+
+    // And last of all, which opencode actually answered.
+    //
+    // Last for two reasons. It is a standing fact rather than news — nothing
+    // about this minute — so it waits behind everything that has to happen for
+    // her to be usable, and behind everything that could hang: a route that
+    // accepts the connection and never answers would otherwise take the model
+    // list and the old conversations down with it, and neither of them would
+    // say why. And it is not said at all over a note that is already up, for
+    // the same reason: whatever is on that one screen slot happened just now
+    // and to somebody, and this did not.
+    const health = await live.global.health().catch(() => null)
+    if (this.spent(mine) || this.troubled) return
+    const running = health?.data?.version
+    if (running && running !== SPEAKS) this.raise(wrongVersion(running))
   }
 
   /**
@@ -404,23 +431,21 @@ export class MaidSession implements Conversation {
   }
 
   /** Every event the server has, filtered down to this conversation. */
-  private async listen(events: AsyncIterable<unknown>, mine: number) {
+  private async listen(events: AsyncIterable<Heard>, mine: number) {
     try {
       for await (const heard of events) {
         if (this.spent(mine)) return
-        const event = heard as { type: string; properties?: Record<string, unknown> }
-        const props = event.properties ?? {}
-        const from = sessionOf(props)
+        const from = sessionOf(heard)
         // Taken wherever it comes from: this is what makes a turn started here
         // recognisable, and the ones that matter most announce themselves in a
         // conversation she has already walked out of.
-        if (event.type === 'message.updated') this.readMessage(props.info)
+        if (heard.type === 'message.updated') this.readMessage(heard.properties.info)
         if (from && from !== this.sessionId) {
-          if (event.type === 'session.idle') this.ended = from
-          this.turnDown(from, event.type, props)
+          if (heard.type === 'session.idle') this.ended = from
+          this.turnDown(from, heard)
           continue
         }
-        this.read(heard as { type: string; properties: Record<string, never> })
+        this.read(heard)
       }
     } catch (trouble) {
       return this.dropped(mine, said(trouble))
@@ -446,27 +471,27 @@ export class MaidSession implements Conversation {
 
   /** Something in the way, on its way to the screen. */
   private raise(trouble: Trouble | null) {
+    this.troubled = trouble !== null
     this.onEvent({ kind: 'trouble', trouble })
   }
 
-  private read(event: { type: string; properties: Record<string, never> }) {
-    const props = event.properties as Record<string, unknown>
-    switch (event.type) {
+  /** Anything else the stream carries is somebody else's business, and there is
+   * more of it than there is of this — the union it is read through is not even
+   * the whole of what arrives. */
+  private read(heard: Heard) {
+    switch (heard.type) {
       case 'message.part.updated':
-        return this.readPart(props.part as Record<string, unknown>)
+        return this.readPart(heard.properties.part)
       case 'message.part.delta':
-        return this.readDelta(props as { partID: string; field: string; delta: string })
-      // The running server says `asked`; the SDK's own types say `updated`.
-      // They drift, so both are answered rather than picking a side.
+        return this.readDelta(heard.properties)
       case 'permission.asked':
-      case 'permission.updated':
-        return this.readPermission(props as unknown as AskedPermission)
+        return this.readPermission(heard.properties)
       case 'question.asked':
-        return this.readQuestion(props as unknown as AskedQuestion)
+        return this.readQuestion(heard.properties)
       case 'session.idle':
         return this.finish()
       case 'session.error':
-        return this.readError(props.error as SessionError | undefined)
+        return this.readError(heard.properties.error)
     }
   }
 
@@ -475,30 +500,26 @@ export class MaidSession implements Conversation {
    * deltas was her speaking rather than thinking, and the one that says she has
    * picked up a tool.
    */
-  private readPart(part: Record<string, unknown>) {
-    const id = part.id as string
-    const kind = part.type as string
-    const known = this.parts.get(id)
-    this.parts.set(id, { kind, held: known?.held ?? '' })
+  private readPart(part: Part) {
+    const known = this.parts.get(part.id)
+    this.parts.set(part.id, { kind: part.type, held: known?.held ?? '' })
 
-    if (kind === 'text' && known?.held) {
-      this.speak(id, known.held)
-      this.parts.set(id, { kind, held: '' })
+    if (part.type === 'text' && known?.held) {
+      this.speak(part.id, known.held)
+      this.parts.set(part.id, { kind: part.type, held: '' })
     }
 
-    if (kind === 'tool') {
-      const state = part.state as { status: string; input?: Record<string, unknown> }
-      const call = part.callID as string
-      const tool = part.tool as string
-      if (state?.status === 'running' && !this.narrated.has(call)) {
+    if (part.type === 'tool') {
+      const { state, callID: call, tool } = part
+      if (state.status === 'running' && !this.narrated.has(call)) {
         this.narrated.add(call)
-        this.onEvent({ kind: 'doing', label: narrate(tool, state.input ?? {}) })
+        this.onEvent({ kind: 'doing', label: narrate(tool, state.input) })
       }
       // Put down, one way or the other. It is worth a word of its own because
       // the 地の文 cannot say it: that line says what she is doing and is still
       // saying it when she has stopped, and whether a command came back wrong
       // is the half of a turn she does not always mention out loud.
-      const over = state?.status === 'completed' || state?.status === 'error'
+      const over = state.status === 'completed' || state.status === 'error'
       if (over && !this.putDown.has(call)) {
         this.putDown.add(call)
         // One that did not go through is said in the words it was being done
@@ -509,8 +530,8 @@ export class MaidSession implements Conversation {
         this.onEvent({
           kind: 'whispers',
           whisper: wrong
-            ? { text: narrate(tool, state.input ?? {}), kind: 'failed' }
-            : { text: justDid(tool, state.input ?? {}), kind: 'did' },
+            ? { text: narrate(tool, state.input), kind: 'failed' }
+            : { text: justDid(tool, state.input), kind: 'did' },
         })
       }
     }
@@ -521,7 +542,7 @@ export class MaidSession implements Conversation {
    * to say: a part not yet announced is held, because the announcement is what
    * tells thinking apart from speech.
    */
-  private readDelta({ partID, field, delta }: { partID: string; field: string; delta: string }) {
+  private readDelta({ partID, field, delta }: SaidMore) {
     if (field !== 'text') return
     const part = this.parts.get(partID)
     if (!part) return void this.parts.set(partID, { kind: 'unknown', held: delta })
@@ -558,15 +579,11 @@ export class MaidSession implements Conversation {
 
   private readPermission(asked: AskedPermission) {
     this.asked.add(asked.id)
-    // Whatever the server called it — and nothing, where it called it nothing:
-    // the box can say "a tool", but nothing can be remembered under a name that
-    // is not one.
-    const named = asked.permission ?? asked.type ?? asked.title
     this.onEvent({
       kind: 'ask-permission',
       askId: asked.id,
-      toolName: named ?? 'a tool',
-      ...asking(named, asked.metadata ?? {}),
+      toolName: asked.permission,
+      ...asking(asked.permission, asked.metadata),
     })
   }
 
@@ -582,13 +599,13 @@ export class MaidSession implements Conversation {
    * it is put where the input was, with the thing to go and do about it. She is
    * still standing there, and picking another model is the shorter way out.
    */
-  private readError(error?: SessionError) {
+  private readError(error?: SessionTrouble) {
     if (error?.name !== 'ProviderAuthError') return this.finish(JSON.stringify(error))
-    const provider = error.data?.providerID ?? 'that provider'
+    const { providerID: provider, message } = error.data
     this.raise({
       title: `She is not signed in to ${provider}`,
       body: `opencode has no credentials for ${provider}, so nothing can be run on it. Connect it in opencode, or have her think with a model from somewhere else.`,
-      detail: error.data?.message,
+      detail: message,
       gone: false,
     })
     this.finish()
@@ -669,15 +686,15 @@ export class MaidSession implements Conversation {
   }
 
   choose(askId: string, answers: string[][]) {
-    if (!this.answering || !this.choosing.delete(askId)) return
-    void this.answering.question.reply({ requestID: askId, answers })
+    if (!this.live || !this.choosing.delete(askId)) return
+    void this.live.question.reply({ requestID: askId, answers })
   }
 
   /** Rejected, in the server's word for it: the tool comes back to her as
    * refused rather than answered, and she goes on from there. */
   decline(askId: string) {
-    if (!this.answering || !this.choosing.delete(askId)) return
-    void this.answering.question.reject({ requestID: askId })
+    if (!this.live || !this.choosing.delete(askId)) return
+    void this.live.question.reject({ requestID: askId })
   }
 
   /**
@@ -830,11 +847,10 @@ export class MaidSession implements Conversation {
    * becomes recognisable, and it is the only place it can be. The link is the
    * sentence it is answering, which was sent under an id of this window's.
    */
-  private readMessage(info: unknown) {
-    const message = info as { id?: unknown; role?: unknown; parentID?: unknown } | undefined
-    if (message?.role !== 'assistant') return
-    if (typeof message.parentID !== 'string' || !this.sent.has(message.parentID)) return
-    if (typeof message.id === 'string') this.hers.add(message.id)
+  private readMessage(info: Message) {
+    if (info.role !== 'assistant') return
+    if (!this.sent.has(info.parentID)) return
+    this.hers.add(info.id)
   }
 
   /**
@@ -857,18 +873,20 @@ export class MaidSession implements Conversation {
    * grew out of. Anything else is somebody else's opencode working in the same
    * folder, and theirs to answer.
    */
-  private turnDown(from: string, type: string, props: Record<string, unknown>) {
-    switch (type) {
-      case 'permission.asked':
-      case 'permission.updated': {
-        const asked = props as unknown as AskedPermission
-        if (this.hers.has(whoseTurn(asked) ?? '')) this.refuse(from, asked.id)
+  private turnDown(from: string, heard: Heard) {
+    switch (heard.type) {
+      case 'permission.asked': {
+        // The turn asking is under `tool`, beside the call that wants the
+        // permission. One raised any other way says nothing about whose turn it
+        // is, and there is nothing to go on.
+        const asked = heard.properties
+        if (this.hers.has(asked.tool?.messageID ?? '')) this.refuse(from, asked.id)
         return
       }
       case 'question.asked': {
-        const asked = props as unknown as AskedQuestion
         // A question raised by the tool she asks with says which turn asked it.
         // One raised any other way says nothing, and there is nothing to go on.
+        const asked = heard.properties
         if (this.hers.has(asked.tool?.messageID ?? '')) this.refuseChoice(asked.id)
       }
     }
@@ -888,7 +906,7 @@ export class MaidSession implements Conversation {
    * as and nothing else: the newer client answers a question wherever it was
    * asked. */
   private refuseChoice(askId: string) {
-    void this.answering?.question.reject({ requestID: askId }).catch(() => null)
+    void this.live?.question.reject({ requestID: askId }).catch(() => null)
   }
 
   /**
@@ -964,7 +982,7 @@ export class MaidSession implements Conversation {
     this.stopListening.abort()
     this.server?.close()
     this.client = null
-    this.answering = null
+    this.live = null
     this.server = null
     this.working = false
     this.said = ''
