@@ -85,16 +85,81 @@ function freePort(): Promise<number> {
 const RECONNECTS = 3
 
 /**
- * What came back, as much of it as is worth reading: an error's message rather
- * than the stack under it, and on one line.
+ * How long the line under a trouble note may run, and how much of it the log
+ * reference beside the message may take.
  *
- * Cut, because a server that fell over prints everything it had to say on the
- * way down — and the note it lands in grows the dialogue box upward, so a long
- * enough one pushes her line and the frame's own top off the top of the screen.
+ * The note grows the dialogue box upward, so a line long enough pushes her own
+ * line and the frame's top off the screen — and a server that fell over prints
+ * everything it had to say on the way down. The reference is an aside and is
+ * held to an aside's worth: a uuid is thirty-six, and anything past forty is
+ * not a reference anybody is going to go and look up.
  */
-function said(trouble: unknown) {
-  const words = (trouble instanceof Error ? trouble.message : String(trouble)).replace(/\s+/g, ' ').trim()
-  return words.length > 200 ? `${words.slice(0, 200)}…` : words
+const LINE = 200
+const REFERENCE = 40
+
+/** On one line, and without the run of blank the server left around it. */
+const oneLine = (words: string) => words.replace(/\s+/g, ' ').trim()
+
+/**
+ * An error the server handed back, put into words — and the entry it left in
+ * the server's own log, where it left one.
+ *
+ * These are not Errors. The SDK parses the body of a refusal and hands it over
+ * untouched, so what arrives is the body itself — an object. Printed rather
+ * than read, that is where "[object Object]" came from.
+ *
+ * There is no one shape to read, because two layers raise them. The server's
+ * own refusals are `{ name, data: { message } }`; the ones the HTTP layer under
+ * it raises are `{ _tag, message }`, with the message at the top and no `data`
+ * at all. So the message is looked for in both places — and where there is
+ * none, which is the whole of what a bare `BadRequest` sends, the name it came
+ * under is said instead. That is thin, but it names what happened, and it is a
+ * thing that can be looked up, which the body printed whole never was.
+ */
+function sentBack(trouble: unknown) {
+  if (typeof trouble !== 'object' || trouble === null) {
+    return { words: trouble == null ? '' : String(trouble), ref: '' }
+  }
+  const body = trouble as {
+    name?: unknown
+    _tag?: unknown
+    message?: unknown
+    data?: { message?: unknown; ref?: unknown }
+  }
+  const ref = typeof body.data?.ref === 'string' ? body.data.ref : ''
+  if (typeof body.data?.message === 'string') return { words: body.data.message, ref }
+  if (typeof body.message === 'string') return { words: body.message, ref }
+  if (typeof body.name === 'string') return { words: body.name, ref }
+  return { words: typeof body._tag === 'string' ? body._tag : '', ref }
+}
+
+/**
+ * What came back, as much of it as is worth reading: an error's message rather
+ * than the stack under it, on one line, and short enough to leave her on the
+ * screen.
+ *
+ * Two unrelated things arrive here. A thrown Error, whose message is the whole
+ * of it — and a refusal from the server, which is an object and has to be read
+ * rather than printed. Something is always said: a rejection with nothing in it
+ * is still worth telling apart from a note with no line under it at all.
+ *
+ * A refusal the server could not explain carries a `ref` as well, the entry it
+ * wrote about itself, and that is worth keeping: without it the line sends the
+ * master to read the log without saying which line of it. It is kept whole or
+ * not at all — half a reference number points at the wrong entry, or at none —
+ * so it is given its room before the message is cut rather than added after.
+ * Which only holds while it is a reference and not a second error message, so
+ * one too long to sit beside what went wrong is dropped rather than made to
+ * fit: room reserved for something unbounded is no reservation at all.
+ */
+export function said(trouble: unknown) {
+  const came = trouble instanceof Error ? { words: trouble.message, ref: '' } : sentBack(trouble)
+  const words = oneLine(came.words)
+  const ref = oneLine(came.ref)
+  const logged = ref && ref.length <= REFERENCE ? ` (logged as ${ref})` : ''
+  const room = LINE - logged.length
+  if (!words) return `no reason given${logged}`
+  return `${words.length > room ? `${words.slice(0, room)}…` : words}${logged}`
 }
 
 /**

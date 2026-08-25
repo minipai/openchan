@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import type {
+  EffectHttpApiErrorBadRequest,
+  InvalidRequestError,
+  NotFoundError,
+  UnknownError,
+} from '@opencode-ai/sdk/v2/types'
 import type { BridgeEvent } from '../between/protocol'
 import type { Heard } from './wire'
 
@@ -50,8 +56,22 @@ let sessions = 0
 let wontStart = false
 /** Whether the next stream asked for cannot be opened. */
 let wontListen = false
-/** What the next look-up of a session answers with, instead of looking. */
-let lookupSays: { name: string } | null = null
+/**
+ * A refusal, as the schema the running server serves types it.
+ *
+ * Asking for a conversation can be turned down in two unrelated shapes, because
+ * the server's own layer and the HTTP layer under it raise different things:
+ * `{ name, data }` from one, `{ _tag }` from the other, and a 500 carries no
+ * message at all. The line under a trouble note is the only place any of this
+ * is ever seen, so it is written as the types — the compiler is then the one
+ * saying the server sends this, not the test.
+ */
+type Refusal = NotFoundError | UnknownError | InvalidRequestError | EffectHttpApiErrorBadRequest
+
+/** What the next look-up of a session answers with, instead of looking. A whole
+ * body rather than a bare name: what the window makes of one is the point of
+ * some of these. */
+let lookupSays: Refusal | { name: 'NotFoundError' } | null = null
 /** Whether the next read of a conversation's messages throws rather than
  * answering — a server that is not there rejects rather than replying. */
 let wontRead = false
@@ -251,7 +271,7 @@ mock.module('@opencode-ai/sdk/v2/client', () => ({
   }),
 }))
 
-import { MaidSession } from './opencode'
+import { MaidSession, said } from './opencode'
 import { SPEAKS } from './wire'
 import type { PastMessage, PastSession } from './talks'
 import { CAST } from '../her/cast'
@@ -534,12 +554,16 @@ test('a server that cannot say whether it knows the conversation has failed, not
   her.ask('my secret word is pineapple')
 
   await lose()
-  lookupSays = { name: 'InternalError' }
+  lookupSays = { name: 'UnknownError', data: { message: 'the session store is locked', ref: 'err_7c1' } }
   await retry()
 
   // Said as the attempt failing, which can be tried again — and the next try
   // finds the conversation where it was.
   expect(troubles().at(-1)?.gone).toBe(true)
+  // In the words it refused in, and with the entry it left in its own log. A
+  // refusal is an object, so this line used to read "[object Object]" whatever
+  // the server had actually said.
+  expect(troubles().at(-1)?.detail).toBe('the session store is locked (logged as err_7c1)')
   await retry()
   her.ask('what was my secret word?')
 
@@ -547,10 +571,92 @@ test('a server that cannot say whether it knows the conversation has failed, not
   expect(troubles().at(-1)).toBeNull()
 })
 
+test('a refusal is said in the words it came back in, not printed as an object', () => {
+  // Where a thrown Error is all message, a refusal keeps its message inside the
+  // body — and printing that body is where "[object Object]" came from.
+  expect(said(new Error('opencode is not installed'))).toBe('opencode is not installed')
+
+  const missing: Refusal = { name: 'NotFoundError', data: { message: 'Session ses_9 not found' } }
+  expect(said(missing)).toBe('Session ses_9 not found')
+
+  // And the layer under it puts the message at the top, with no `data` at all.
+  const malformed: Refusal = { _tag: 'InvalidRequestError', message: 'id must be a string', field: 'id' }
+  expect(said(malformed)).toBe('id must be a string')
+})
+
+test('a refusal that carries no message still names what happened', () => {
+  // A bad request the HTTP layer turns down sends nothing but what it is
+  // called. That is thin, but it is a thing to go and look up, which
+  // "[object Object]" is not.
+  const refused: Refusal = { _tag: 'BadRequest' }
+  expect(said(refused)).toBe('BadRequest')
+
+  // And nothing at all — a rejection with no reason in it — is said as that,
+  // rather than as the word "undefined" or as a note with a blank line under.
+  expect(said(undefined)).toBe('no reason given')
+  expect(said(new Error())).toBe('no reason given')
+})
+
+test('a refusal the server could not explain says where it wrote it down', () => {
+  // Without the reference the line says to go and read the log without saying
+  // which line of it.
+  const fellOver: Refusal = { name: 'UnknownError', data: { message: 'read ECONNRESET', ref: 'err_9f2' } }
+  expect(said(fellOver)).toBe('read ECONNRESET (logged as err_9f2)')
+
+  // And it is given room ahead of the cut rather than added after it: half a
+  // reference number points at the wrong entry, or at none, and a line that
+  // grew past the limit would push her own off the top of the screen.
+  const spilled: Refusal = { name: 'UnknownError', data: { message: 'z'.repeat(500), ref: 'err_9f2' } }
+  const cut = said(spilled)
+  expect(cut).toBe(`${'z'.repeat(200 - ' (logged as err_9f2)'.length)}… (logged as err_9f2)`)
+  expect(cut.length).toBeLessThanOrEqual(201)
+})
+
+test('a reference too long to be a reference is dropped, not made to fit', () => {
+  // Reserving room only bounds the line while the thing being reserved for is
+  // itself bounded. A server that put a whole second error where the reference
+  // goes would otherwise have left no room at all — and asking for a negative
+  // slice of a string in JavaScript counts from its end, so the cut would have
+  // kept almost the entire message and then added the overlong reference after
+  // it: the exact line off the top of the screen the cut is there to stop.
+  const wrong: Refusal = { name: 'UnknownError', data: { message: 'w'.repeat(500), ref: 'e'.repeat(400) } }
+  const cut = said(wrong)
+  expect(cut).toBe(`${'w'.repeat(200)}…`)
+  expect(cut.length).toBeLessThanOrEqual(201)
+
+  // Including when there was no message to fall back on.
+  const nothing: Refusal = { name: 'UnknownError', data: { message: '', ref: 'e'.repeat(400) } }
+  expect(said(nothing)).toBe('no reason given')
+
+  // A reference the length of a uuid is still a reference and is still kept.
+  const uuid = '0d8f6a41-7c2e-4b19-9f30-15a6c8e2b7d4'
+  const long: Refusal = { name: 'UnknownError', data: { message: 'read ECONNRESET', ref: uuid } }
+  expect(said(long)).toBe(`read ECONNRESET (logged as ${uuid})`)
+
+  // And one the server wrapped across lines is still one line here.
+  const wrapped: Refusal = { name: 'UnknownError', data: { message: 'read ECONNRESET', ref: 'err\n 9f2' } }
+  expect(said(wrapped)).toBe('read ECONNRESET (logged as err 9f2)')
+})
+
+test('a refusal that runs long is cut, the same as a stack is', () => {
+  // A server that fell over sends everything it had to say on the way down, and
+  // the note it lands in grows the dialogue box upward off the top of the
+  // screen. The cut is over whatever came back, not only over thrown errors.
+  const spilled: Refusal = { name: 'NotFoundError', data: { message: 'x'.repeat(500) } }
+  expect(said(spilled)).toBe(`${'x'.repeat(200)}…`)
+  expect(said(new Error('y'.repeat(500)))).toBe(`${'y'.repeat(200)}…`)
+
+  // On one line, whichever side it came from: a stack is many lines, and the
+  // note has room for one.
+  expect(said(new Error('fell over\n    at open (opencode.ts:1)'))).toBe('fell over at open (opencode.ts:1)')
+})
+
 test('a server that never came up is simply tried again, not started over', async () => {
   wontStart = true
   const { her, retry, troubles } = await opened()
   expect(troubles().at(-1)?.gone).toBe(true)
+  // What it fell over on, and not the stack under it.
+  expect(troubles().at(-1)?.detail).toBe('opencode is not installed')
 
   await retry()
   her.ask('are you there?')
