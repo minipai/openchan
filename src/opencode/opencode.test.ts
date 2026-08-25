@@ -315,6 +315,41 @@ const herSideOf = (to: number, hers: string, session = 'ses_1') => sideOf(prompt
  */
 const theirSideOf = (theirs: string, session: string) => sideOf('msg_they_sent', theirs, session)
 
+/**
+ * What the server counted for one of her turns. Every field of it can be left
+ * out, because every one of them is one a server may simply not keep — and
+ * surviving that is the whole of what the counts on this side are for.
+ */
+type Counted = {
+  cost?: number
+  tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } }
+}
+
+/**
+ * The same event with what the server counted written in place of what it
+ * counts here — as little of it as the test says.
+ *
+ * The counts are taken off rather than written over, so that a server keeping
+ * one pile and not another can be stood in for. Cast for that reason and no
+ * other: the generated types are the SDK's promise about the server they came
+ * from, and this is standing in for one that keeps a different set.
+ */
+const costing = (heard: Heard, counted: Counted): Heard => told(heard, counted, NOW + 1)
+
+/**
+ * The same event as the server sends it while the turn is still running: the
+ * counts are the placeholders it opens a turn with, and there is no time it
+ * finished at, because it has not.
+ */
+const midTurn = (heard: Heard, counted: Counted): Heard => told(heard, counted, undefined)
+
+const told = (heard: Heard, counted: Counted, completed: number | undefined): Heard => {
+  const props = heard.properties as { info: Record<string, unknown> }
+  const { cost: _cost, tokens: _tokens, ...rest } = props.info
+  const time = { created: NOW, ...(completed === undefined ? {} : { completed }) }
+  return { ...heard, properties: { ...props, info: { ...rest, ...counted, time } } } as Heard
+}
+
 /** One assistant message announcing itself, whichever window's turn it belongs
  * to: the sentence it answers is the only thing that says. */
 const sideOf = (answering: string, id: string, session: string) => ({
@@ -1184,4 +1219,170 @@ test('a turn left running says nothing into the conversation that replaced it', 
   const since = events.slice(after).map((event) => event.kind)
   expect(since.filter((kind) => kind === 'doing')).toHaveLength(1)
   expect(since).not.toContain('whispers')
+})
+
+/** What she is counted to have spent, as it stands after the last thing said
+ * about it. */
+const spent = (events: BridgeEvent[]) =>
+  events.filter((event) => event.kind === 'spends').at(-1)?.spend
+
+test('what a turn cost is said out loud, in the piles the server counted it in', async () => {
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(
+    costing(herSideOf(0, 'msg_hers'), {
+      cost: 0.02,
+      tokens: { input: 100, output: 20, reasoning: 5, cache: { read: 7, write: 3 } },
+    }),
+  )
+  await until('counted what it cost', () => spent(events) !== undefined)
+
+  expect(spent(events)).toEqual({
+    turns: 1,
+    cost: 0.02,
+    input: 100,
+    output: 20,
+    reasoning: 5,
+    cacheRead: 7,
+    cacheWrite: 3,
+  })
+})
+
+test('a turn that announces itself again is counted once rather than twice', async () => {
+  // A message says so every time anything on it moves, and what it carries each
+  // time is the whole of that turn rather than the piece that just happened.
+  // Added up as they arrive, one turn would be counted once per announcement.
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(costing(herSideOf(0, 'msg_hers'), { tokens: { input: 40 } }))
+  await until('counted the first word of it', () => spent(events)?.input === 40)
+
+  stream().say(costing(herSideOf(0, 'msg_hers'), { tokens: { input: 900 } }))
+  await until('counted the rest of it', () => spent(events)?.input === 900)
+
+  expect(spent(events)).toEqual({ turns: 1, input: 900 })
+})
+
+test('two turns of hers are added together', async () => {
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  her.ask('and what did the second one say?')
+  stream().say(costing(herSideOf(0, 'msg_hers_1'), { cost: 0.01, tokens: { input: 100 } }))
+  stream().say(costing(herSideOf(1, 'msg_hers_2'), { cost: 0.03, tokens: { input: 250 } }))
+  await until('counted both', () => spent(events)?.turns === 2)
+
+  expect(spent(events)).toEqual({ turns: 2, cost: 0.04, input: 350 })
+})
+
+test("somebody else's turn in the same folder is not counted into hers", async () => {
+  // Every turn on the server announces itself down this stream. What tells them
+  // apart is the sentence each answers, and this window minted the id only one
+  // of them grew out of.
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(costing(herSideOf(0, 'msg_hers'), { tokens: { input: 100 } }))
+  await until('counted her own', () => spent(events)?.turns === 1)
+
+  stream().say(costing(theirSideOf('msg_theirs', 'ses_theirs'), { tokens: { input: 90_000 } }))
+  stream().say(costing(herSideOf(0, 'msg_hers'), { tokens: { input: 120 } }))
+  await until('counted the rest of hers', () => spent(events)?.input === 120)
+
+  expect(spent(events)).toEqual({ turns: 1, input: 120 })
+})
+
+test('a count the server does not keep is left out rather than read as a nought', async () => {
+  // The one thing a panel of numbers must not do: turn a count nobody took into
+  // a count of nothing. Read as a nought it would be added into the total and
+  // printed as a number somebody had, and nothing would look wrong.
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(costing(herSideOf(0, 'msg_hers'), { tokens: { input: 100, output: 20 } }))
+  await until('counted what there was', () => spent(events) !== undefined)
+
+  expect(spent(events)).toEqual({ turns: 1, input: 100, output: 20 })
+})
+
+test('a turn the server counted nothing at all about is still a turn', async () => {
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(costing(herSideOf(0, 'msg_hers'), {}))
+  await until('counted the turn', () => spent(events) !== undefined)
+
+  expect(spent(events)).toEqual({ turns: 1 })
+})
+
+test('what she has spent is not unspent by walking out of the conversation', async () => {
+  // It is what this window has spent, not what is in one conversation: leaving
+  // one does not give the money back, and a panel that read "nothing" the
+  // moment a new conversation was started would be lying with a number.
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(costing(herSideOf(0, 'msg_hers'), { cost: 0.05, tokens: { input: 100 } }))
+  await until('counted the first turn', () => spent(events)?.turns === 1)
+
+  her.begin()
+  await until('opened a new conversation', () => events.some((event) => event.kind === 'picks-up'))
+  her.ask('start again')
+  stream().say(costing(herSideOf(1, 'msg_hers_2', 'ses_2'), { cost: 0.02, tokens: { input: 30 } }))
+  await until('counted the second turn', () => spent(events)?.turns === 2)
+
+  expect(spent(events)).toEqual({ turns: 2, cost: 0.07, input: 130 })
+})
+
+test('a pile counted for some of her turns and not others is not a total', async () => {
+  // She is moved onto a model whose provider counts something the last one did
+  // not — or stops counting something it did. The turns are both hers and both
+  // are in the count, so a sum of the one that carried the pile, printed beside
+  // a count of two, would be a total that is not the total: understated, with
+  // nothing on screen saying so. It goes out as nothing instead.
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  her.ask('and what did the second one say?')
+  stream().say(costing(herSideOf(0, 'msg_hers_1'), { cost: 0.05, tokens: { input: 100 } }))
+  await until('counted the first turn', () => spent(events)?.turns === 1)
+  expect(spent(events)).toEqual({ turns: 1, cost: 0.05, input: 100 })
+
+  stream().say(costing(herSideOf(1, 'msg_hers_2'), { tokens: { input: 250 } }))
+  await until('counted the second turn', () => spent(events)?.turns === 2)
+
+  // What both of them carried is still added up. What only one of them carried
+  // is gone, because there is no honest number to print for it.
+  expect(spent(events)).toEqual({ turns: 2, input: 350 })
+})
+
+test('a turn still running is not counted until the server says it is over', async () => {
+  // A turn announces itself the moment it starts and the server fills that
+  // first announcement with noughts, posting what it really cost seconds
+  // later. Taken in as it arrives it would be a turn counted with nothing
+  // spent on it — and on the second turn, a count of two beside a total
+  // covering one. Nothing further down can catch that: the noughts are on the
+  // wire as real numbers, and a counted nought is a number here on purpose.
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(midTurn(herSideOf(0, 'msg_hers'), { cost: 0, tokens: { input: 0, output: 0 } }))
+  stream().say(wantsToRun('ask-1', 'msg_hers'))
+  await until('got as far as asking to run something', () => events.some((one) => one.kind === 'ask-permission'))
+
+  // Nothing said about it at all — not a turn with nothing on it.
+  expect(spent(events)).toBeUndefined()
+
+  stream().say(costing(herSideOf(0, 'msg_hers'), { cost: 0.01, tokens: { input: 13_486, output: 64 } }))
+  await until('counted it once it was over', () => spent(events) !== undefined)
+
+  expect(spent(events)).toEqual({ turns: 1, cost: 0.01, input: 13_486, output: 64 })
+})
+
+test('a turn that starts while an earlier one is counted does not move the total', async () => {
+  const { her, events, stream } = await opened()
+  her.ask('go and read everything in here')
+  stream().say(costing(herSideOf(0, 'msg_hers_1'), { tokens: { input: 100 } }))
+  await until('counted the first turn', () => spent(events)?.turns === 1)
+
+  // The second turn opens with the placeholders. One turn is what has been
+  // counted, and one turn is what the panel goes on saying.
+  her.ask('and what did the second one say?')
+  stream().say(midTurn(herSideOf(1, 'msg_hers_2'), { tokens: { input: 0 } }))
+  await until('let the second turn start', () => prompted.length === 2)
+
+  expect(spent(events)).toEqual({ turns: 1, input: 100 })
 })

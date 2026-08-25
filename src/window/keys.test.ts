@@ -10,6 +10,7 @@ import {
   pressed,
   readingKeys,
   shownAs,
+  spendingKeys,
   takes,
   type Where,
 } from './keys'
@@ -24,6 +25,7 @@ const idle: Where = {
   path: false,
   reading: false,
   checking: false,
+  spending: false,
   meeting: false,
   hasReport: false,
   said: false,
@@ -55,6 +57,8 @@ const wrote = (where: Where): Where => ({ ...where, hasReport: true })
 const reading = (where: Where): Where => ({ ...where, hasReport: true, reading: true })
 /** How the work stands in her folder, on screen over the scene. */
 const checking = (where: Where): Where => ({ ...where, checking: true })
+/** …and what she has spent, which is over it the same way. */
+const spending = (where: Where): Where => ({ ...where, spending: true })
 /** …and the page of the words she is played from, which is over it the same
  * way. */
 const meeting = (where: Where): Where => ({ ...where, meeting: true })
@@ -208,8 +212,9 @@ test('the list does not answer her question for whoever is reading it', () => {
 test('nothing over the scene answers a question drawn behind it', () => {
   // All of them, because the hole belongs to how anything over the scene shares
   // the keyboard with the box rather than to any one page: these keys, what she
-  // wrote, how the work stands, who she is, a list, a path being typed into one.
-  for (const behind of [up, reading, checking, meeting, picking, typingPath]) {
+  // wrote, how the work stands, what she has spent, who she is, a list, a path
+  // being typed into one.
+  for (const behind of [up, reading, checking, spending, meeting, picking, typingPath]) {
     expect(pressed(press('y'), behind(narrow))).toBeNull()
     expect(pressed(press('n'), behind(narrow))).toBeNull()
     expect(pressed(press('a'), behind(narrow))).toBeNull()
@@ -578,6 +583,34 @@ test('how the work stands is a glance: putting it away is the whole of it', () =
   expect(cornerFor(checking(idle))).toBe('')
 })
 
+test('what she has spent is a glance too: putting it away is the whole of it', () => {
+  // The same two keys and the same one thing to do as the panel it was written
+  // after: ESC, and the key that opened it.
+  expect(spendingKeys().map((key) => key.does)).toEqual(['close', 'close'])
+  expect(pressed(press('escape'), spending(idle))).toBe('close')
+  expect(pressed(press('ctrl+u'), spending(idle))).toBe('close')
+  // Opened from anywhere, since nothing about it is hers to be interrupted: she
+  // can be working, waiting to be allowed something, or not there at all.
+  for (const where of [idle, working, asked, gone]) {
+    expect(pressed(press('ctrl+u'), where)).toBe('spend')
+  }
+  // What is on screen is what ESC answers: the panel goes away before she is
+  // stopped.
+  expect(pressed(press('escape'), spending(working))).toBe('close')
+  // And it takes the keyboard the way the rest of them do: the line underneath
+  // is blurred behind it, and the corner says nothing the panel is not already
+  // saying better.
+  expect(pressed(press('return'), spending(idle))).toBeNull()
+  expect(offered(spending(idle))).not.toContain('send')
+  expect(cornerFor(spending(idle))).toBe('')
+})
+
+test('the key that opens what she has spent is the window\'s rather than the line\'s', () => {
+  // Ctrl-U rubs out the front of a line for the input underneath, so the window
+  // has to be the one that takes it or the panel opens and the sentence goes.
+  expect(takes('spend')).toBe(true)
+})
+
 test('who she is is a page rather than a glance: it scrolls, and it is put away', () => {
   // The arrows are the page's own, the way an open report's are — listed here
   // and handed on rather than taken.
@@ -646,6 +679,7 @@ const EVERY_PRESS = [
   'ctrl+c',
   'ctrl+s',
   'ctrl+d',
+  'ctrl+u',
 ]
 const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
   // A list and a path being typed are one thing over the scene in two states:
@@ -670,13 +704,14 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
         ].flatMap((written) =>
           [false, true].flatMap((said) =>
             [false, true].flatMap((wardrobe) =>
-            // Only ever one thing over the scene, so the panel of how the
-            // work stands and the page of who she is are two states of one
-            // axis rather than two flags of their own.
+            // Only ever one thing over the scene, so the two glance panels and
+            // the page of who she is are states of one axis rather than a flag
+            // each of their own.
             [
-              { checking: false, meeting: false },
-              { checking: true, meeting: false },
-              { checking: false, meeting: true },
+              { checking: false, spending: false, meeting: false },
+              { checking: true, spending: false, meeting: false },
+              { checking: false, spending: true, meeting: false },
+              { checking: false, spending: false, meeting: true },
             ].flatMap((glance) =>
               (['stuck', 'gone', null] as const).map((trouble) => ({
                 up,

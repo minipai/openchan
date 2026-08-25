@@ -1,6 +1,7 @@
 import { settled, type Work } from '../../between/repo'
 import { fitted, shortened } from '../../between/folder'
 import { checkingKeys, shownAs } from '../keys'
+import { cut } from './edge'
 import type { Palette } from '../theme'
 
 /** What the box says while git is still being asked, so that the panel opens
@@ -17,20 +18,6 @@ const NO_REPOSITORY = 'nothing kept in git here'
  * branch without writing the branch's own name, or its length, down. */
 export const branchLine = (branch: string | null, room: number) =>
   branch ? `on ${fitted(branch, room - 3)}` : 'not on a branch'
-
-/**
- * A line cut to the room there is for it, from the end.
- *
- * The other way round is the folder's: a path is worth its tail and is cut at
- * the front. A sentence is worth its front, and the counts are read left to
- * right — what a narrow terminal has to lose is the last pile, said so with the
- * mark rather than by the line simply stopping.
- */
-const cut = (text: string, within: number) => {
-  const letters = [...text]
-  if (letters.length <= within) return text
-  return `${letters.slice(0, Math.max(0, within - 1)).join('')}…`
-}
 
 /** The three piles, in the words they are counted in — the empty ones left out
  * rather than printed as noughts, because a nought is a number to read past. */

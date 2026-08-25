@@ -14,6 +14,7 @@ import { PathBox } from './over/PathBox'
 import { Picker } from './over/Picker'
 import { ReportReader } from './over/ReportReader'
 import { RepoBox } from './over/RepoBox'
+import { SpendBox } from './over/SpendBox'
 import { PersonaPage } from './over/PersonaPage'
 import { TroubleNote } from './box/TroubleNote'
 import { Whispers } from './box/Whispers'
@@ -121,13 +122,14 @@ const characters = (text: string) => {
 /**
  * What can stand over the scene: the keyboard help, one of the six lists, the
  * line a folder is typed out on, what she wrote this turn, how the work stands
- * in the folder she is in, or the words she is being played from.
+ * in the folder she is in, what she has spent, or the words she is being played
+ * from.
  *
  * One value rather than a flag each, because only ever one of them is up. Held
  * apart, that rule had to be spelled out by every key that opened one — and
  * forgetting a single line left two of them on screen, both answering Enter.
  */
-type Over = Picking | 'keys' | 'path' | 'report' | 'repo' | 'persona' | null
+type Over = Picking | 'keys' | 'path' | 'report' | 'repo' | 'spend' | 'persona' | null
 
 /**
  * The frame whatever is over the scene stands in: the whole window, with the
@@ -371,6 +373,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     path: standing === 'path',
     reading: standing === 'report',
     checking: standing === 'repo',
+    spending: standing === 'spend',
     meeting: standing === 'persona',
     hasReport: scene.report !== null,
     said: scene.line !== '',
@@ -472,6 +475,10 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
       // she is not told it was looked at.
       case 'repo':
         return setOver('repo')
+      // Nothing said to her about this one either: the counts came off turns
+      // she has already had, and adding them up is the window's own errand.
+      case 'spend':
+        return setOver('spend')
       // Nor about this: her persona is what her session was opened with and
       // settled before she said a word, so there is nothing to ask her and
       // nothing of hers to interrupt.
@@ -750,6 +757,14 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
       {standing === 'repo' && (
         <OverTheScene width={width} height={height}>
           <RepoBox theme={theme} folder={folder} work={work} width={Math.min(60, width - 6)} />
+        </OverTheScene>
+      )}
+
+      {/* The other glance: what her turns have cost so far, in whatever the
+          agent behind her counts. Nothing on it is asked of her either. */}
+      {standing === 'spend' && (
+        <OverTheScene width={width} height={height}>
+          <SpendBox theme={theme} spend={scene.spend} width={Math.min(60, width - 6)} />
         </OverTheScene>
       )}
 

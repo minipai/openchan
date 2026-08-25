@@ -34,6 +34,7 @@ export type Does =
   | 'fresh'
   | 'report'
   | 'repo'
+  | 'spend'
   | 'persona'
   | 'scroll-up'
   | 'scroll-down'
@@ -70,8 +71,9 @@ export const takes = (does: Does) => !THEIRS.includes(does)
  * the open list takes several rows rather than one, while the open list can be
  * narrowed by typing at it, while it has been, while a path is being typed
  * into one, while there is something she wrote to read, while it is open,
- * while how the work stands is on screen, while who she is is, while the girl
- * standing there has more than one thing to wear, or while these keys are. */
+ * while how the work stands is on screen, while what she has spent is, while who
+ * she is is, while the girl standing there has more than one thing to wear, or
+ * while these keys are. */
 type When =
   | 'always'
   | 'typing'
@@ -89,6 +91,7 @@ type When =
   | 'reported'
   | 'reading'
   | 'checking'
+  | 'spending'
   | 'meeting'
   | 'dressed'
   | 'up'
@@ -131,6 +134,8 @@ export type Where = {
   hasReport: boolean
   /** Whether how the work stands in her folder is what is on screen. */
   checking: boolean
+  /** Whether what she has spent is what is on screen. */
+  spending: boolean
   /** Whether the words she is played from are what is on screen. */
   meeting: boolean
   /** Whether there is a line of hers in the box to be copied. */
@@ -169,6 +174,12 @@ const KEYS: (Shortcut & { when: When })[] = [
   // otherwise be the one key on the window that does nothing at all.
   { when: 'checking', press: 'escape', does: 'close', says: 'put it away' },
   { when: 'checking', press: 'ctrl+t', does: 'close', says: 'put it away' },
+
+  // What she has spent is the same sort of glance and answers to the same two
+  // keys: there is nothing on it to move through and nothing to copy, and the
+  // key that opened it closes it.
+  { when: 'spending', press: 'escape', does: 'close', says: 'put it away' },
+  { when: 'spending', press: 'ctrl+u', does: 'close', says: 'put it away' },
 
   // Who she is is the other way about: a document, longer than any box it can
   // be drawn in, so it takes the arrows the way what she wrote does rather
@@ -269,6 +280,13 @@ const KEYS: (Shortcut & { when: When })[] = [
   { when: 'dressed', press: 'ctrl+d', does: 'wears', says: 'what she is wearing' },
   { when: 'always', press: 'ctrl+f', does: 'where', says: 'where she works' },
   { when: 'always', press: 'ctrl+t', does: 'repo', says: 'how the work stands' },
+  // U for usage. It costs the line she is spoken to on the key that rubs out
+  // everything before the cursor — and Ctrl-K, which rubs out everything after
+  // it, has already gone to these keys. Both cost the same thing, which is why
+  // both were worth taking: a half-written sentence, which can be selected and
+  // typed over. Ctrl-W is the one that was not, because rubbing out a word has
+  // no second key on a terminal too old for the kitty protocol.
+  { when: 'always', press: 'ctrl+u', does: 'spend', says: 'what she has spent' },
   // Not the same question as who is on shift: that one swaps her, this one is
   // the words the girl already standing there is being played from.
   //
@@ -295,6 +313,7 @@ const HEADINGS: Record<When, string> = {
   up: 'While these are up',
   reading: 'While what she wrote is open',
   checking: 'While how the work stands is up',
+  spending: 'While what she has spent is up',
   meeting: 'While who she is is up',
   picking: 'While a list is open',
   ticking: 'While a list is open',
@@ -327,12 +346,19 @@ export type Group = { heading: string; keys: Shortcut[] }
 
 /**
  * Whether anything is standing over the scene: these keys, a page of what she
- * wrote or of who she is, the glance at how the work stands, a list, or a path
- * being typed in place of one. All of them are drawn over the box, so while one
- * of them holds the box is not what is being looked at.
+ * wrote or of who she is, the glance at how the work stands or at what she has
+ * spent, a list, or a path being typed in place of one. All of them are drawn
+ * over the box, so while one of them holds the box is not what is being looked
+ * at.
  */
 const covered = (where: Where) =>
-  where.up || where.reading || where.checking || where.meeting || where.picking || where.path
+  where.up ||
+  where.reading ||
+  where.checking ||
+  where.spending ||
+  where.meeting ||
+  where.picking ||
+  where.path
 
 /**
  * Whether her question is what a key would be answering. Only where nothing is
@@ -370,6 +396,7 @@ const holds = (when: When, where: Where) =>
   (when === 'up' && where.up) ||
   (when === 'reading' && where.reading) ||
   (when === 'checking' && where.checking) ||
+  (when === 'spending' && where.spending) ||
   (when === 'meeting' && where.meeting) ||
   (when === 'picking' && where.picking) ||
   (when === 'ticking' && where.picking && where.ticking) ||
@@ -419,6 +446,7 @@ export function keysNow(where: Where): Group[] {
     'up',
     'reading',
     'checking',
+    'spending',
     'meeting',
     'path',
     'narrows',
@@ -527,6 +555,14 @@ export function checkingKeys(): Shortcut[] {
 }
 
 /**
+ * What the panel of what she has spent answers to, printed by the panel for the
+ * same reason the one above it prints its own.
+ */
+export function spendingKeys(): Shortcut[] {
+  return KEYS.filter((one) => one.when === 'spending').map(({ when: _, ...key }) => key)
+}
+
+/**
  * What the page of who she is answers to, printed by the page for the same
  * reason the report prints its own — and the arrows matter more here than
  * anywhere: her persona does not fit the box, and a page that showed the first
@@ -572,7 +608,7 @@ const HINT = `${shownAs('ctrl+k')} ${keyFor('keys').says}`
  * better.
  */
 export function cornerFor(where: Where): string {
-  if (where.up || where.reading || where.checking || where.meeting) return ''
+  if (where.up || where.reading || where.checking || where.spending || where.meeting) return ''
   const escapes = pressed({ name: 'escape' }, where)
   if (escapes) return `${shownAs('escape')} ${keyFor(escapes).says}`
   // Something she wrote is the one thing worth saying from an idle corner — it

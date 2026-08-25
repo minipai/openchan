@@ -5,7 +5,7 @@ import net from 'node:net'
 import { createOpencodeClient, createOpencodeServer, type OpencodeClient } from '@opencode-ai/sdk'
 import { createOpencodeClient as createLive, type OpencodeClient as Live } from '@opencode-ai/sdk/v2/client'
 import { briefFor, type Character, type Language } from '../her/cast'
-import type { BridgeEvent, Conversation, Model, Trouble } from '../between/protocol'
+import type { BridgeEvent, Conversation, Model, Spend, Trouble } from '../between/protocol'
 import { asking, questionsIn } from './asking'
 import {
   sessionOf,
@@ -136,6 +136,40 @@ const FRESH_START: Trouble = {
   gone: false,
 }
 
+/** What one of her turns is counted to have cost, which is every part of a
+ * `Spend` but the number of turns — that one is the window's own. */
+type Counted = Omit<Spend, 'turns'>
+
+/** Every pile there is to add up, so that adding two turns together is one loop
+ * rather than six lines that have to be kept in step by hand. */
+const PILES = ['cost', 'input', 'output', 'reasoning', 'cacheRead', 'cacheWrite'] as const
+
+/**
+ * A number the server actually sent, or nothing at all.
+ *
+ * Asked of each field on its own rather than taken off the message whole. The
+ * types say every one of these is there, and the types are the SDK's promise
+ * about the server it was generated from — what arrives is whatever came down
+ * the wire from whichever opencode is on the master's PATH. A field that is not
+ * there must stay not there: read as a nought it would be added into the total
+ * and printed as a count somebody had taken, which is the one way a panel of
+ * numbers can lie without anything looking wrong.
+ */
+const counted = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined)
+
+/** What one turn of hers cost, as much of it as the server counted. */
+function whatItCost(info: Extract<Message, { role: 'assistant' }>): Counted {
+  const tokens = info.tokens as Partial<Extract<Message, { role: 'assistant' }>['tokens']> | undefined
+  return {
+    cost: counted(info.cost),
+    input: counted(tokens?.input),
+    output: counted(tokens?.output),
+    reasoning: counted(tokens?.reasoning),
+    cacheRead: counted(tokens?.cache?.read),
+    cacheWrite: counted(tokens?.cache?.write),
+  }
+}
+
 /**
  * One conversation with her, held open across turns, spoken to over HTTP.
  *
@@ -207,6 +241,20 @@ export class MaidSession implements Conversation {
    * for — which is what keeps another window's work in the same folder safe
    * from this one by construction rather than by care. */
   private hers = new Set<string>()
+  /**
+   * What each of her turns has cost, by the id of her side of it.
+   *
+   * Kept by id and added up when it is asked for, rather than added to as it
+   * arrives: a message announces itself again every time anything on it moves,
+   * and what it carries each time is the whole of that turn rather than the
+   * piece that just happened. Added, one turn would be counted once per
+   * announcement.
+   *
+   * Never emptied, for the same reason her line's tally is not: this is what
+   * the window has spent since it opened, and leaving a conversation or picking
+   * up an earlier one does not unspend it.
+   */
+  private eachTurn = new Map<string, Counted>()
   /** Calls already narrated. A tool announces itself again every time its
    * state moves — and one that had to wait to be allowed announces itself on
    * both sides of the wait — but she only picks it up once. */
@@ -854,6 +902,53 @@ export class MaidSession implements Conversation {
     if (info.role !== 'assistant') return
     if (!this.sent.has(info.parentID)) return
     this.hers.add(info.id)
+    // And what it cost, off the same event: the server counts a turn on her
+    // side of it and nowhere else, and it says so again every time the number
+    // moves. A subagent's turn is not in this — it answers a sentence the
+    // subagent was given rather than one this window sent — so what is counted
+    // here is what she was asked directly.
+    //
+    // Only once the server has marked the turn finished, which is the whole of
+    // what keeps this honest while she is working. A turn announces itself the
+    // moment it starts and the server fills that first announcement with
+    // noughts, posting what it really cost some seconds later — so a turn taken
+    // in as it arrives is a turn counted with nothing spent on it, and the
+    // panel reads "8 turns" beside a total covering seven. Neither the guard on
+    // a pile nobody counted nor anything else on the way to the screen can
+    // catch that: the noughts are on the wire as real numbers, and a counted
+    // nought is deliberately a number here. Left out until it is over, the
+    // panel is simply a turn behind while she works, which is what it says it
+    // is.
+    if (info.time?.completed === undefined) return
+    this.eachTurn.set(info.id, whatItCost(info))
+    this.tellSpend()
+  }
+
+  /**
+   * What she has spent, said out loud: every turn added up, and a pile that was
+   * not counted for every one of them left out altogether.
+   *
+   * Not the sum of the turns that happened to carry it, which is the trap here.
+   * A pile counted for nine turns out of ten, added up and printed beside a
+   * count of ten, is a total that is not the total — understated, and with
+   * nothing on screen saying so. It happens the moment she is moved onto a
+   * model whose provider counts something the last one did not. The turn count
+   * is what every number on the panel is read against, so a number that does
+   * not cover all of them is not a number this can print: it goes out as
+   * nothing, which is what the panel already knows how to say.
+   *
+   * The total goes over rather than the turn that just moved: the total is the
+   * whole of what the panel shows, and sending turns would leave the window
+   * keeping its own copy of every one of them so as to add them up again.
+   */
+  private tellSpend() {
+    const turns = [...this.eachTurn.values()]
+    const spend: Spend = { turns: turns.length }
+    for (const pile of PILES) {
+      if (!turns.every((turn) => turn[pile] !== undefined)) continue
+      spend[pile] = turns.reduce((sum, turn) => sum + turn[pile]!, 0)
+    }
+    this.onEvent({ kind: 'spends', spend })
   }
 
   /**
