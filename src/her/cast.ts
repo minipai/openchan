@@ -7,13 +7,13 @@ import { KAOMOJI } from './expressions'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const home = path.resolve(here, '../..')
 
-/** One of them: the folder her artwork and her words are filed under, and the
- * name the screen calls her by. */
-export type Character = { id: string; name: string }
+/** One of them: the folder her artwork and her words are filed under, the name
+ * the screen calls her by, and everything she has been drawn wearing. */
+export type Character = { id: string; name: string; outfits: string[] }
 
-/** The one outfit each of them is packed with here. Which one she is wearing is
- * a choice of its own, and not this one. */
-const OUTFIT = 'uniform'
+/** What she opens the door in, where she has been drawn in more than one thing.
+ * It is the one all of them are drawn in, and this is a maid café. */
+const UNIFORM = 'uniform'
 
 /**
  * The language every one of them is written in, and so the file the cast is
@@ -52,8 +52,10 @@ export function castIn(from: string): Character[] {
     .readdirSync(written)
     .filter((file) => file.endsWith(SUFFIX))
     .map((file) => file.slice(0, -SUFFIX.length))
-    .filter((id) => isDrawn(path.join(drawn, id, OUTFIT)))
-    .map((id) => ({ id, name: nameIn(path.join(written, `${id}${SUFFIX}`)) }))
+    .flatMap((id) => {
+      const outfits = outfitsIn(path.join(drawn, id))
+      return outfits.length ? [{ id, name: nameIn(path.join(written, `${id}${SUFFIX}`)), outfits }] : []
+    })
     .sort((one, other) => one.id.localeCompare(other.id))
 }
 
@@ -65,8 +67,8 @@ export const CAST = castIn(home)
  * whoever the master last sent for. */
 const FIRST = CAST.find((one) => one.id === 'kotone') ?? CAST[0]!
 
-export const spriteFor = (who: Character, expression: Expression) =>
-  path.join(home, 'art', who.id, OUTFIT, `${expression}.webp`)
+export const spriteFor = (who: Character, outfit: string, expression: Expression) =>
+  path.join(home, 'art', who.id, outfit, `${expression}.webp`)
 
 /** Every face is drawn at this size. */
 export const ARTWORK = { width: 512, height: 1280 } as const
@@ -191,6 +193,56 @@ export function speak(what: Language | null) {
 export const answersIn = (speaks: Language | null) => speaks?.name ?? 'however you write'
 
 /**
+ * What each of them was last put in, kept where the next window will find it.
+ *
+ * A line apiece, because an outfit belongs to the girl it was drawn on: one
+ * name written down on its own would put whoever came on shift next into a
+ * folder of pictures that is not hers. Beside the note saying who was sent for,
+ * and read the same way.
+ *
+ * Written as the folder is — `<girl>/<outfit>`, which is the path her pictures
+ * are under with `art/` off the front. Both halves are folder names, so both
+ * can hold a space and a slash is the one character neither of them can:
+ * `momo chan summer dress` has three readings and two of them are wrong.
+ */
+const WARDROBE = path.join(os.homedir(), '.openchan', 'outfits')
+
+/** What she is wearing: whatever she was last put in, and the one she opens the
+ * door in until she has been put in anything. A note naming something nobody
+ * drew for her leaves her in that one, the same way a note naming nobody leaves
+ * whoever opens the door standing. */
+export function wearing(who: Character): string {
+  const worn = wardrobe().get(who.id)
+  return who.outfits.find((one) => one === worn) ?? who.outfits[0]!
+}
+
+/** Her, in that, for this window and the next one. */
+export function wear(who: Character, outfit: string) {
+  const kept = wardrobe().set(who.id, outfit)
+  fs.mkdirSync(path.dirname(WARDROBE), { recursive: true })
+  fs.writeFileSync(WARDROBE, [...kept].map(([id, worn]) => `${id}/${worn}`).join('\n'))
+}
+
+/** Who is in what, as the note has it: the girl up to the slash and the folder
+ * of her pictures after it. */
+function wardrobe(): Map<string, string> {
+  const written = fs.existsSync(WARDROBE) ? fs.readFileSync(WARDROBE, 'utf8') : ''
+  const worn = new Map<string, string>()
+  for (const line of written.split('\n')) {
+    const said = line.trim()
+    const at = said.indexOf('/')
+    if (at > 0 && at < said.length - 1) worn.set(said.slice(0, at), said.slice(at + 1))
+  }
+  return worn
+}
+
+/** An outfit as it is worth printing. The folder her pictures are filed under
+ * is already the words for it bar the capital — there is no table of prettier
+ * names, because a name kept away from the folder it belongs to is a name that
+ * goes on saying "One-piece" about a folder that has been renamed. */
+export const outfitCalled = (outfit: string) => outfit.charAt(0).toUpperCase() + outfit.slice(1)
+
+/**
  * Who she is, in the words handed to whatever is thinking for her.
  *
  * Her persona file is the café package's own, frontmatter and all — that top
@@ -247,6 +299,26 @@ export function personaFor(who: Character, speaks: Language | null): string {
  * the pair, so this is a filename rather than a translation. */
 function personaFile(written: string, who: Character, tag: string) {
   return path.join(written, `${who.id}.${tag}.md`)
+}
+
+/**
+ * Everything she has been drawn wearing here, her uniform first.
+ *
+ * Read off the artwork rather than off a list beside it: dressing one of them
+ * differently is a folder of pictures and nothing else, and a girl drawn in one
+ * thing must never be offered a second — a list kept by hand would go on
+ * offering it long after the pictures had stopped being there. Half a wardrobe
+ * is no wardrobe, for the same reason half a face is no girl: the outfit she is
+ * put in has to hold for every one of the 26 she might sign with.
+ */
+function outfitsIn(folder: string): string[] {
+  if (!fs.existsSync(folder)) return []
+  return fs
+    .readdirSync(folder)
+    .filter((name) => isDrawn(path.join(folder, name)))
+    .sort((one, other) =>
+      one === UNIFORM ? -1 : other === UNIFORM ? 1 : one.localeCompare(other),
+    )
 }
 
 /** Whether every face she could sign a reply with has been drawn for her. */

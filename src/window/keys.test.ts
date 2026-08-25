@@ -27,6 +27,7 @@ const idle: Where = {
   meeting: false,
   hasReport: false,
   said: false,
+  dressed: false,
   isWorking: false,
   asked: false,
   trouble: null,
@@ -57,6 +58,8 @@ const checking = (where: Where): Where => ({ ...where, checking: true })
 /** …and the page of the words she is played from, which is over it the same
  * way. */
 const meeting = (where: Where): Where => ({ ...where, meeting: true })
+/** The girl standing there has been drawn in more than one thing. */
+const dressed = (where: Where): Where => ({ ...where, dressed: true })
 /** She has said something, so there is a line in the box. */
 const said = (where: Where): Where => ({ ...where, said: true })
 /** Something in the way with her session gone with it, and something in the way
@@ -419,6 +422,19 @@ test('which of them is on shift is opened with a key of its own', () => {
   expect(keyFor('who').says).toBe('who is on shift')
 })
 
+test('what she is wearing is opened with a key of its own, and only where there is a choice', () => {
+  // Unlike every other key that opens something over the scene, this one comes
+  // and goes with the girl: one drawn in a single outfit has nothing to pick,
+  // and a key listed over a list of one would be the table promising what it
+  // cannot do.
+  expect(pressed(press('ctrl+d'), dressed(idle))).toBe('wears')
+  expect(pressed(press('ctrl+d'), dressed(asked))).toBe('wears')
+  expect(pressed(press('ctrl+d'), idle)).toBeNull()
+  expect(offered(dressed(idle))).toContain('wears')
+  expect(offered(idle)).not.toContain('wears')
+  expect(keyFor('wears').says).toBe('what she is wearing')
+})
+
 test('where she works is opened with a key of its own', () => {
   expect(pressed(press('ctrl+f'), idle)).toBe('where')
   expect(pressed(press('ctrl+f'), working)).toBe('where')
@@ -629,6 +645,7 @@ const EVERY_PRESS = [
   'ctrl+b',
   'ctrl+c',
   'ctrl+s',
+  'ctrl+d',
 ]
 const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
   // A list and a path being typed are one thing over the scene in two states:
@@ -652,6 +669,7 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
           { hasReport: true, reading: true },
         ].flatMap((written) =>
           [false, true].flatMap((said) =>
+            [false, true].flatMap((wardrobe) =>
             // Only ever one thing over the scene, so the panel of how the
             // work stands and the page of who she is are two states of one
             // axis rather than two flags of their own.
@@ -667,10 +685,12 @@ const EVERYWHERE: Where[] = [false, true].flatMap((up) =>
                 standing,
                 trouble,
                 said,
+                dressed: wardrobe,
                 ...glance,
                 ...over,
                 ...written,
               })),
+            ),
             ),
           ),
         ),

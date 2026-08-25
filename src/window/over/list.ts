@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import type { Choice } from './Picker'
 import { folderRows, troubleWith, TYPE_A_PATH } from '../../between/folder'
 import type { Scene } from '../../between/brain'
-import { answersIn, LANGUAGES, type Character, type Language } from '../../her/cast'
+import { answersIn, LANGUAGES, outfitCalled, type Character, type Language } from '../../her/cast'
 
 /**
  * The row on the list of conversations that is not one of them: taking it
@@ -49,8 +49,8 @@ function ago(when: number, now: number): string {
  */
 const AS_YOU_WRITE: Choice = { id: 'as you write', label: answersIn(null) }
 
-/** Which of the five lists it is. */
-export type Picking = 'models' | 'shift' | 'folder' | 'talks' | 'speaks'
+/** Which of the six lists it is. */
+export type Picking = 'models' | 'shift' | 'folder' | 'talks' | 'speaks' | 'outfit'
 
 /**
  * What the list open right now is a list of: what it is called, what is in it,
@@ -69,6 +69,8 @@ export function useTheList({
   which,
   scene,
   cast,
+  onShift,
+  outfit,
   nextShift,
   nextSpeaks,
   folder,
@@ -77,6 +79,7 @@ export function useTheList({
   use,
   swapTo,
   speakIn,
+  dressIn,
   moveTo,
   resumeTo,
   startFresh,
@@ -87,6 +90,10 @@ export function useTheList({
   which: Picking | null
   scene: Scene
   cast: Character[]
+  /** Who is standing there, whose wardrobe is the one worth offering. */
+  onShift: Character
+  /** What she has on, for the list to mark. */
+  outfit: string
   nextShift: Character
   /** What the language list marks: whatever was asked for, and nothing when
    * nothing has been. */
@@ -102,6 +109,7 @@ export function useTheList({
   /** What she is to answer in from the next session on, and nothing at all for
    * the row that asks her for nothing. */
   speakIn: (id: string | null) => void
+  dressIn: (outfit: string) => void
   moveTo: (where: string) => void
   resumeTo: (id: string) => void
   startFresh: () => void
@@ -118,6 +126,14 @@ export function useTheList({
   const shifts: Choice[] = useMemo(
     () => cast.map((one) => ({ id: one.id, label: one.name })),
     [cast],
+  )
+
+  // Everything the girl standing there has been drawn in, as rows. Hers rather
+  // than the cast's: what is on the list is a folder of her pictures, and
+  // another girl's outfit is nothing this one can be put in.
+  const wardrobe: Choice[] = useMemo(
+    () => onShift.outfits.map((one) => ({ id: one, label: outfitCalled(one) })),
+    [onShift],
   )
 
   // The conversations she has had here, as rows: what each came to be called,
@@ -169,6 +185,8 @@ export function useTheList({
       take: (id: string) => speakIn(id === AS_YOU_WRITE.id ? null : id),
       narrowing: undefined,
     }
+  if (which === 'outfit')
+    return { title: 'What she is wearing', items: wardrobe, chosen: outfit, take: dressIn, narrowing: undefined }
   return {
     title: 'Where she works',
     items: folderRows(folder, been),

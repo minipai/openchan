@@ -9,12 +9,15 @@ import {
   castIn,
   LANGUAGES,
   languagesIn,
+  outfitCalled,
   personaFor,
   remember,
   remembered,
   speak,
   spoken,
   spriteFor,
+  wear,
+  wearing,
 } from './cast'
 import { KAOMOJI, type Expression } from './expressions'
 
@@ -27,9 +30,19 @@ const FACES = Object.keys(KAOMOJI) as Expression[]
  * A house with girls in it, in whatever state the test wants them: written and
  * drawn, written and not drawn, drawn and not written, or drawn most of the way
  * and left there — which is the one the café package actually has three of.
+ *
+ * What each is drawn in is an outfit and how many of the 26 faces were drawn for
+ * it, because those are the two ways artwork comes up short: a girl nobody
+ * finished, and an outfit nobody finished her in.
  */
 function houseOf(
-  girls: { id: string; name?: string; faces?: number; written?: boolean; alsoIn?: string[] }[],
+  girls: {
+    id: string
+    name?: string
+    drawn?: Record<string, number>
+    written?: boolean
+    alsoIn?: string[]
+  }[],
 ) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'openchan-cast-'))
   fs.mkdirSync(path.join(home, 'persona'), { recursive: true })
@@ -40,10 +53,11 @@ function houseOf(
           path.join(home, 'persona', `${girl.id}.${tag}.md`),
           `---\nname: ${girl.name ?? girl.id}\n---\n\nYou are ${girl.id}, in ${tag}.\n`,
         )
-    const drawn = path.join(home, 'art', girl.id, 'uniform')
-    fs.mkdirSync(drawn, { recursive: true })
-    for (const face of FACES.slice(0, girl.faces ?? FACES.length))
-      fs.writeFileSync(path.join(drawn, `${face}.webp`), '')
+    for (const [outfit, many] of Object.entries(girl.drawn ?? { uniform: FACES.length })) {
+      const drawn = path.join(home, 'art', girl.id, outfit)
+      fs.mkdirSync(drawn, { recursive: true })
+      for (const face of FACES.slice(0, many)) fs.writeFileSync(path.join(drawn, `${face}.webp`), '')
+    }
   }
   return home
 }
@@ -55,18 +69,47 @@ test('the cast is whoever is both written and drawn', () => {
     { id: 'nao', written: false },
     // Written, and drawn for half the faces she signs off with — the three the
     // café package has are exactly this.
-    { id: 'kanae', faces: 13 },
+    { id: 'kanae', drawn: { uniform: 13 } },
   ])
 
-  expect(castIn(home)).toEqual([{ id: 'momo', name: 'もも' }])
+  expect(castIn(home)).toEqual([{ id: 'momo', name: 'もも', outfits: ['uniform'] }])
 })
 
 test('a girl missing one face is not in it either', () => {
   // Not a judgement call about how many is enough: the face she signs a reply
   // with is the one that gets loaded, and any of the 26 can be the one.
-  const home = houseOf([{ id: 'momo', faces: FACES.length - 1 }])
+  const home = houseOf([{ id: 'momo', drawn: { uniform: FACES.length - 1 } }])
 
   expect(castIn(home)).toEqual([])
+})
+
+test('what she can be put in is whatever she was drawn in, her uniform first', () => {
+  const home = houseOf([{ id: 'momo', drawn: { 'one-piece': FACES.length, uniform: FACES.length } }])
+
+  // Her uniform ahead of the rest whatever order the folders come back in: it
+  // is the one she opens the door in, and the list opens on what she has on.
+  expect(castIn(home)[0]!.outfits).toEqual(['uniform', 'one-piece'])
+})
+
+test('an outfit she is only half drawn in is not one she can be put in', () => {
+  // The same rule that keeps a half-drawn girl out of the cast, one level in:
+  // she would go mute the first time she signed off with a face nobody drew
+  // her that way, and it is the outfit rather than the girl that is missing.
+  const home = houseOf([{ id: 'momo', drawn: { uniform: FACES.length, 'one-piece': 13 } }])
+
+  expect(castIn(home)[0]!.outfits).toEqual(['uniform'])
+})
+
+test('a girl drawn in something other than a uniform is still one of them', () => {
+  const home = houseOf([{ id: 'momo', drawn: { 'one-piece': FACES.length } }])
+
+  expect(castIn(home)[0]!.outfits).toEqual(['one-piece'])
+})
+
+test('an outfit is whatever the folder of pictures is called, spaces and all', () => {
+  const home = houseOf([{ id: 'momo', drawn: { uniform: FACES.length, 'summer dress': FACES.length } }])
+
+  expect(castIn(home)[0]!.outfits).toEqual(['uniform', 'summer dress'])
 })
 
 test('each of them is called what her own file calls her', () => {
@@ -76,11 +119,33 @@ test('each of them is called what her own file calls her', () => {
 
 test('the ones in the house are drawn with every face they could sign with', () => {
   for (const who of CAST)
-    for (const face of FACES) expect(fs.existsSync(spriteFor(who, face))).toBe(true)
+    for (const outfit of who.outfits)
+      for (const face of FACES) expect(fs.existsSync(spriteFor(who, outfit, face))).toBe(true)
+})
+
+test('the two of them in the house have each been drawn in two things', () => {
+  expect(CAST.map((one) => one.outfits)).toEqual([
+    ['uniform', 'one-piece'],
+    ['uniform', 'one-piece'],
+  ])
 })
 
 test('each of them wears her own artwork', () => {
-  expect(spriteFor(her('kotone'), 'happy')).not.toBe(spriteFor(her('kurumi'), 'happy'))
+  expect(spriteFor(her('kotone'), 'uniform', 'happy')).not.toBe(
+    spriteFor(her('kurumi'), 'uniform', 'happy'),
+  )
+})
+
+test('what she is wearing is which folder of her pictures is loaded', () => {
+  const who = her('kotone')
+
+  expect(spriteFor(who, 'one-piece', 'happy')).not.toBe(spriteFor(who, 'uniform', 'happy'))
+  expect(spriteFor(who, 'one-piece', 'happy').endsWith(path.join('one-piece', 'happy.webp'))).toBe(true)
+})
+
+test('an outfit is printed as the folder it is filed under, bar the capital', () => {
+  expect(outfitCalled('uniform')).toBe('Uniform')
+  expect(outfitCalled('one-piece')).toBe('One-piece')
 })
 
 test('what a session is opened with is her own persona, and the cues they all sign with', () => {
@@ -138,7 +203,7 @@ test('who was sent for is still who is on shift in the next window', () => {
 })
 
 test('a note naming nobody in the house leaves whoever opens the door standing', () => {
-  remember({ id: 'nobody', name: 'nobody' })
+  remember({ id: 'nobody', name: 'nobody', outfits: [] })
 
   expect(remembered()).toEqual(her('kotone'))
 })
@@ -242,4 +307,59 @@ test('asked for nothing, she is told nothing about language at all', () => {
 test('what she answers in is sayable even when it is nothing in particular', () => {
   expect(answersIn(CHINESE)).toBe('繁體中文')
   expect(answersIn(null)).toBe('however you write')
+})
+
+/** What each of them was last put in, put back once these have had their way
+ * with it — the running window reads this same note. */
+const WARDROBE = path.join(os.homedir(), '.openchan', 'outfits')
+const wardrobe = fs.existsSync(WARDROBE) ? fs.readFileSync(WARDROBE, 'utf8') : null
+afterAll(() => {
+  if (wardrobe === null) fs.rmSync(WARDROBE, { force: true })
+  else fs.writeFileSync(WARDROBE, wardrobe)
+})
+
+test('she opens the door in her uniform, with nothing written down', () => {
+  fs.writeFileSync(WARDROBE, '')
+
+  expect(wearing(her('kotone'))).toBe('uniform')
+})
+
+test('what she was put in is what she is wearing in the next window', () => {
+  wear(her('kotone'), 'one-piece')
+
+  expect(wearing(her('kotone'))).toBe('one-piece')
+})
+
+test("an outfit is one girl's own, and not what the next one is put in", () => {
+  wear(her('kotone'), 'one-piece')
+  wear(her('kurumi'), 'uniform')
+
+  // Two lines in one note rather than one name for the house: `one-piece` on
+  // kotone is not the folder of pictures kurumi's name would find, and it is
+  // only chance that it is a folder either of them has.
+  expect(wearing(her('kotone'))).toBe('one-piece')
+  expect(wearing(her('kurumi'))).toBe('uniform')
+})
+
+test('a note naming something nobody drew for her leaves her in her uniform', () => {
+  wear(her('kotone'), 'swimsuit')
+
+  expect(wearing(her('kotone'))).toBe('uniform')
+})
+
+test('a name with a space in it comes back off the note whole, on either side', () => {
+  // Both halves of a line are folder names and either can hold a space — her id
+  // is a persona filename with the tag off it, the outfit is the folder her
+  // pictures are in. Read a word at a time, `momo chan/summer dress` has three
+  // readings and two of them put her silently back in her uniform every time
+  // the window opens.
+  // Two of them, and her uniform first: with one the note could be read every
+  // wrong way there is and she would still come back in it, because falling
+  // back to the only thing she owns is the same answer as reading the note.
+  const momo = { id: 'momo chan', name: 'もも', outfits: ['uniform', 'summer dress'] }
+  wear(momo, 'summer dress')
+
+  expect(wearing(momo)).toBe('summer dress')
+  // And she is still her own line, next to whoever else is written down.
+  expect(wearing(her('kotone'))).toBe('uniform')
 })

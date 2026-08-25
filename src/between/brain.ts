@@ -6,6 +6,8 @@ import {
   remembered,
   speak,
   spoken,
+  wear,
+  wearing,
   type Character,
   type Language,
 } from '../her/cast'
@@ -45,6 +47,16 @@ export function useMaid(open: OpenConversation = openMaid) {
    * while there was a conversation going — then it is waiting for the next
    * session, the way somebody sent for mid-conversation is. */
   const [askedSpeaks, setAskedSpeaks] = useState<Language | null>(speaks)
+  /**
+   * What she is wearing.
+   *
+   * Unlike who she is, what she answers in and where she works, this is none of
+   * the agent's business: an outfit is a folder of pictures, and nothing about
+   * it goes into a session. So it takes effect the moment it is picked,
+   * mid-sentence and all, rather than waiting for a session that has no reason
+   * to be reopened.
+   */
+  const [outfit, setOutfit] = useState(() => wearing(who))
   /** The folder the open session can see. It cannot change under a session
    * either — opencode fixes it when the session is opened — so moving her is
    * the same closing and reopening that sending for one of the others is. */
@@ -121,6 +133,9 @@ export function useMaid(open: OpenConversation = openMaid) {
     cast: CAST,
     /** Who is standing there. */
     onShift: who,
+    /** What she has on, which the list marks and the sprite layer draws her
+     * in. */
+    outfit,
     /** Who the picker marks: whoever was asked for, whether or not she has been
      * able to come out yet. */
     nextShift: asked,
@@ -168,6 +183,9 @@ export function useMaid(open: OpenConversation = openMaid) {
       // session being closed, down to whether there is anyone to speak to.
       setScene(OPENING)
       setWho(her)
+      // In whatever she was last put in — the note is hers, and the outfit on
+      // screen belongs to the girl who just left.
+      setOutfit(wearing(her))
       // Whatever else was waiting for a session walks into this one. There are
       // two things a pick can be waiting on and one session for both of them to
       // arrive in — leaving the other behind would strand it: the list would go
@@ -198,8 +216,23 @@ export function useMaid(open: OpenConversation = openMaid) {
       if (wanted?.id === speaks?.id || !unspoken(scene)) return
       setScene(OPENING)
       setSpeaks(wanted)
-      // And whoever was waiting comes out in it, the same way round.
+      // And whoever was waiting comes out in it, the same way round — in
+      // whatever she was last put in, which is hers rather than the girl's
+      // whose session this closes.
       setWho(asked)
+      setOutfit(wearing(asked))
+    },
+    /**
+     * Her in something else.
+     *
+     * Nothing is closed and nothing waits for the next session: the sprite
+     * layer reads the folder it loads her pictures out of, and that is the
+     * whole of what this changes. Written down as it is picked, so the next
+     * window opens on her in it.
+     */
+    dressIn(outfit: string) {
+      wear(who, outfit)
+      setOutfit(outfit)
     },
     /**
      * Move her to another folder.
@@ -229,6 +262,7 @@ export function useMaid(open: OpenConversation = openMaid) {
       setScene(OPENING)
       setWho(asked)
       setSpeaks(askedSpeaks)
+      setOutfit(wearing(asked))
       setFolder(where)
     },
     /**
