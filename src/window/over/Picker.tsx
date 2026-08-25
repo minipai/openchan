@@ -48,7 +48,8 @@ function readsAs(label: string, typed: string): boolean {
  * above the rows, so it is clear why the rest went away. Two of the lists are
  * told so — what she thinks with runs to hundreds of rows, and what has been
  * talked about here is rows of sentences, which is what typing is for. Who is
- * on shift is four names, and a search box over four names is noise.
+ * on shift is a handful of names, and what she has on is fewer — a search box
+ * over either of those is noise.
  *
  * Moving through it and taking what it is on are the list's own keys, the way
  * Enter is the input's; putting it away is the window's, because the window is

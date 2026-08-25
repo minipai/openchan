@@ -28,6 +28,7 @@ export type Does =
   | 'models'
   | 'who'
   | 'speaks'
+  | 'wears'
   | 'where'
   | 'talks'
   | 'fresh'
@@ -69,8 +70,8 @@ export const takes = (does: Does) => !THEIRS.includes(does)
  * the open list takes several rows rather than one, while the open list can be
  * narrowed by typing at it, while it has been, while a path is being typed
  * into one, while there is something she wrote to read, while it is open,
- * while how the work stands is on screen, while who she is is, or while these
- * keys are. */
+ * while how the work stands is on screen, while who she is is, while the girl
+ * standing there has more than one thing to wear, or while these keys are. */
 type When =
   | 'always'
   | 'typing'
@@ -89,6 +90,7 @@ type When =
   | 'reading'
   | 'checking'
   | 'meeting'
+  | 'dressed'
   | 'up'
 
 export type Shortcut = {
@@ -133,6 +135,10 @@ export type Where = {
   meeting: boolean
   /** Whether there is a line of hers in the box to be copied. */
   said: boolean
+  /** Whether the girl standing there has been drawn in more than one thing. One
+   * with a single outfit is offered no choice about it: a list with her one
+   * folder of pictures on it answers a question nobody can have. */
+  dressed: boolean
   /** What is in the way, if anything is: something she is still standing
    * behind, or something that took her session with it. */
   trouble: 'stuck' | 'gone' | null
@@ -254,6 +260,13 @@ const KEYS: (Shortcut & { when: When })[] = [
   // L for the language, and it is free where the obvious letters are not: the
   // line she is spoken to on wants Ctrl-A, Ctrl-E and Ctrl-U for itself.
   { when: 'always', press: 'ctrl+l', does: 'speaks', says: 'what she answers in' },
+  // Not who is standing there but what she has on, and only for the ones drawn
+  // in more than one thing — hence a key that comes and goes with the girl.
+  //
+  // D for dressed. It costs the line she is spoken to on its forward delete,
+  // which is the one editing key with a Backspace standing right next to it
+  // doing the same work from the other side.
+  { when: 'dressed', press: 'ctrl+d', does: 'wears', says: 'what she is wearing' },
   { when: 'always', press: 'ctrl+f', does: 'where', says: 'where she works' },
   { when: 'always', press: 'ctrl+t', does: 'repo', says: 'how the work stands' },
   // Not the same question as who is on shift: that one swaps her, this one is
@@ -304,6 +317,9 @@ const HEADINGS: Record<When, string> = {
   // the window happens to be.
   said: 'Whenever',
   reported: 'Whenever',
+  // The same heading, and for the same reason: what she has been drawn in is
+  // not a state she is in either.
+  dressed: 'Whenever',
   always: 'Whenever',
 }
 
@@ -373,6 +389,7 @@ const holds = (when: When, where: Where) =>
   // said so would be worse than one not offered. The open page takes the same
   // key first, and is written down ahead of this.
   (when === 'said' && where.said) ||
+  (when === 'dressed' && where.dressed) ||
   // The line she is spoken to on is behind these keys while they are up, behind
   // a list or a path being typed or an open report while one of those is, and
   // not drawn at all while something is in the way; a blurred input does not
@@ -416,6 +433,7 @@ export function keysNow(where: Where): Group[] {
     'typing',
     'said',
     'reported',
+    'dressed',
     'always',
   ] as const) {
     if (!holds(when, where)) continue

@@ -23,6 +23,7 @@ const framed = new Map<string, NativeImage>()
  */
 export function SpriteLayer({
   who,
+  outfit,
   expression,
   columns,
   rows,
@@ -31,6 +32,8 @@ export function SpriteLayer({
 }: {
   /** Whose artwork is being stood there. */
   who: Character
+  /** Which of her folders of pictures it is taken out of. */
+  outfit: string
   expression: Expression
   /** How wide she stands, in cells. */
   columns: number
@@ -46,8 +49,10 @@ export function SpriteLayer({
   const behind = useColourBehindHer(asked, blocks)
   // Whose artwork is on screen as well as which: hers is decoded a moment
   // behind the name plate, and the girl who just left must not be the one
-  // standing under it while that happens.
-  const [shown, setShown] = useState<{ who: string; image: NativeImage } | null>(null)
+  // standing under it while that happens. What she has on counts as whose: a
+  // change of outfit is the same wait, and the last one is the wrong picture
+  // for as long as it lasts.
+  const [shown, setShown] = useState<{ hers: string; image: NativeImage } | null>(null)
 
   // How much of her the scene has room for, measured in the artwork's own
   // pixels: the space above the box, turned back into the shape it would be if
@@ -60,19 +65,19 @@ export function SpriteLayer({
   useEffect(() => {
     if (columns <= 0 || rows <= 0) return
     let current = true
-    const file = spriteFor(who, expression)
+    const file = spriteFor(who, outfit, expression)
     const key = `${file}@${cut}`
 
     const ready = framed.get(key)
     if (ready) {
-      setShown({ who: who.id, image: ready })
+      setShown({ hers: `${who.id}/${outfit}`, image: ready })
       return
     }
 
     // Nobody, until hers has been decoded: a face of her own still on screen is
     // her changing expression, but the last girl's is the wrong girl — and a
     // load that never lands would leave her there for good.
-    setShown((was) => (was?.who === who.id ? was : null))
+    setShown((was) => (was?.hers === `${who.id}/${outfit}` ? was : null))
 
     void (async () => {
       let whole = artwork.get(file)
@@ -85,13 +90,13 @@ export function SpriteLayer({
       // bottom of itself.
       const cropped = whole.extract({ left: 0, top: 0, width: ARTWORK.width, height: cut })
       framed.set(key, cropped)
-      if (current) setShown({ who: who.id, image: cropped })
+      if (current) setShown({ hers: `${who.id}/${outfit}`, image: cropped })
     })().catch((error) => console.error('her artwork did not load:', error))
 
     return () => {
       current = false
     }
-  }, [who, expression, cut, columns, rows])
+  }, [who, outfit, expression, cut, columns, rows])
 
   if (!shown) return null
 

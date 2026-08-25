@@ -119,7 +119,7 @@ const characters = (text: string) => {
 }
 
 /**
- * What can stand over the scene: the keyboard help, one of the five lists, the
+ * What can stand over the scene: the keyboard help, one of the six lists, the
  * line a folder is typed out on, what she wrote this turn, how the work stands
  * in the folder she is in, or the words she is being played from.
  *
@@ -256,6 +256,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     scene,
     cast,
     onShift,
+    outfit,
     nextShift,
     speaks,
     nextSpeaks,
@@ -270,6 +271,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     use,
     swapTo,
     speakIn,
+    dressIn,
     moveTo,
     resumeTo,
     startFresh,
@@ -322,14 +324,15 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     standing === 'models' ||
     standing === 'shift' ||
     standing === 'speaks' ||
+    standing === 'outfit' ||
     standing === 'folder' ||
     standing === 'talks'
       ? standing
       : null
   // The lists that can be typed at, and only once there are rows to narrow: what
   // she thinks with, which runs to hundreds of rows, and what has been talked
-  // about here, whose rows are sentences — as against four names on either of
-  // the others. A list with nothing in it takes no letters, and a key nothing
+  // about here, whose rows are sentences — as against a handful of names on any
+  // of the others. A list with nothing in it takes no letters, and a key nothing
   // takes must go on meaning what it meant: opened while she is down, r is
   // still the one way to open her again.
   const narrows =
@@ -371,6 +374,9 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     meeting: standing === 'persona',
     hasReport: scene.report !== null,
     said: scene.line !== '',
+    // Only where there is a second thing to put her in: the key that opens the
+    // wardrobe comes and goes with the girl standing there.
+    dressed: onShift.outfits.length > 1,
     isWorking: scene.isWorking,
     asked: asked !== null,
     // Only a question that came with a scope written for it can be answered
@@ -456,6 +462,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
         return setOver('shift')
       case 'speaks':
         return setOver('speaks')
+      case 'wears':
+        return setOver('outfit')
       case 'where':
         return setOver('folder')
       case 'report':
@@ -523,6 +531,8 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     which: picking,
     scene,
     cast,
+    onShift,
+    outfit,
     nextShift,
     nextSpeaks,
     folder,
@@ -531,6 +541,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
     use,
     swapTo,
     speakIn,
+    dressIn,
     moveTo,
     resumeTo,
     startFresh,
@@ -572,6 +583,7 @@ export function App({ behind, open: openMaid }: { behind: string | undefined; op
           window. The box is drawn over her, not instead of her. */}
       <SpriteLayer
         who={onShift}
+        outfit={outfit}
         expression={scene.expression}
         columns={spriteColumns(width)}
         rows={height}

@@ -15,12 +15,15 @@ import { spriteColumns } from '../SpriteLayer'
  * read off the screen — which is how that one line went untested while the
  * rest of the window was not. This one puts the face into the grid as a word,
  * worded so that finding it on screen means that and nothing else.
+ *
+ * What she has on is written down beside it for the same reason: it is the
+ * other half of which picture is loaded, and it lands nowhere either.
  */
 mock.module('../SpriteLayer', () => ({
   spriteColumns,
-  SpriteLayer: ({ expression }: { expression: Expression }) => (
+  SpriteLayer: ({ expression, outfit }: { expression: Expression; outfit: string }) => (
     <box position="absolute" top={0} left={0}>
-      <text>{`her face is ${expression}`}</text>
+      <text>{`her face is ${expression}, in her ${outfit}`}</text>
     </box>
   ),
 }))
@@ -53,6 +56,10 @@ export const REPORT = { title: 'Colours', body: 'The needle was in the second ha
 
 export const kotone = CAST.find((one) => one.id === 'kotone')!
 
+/** What each of them was last put in, which the window reads and writes the
+ * same way it does the note saying who was sent for. */
+const WARDROBE = path.join(os.homedir(), '.openchan', 'outfits')
+
 /**
  * Everything a test file needs to put a window on screen, called once per
  * file so its beforeEach/afterEach/afterAll are that file's own — a hook
@@ -73,6 +80,19 @@ export function windowTestKit() {
   const asked = spoken()
   afterAll(() => speak(asked))
   beforeEach(() => speak(null))
+
+  // …and what she was last put in, for the same reason: picking an outfit
+  // writes it down for the next window too, and every window here opens on her
+  // in her uniform.
+  const wardrobe = fs.existsSync(WARDROBE) ? fs.readFileSync(WARDROBE, 'utf8') : null
+  afterAll(() => {
+    if (wardrobe === null) fs.rmSync(WARDROBE, { force: true })
+    else fs.writeFileSync(WARDROBE, wardrobe)
+  })
+  beforeEach(() => {
+    fs.mkdirSync(path.dirname(WARDROBE), { recursive: true })
+    fs.writeFileSync(WARDROBE, '')
+  })
 
   /** Every window a test opened, so the next test starts on an empty terminal
    * rather than on top of the last one's. */

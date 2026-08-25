@@ -4,7 +4,7 @@ import { meetingKeys, shownAs } from '../keys'
 import { PersonaPage } from './PersonaPage'
 import { paletteOver } from '../theme'
 
-const HER = { id: 'momo', name: 'もも' }
+const HER = { id: 'momo', name: 'もも', outfits: ['uniform'] }
 
 /** Longer than the page it is drawn on, which is what a persona always is —
  * every one of them runs to several screens of writing. */
