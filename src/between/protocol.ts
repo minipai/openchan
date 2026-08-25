@@ -71,6 +71,40 @@ export type Question = {
 export type Standing = { scope: string; covers: string }
 
 /**
+ * What she has spent, as the agent behind her counts it.
+ *
+ * Spending, and not an allowance. Nothing here says how much is left, when it
+ * runs out or when it comes back, because the agent underneath is not the thing
+ * holding the plan — the provider behind it is, and every provider holds a
+ * different one. A panel with a window and a reset time on it would have
+ * nothing true to put in them, so there is nowhere here to put them.
+ *
+ * Every count is a field of its own and every one of them can be missing,
+ * because every one of them is one an agent may simply not keep. Missing is
+ * missing: it is not nought, and it is not drawn as one.
+ */
+export type Spend = {
+  /** How many of her turns are counted into it, where the agent counts by
+   * turns at all. It is the one number the agent knows without the provider
+   * telling it — it is the agent that carried the sentence — and the one that
+   * says a turn happened when nothing else about it was counted. Absent for an
+   * agent that keeps one meter for the session and cannot say which turn any
+   * of it belongs to. */
+  turns?: number
+  /** Money, where the agent counts money. A subscription counts none of it and
+   * says so as a nought, which is different again from not counting it. */
+  cost?: number
+  /** Words given to her and words back. */
+  input?: number
+  output?: number
+  /** What she thought with rather than said, where that is counted apart. */
+  reasoning?: number
+  /** Taken back off the cache rather than paid for again, and put into it. */
+  cacheRead?: number
+  cacheWrite?: number
+}
+
+/**
  * Something in the way that she cannot get past on her own, said in words
  * rather than left as an error string nobody reads.
  *
@@ -167,6 +201,13 @@ export type BridgeEvent =
    * when the session opens and again every time it changes — the one in force
    * is the agent's to report, so the list only ever marks what has taken. */
   | { kind: 'thinks-with'; models: Model[]; using: string }
+  /** What she has spent so far, said again whenever it moves.
+   *
+   * Counted by the agent rather than added up here: what is worth counting
+   * differs from one agent to the next, and the window's half of this knows
+   * only how to print the numbers that arrive and to say nothing where one
+   * did not. */
+  | { kind: 'spends'; spend: Spend }
   /** The turn, closed out. An error is hers to say out loud — there is one line
    * on this screen and swallowing it would leave her mute for no visible
    * reason. */

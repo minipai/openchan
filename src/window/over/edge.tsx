@@ -2,6 +2,23 @@ import { columns } from '../box/Asking'
 import { shownAs, type Shortcut } from '../keys'
 import type { Palette } from '../theme'
 
+/**
+ * A line cut to the room there is for it, from the end.
+ *
+ * The other way round is a folder's: a path is worth its tail and is cut at the
+ * front. A sentence is worth its front, and the counts on these panels are read
+ * left to right — what a narrow terminal has to lose is the last pile, said so
+ * with the mark rather than by the line simply stopping.
+ *
+ * Here with the keys because the panels that share those share this: it is the
+ * one thing every glance over the scene has to do to every line it draws.
+ */
+export const cut = (text: string, within: number) => {
+  const letters = [...text]
+  if (letters.length <= within) return text
+  return `${letters.slice(0, Math.max(0, within - 1)).join('')}…`
+}
+
 /** What is left between one key along the bottom edge and the next. */
 const APART = 3
 

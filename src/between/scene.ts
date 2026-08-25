@@ -1,7 +1,7 @@
-import type { BridgeEvent, Model, Question, Report, Standing, Talk, Trouble, Whisper } from './protocol'
+import type { BridgeEvent, Model, Question, Report, Spend, Standing, Talk, Trouble, Whisper } from './protocol'
 import type { Expression } from '../her/cast'
 
-export type { Question, Report, Standing, Whisper } from './protocol'
+export type { Question, Report, Spend, Standing, Whisper } from './protocol'
 
 /**
  * One of the words up beside her right now, with the number it went up under.
@@ -82,6 +82,23 @@ export type Scene = {
   models: Model[]
   /** The one she is thinking with, once she has said which. */
   model: string | null
+  /**
+   * What she has spent so far, as the agent behind her counts it. Nothing at all
+   * until something has been counted.
+   *
+   * Not let go of when a conversation is left or an earlier one picked up, which
+   * is the one thing about it worth saying twice: it is what she has spent, not
+   * what is in one conversation. Per conversation it could only ever be half
+   * true — an earlier one is picked up with everything already spent in it out
+   * of reach, and a panel that read "nothing" over a week's work would be lying
+   * with a number.
+   *
+   * It goes when her session does, because the scene does: sending for one of
+   * the others or moving her somewhere else opens a new one, and nothing spent
+   * by the girl who was standing there is the next girl's. The panel says which
+   * of the two it means rather than leaving it to be guessed.
+   */
+  spend: Spend | null
   /** Every conversation there has been in this folder, for the list to offer. */
   talks: Talk[]
   /** The one she is in, once the session has said which. */
@@ -107,6 +124,7 @@ export const OPENING: Scene = {
   model: null,
   talks: [],
   talk: null,
+  spend: null,
 }
 
 /**
@@ -178,6 +196,12 @@ export function next(was: Scene, event: BridgeEvent): Scene {
     // its own copy of: there is one answer and she is holding it.
     case 'thinks-with':
       return { ...was, models: event.models, model: event.using }
+    // What she has spent, as the agent counts it. Kept whole rather than added
+    // to: the agent is the one holding the tally, and adding up two of these
+    // events would count the same turn twice the moment one of them was said
+    // again.
+    case 'spends':
+      return { ...was, spend: event.spend }
     // The same, for the conversations she has had here: the session is holding
     // which one is open, and the list marks what it says rather than what was
     // pressed.
