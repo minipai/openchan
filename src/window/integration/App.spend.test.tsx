@@ -1,7 +1,7 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 /** Everything an agent could count, counted — said the only way the window can
  * hear it, which is the one thing this panel is being checked for: nothing

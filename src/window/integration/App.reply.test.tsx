@@ -1,9 +1,9 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import type { BridgeEvent } from '../../between/protocol'
 import { WHISPERED_FOR } from '../box/Whispers'
 import { REPORT, windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 test('her line, and the face and mood she signed it with, land in the box', async () => {
   const { wakeUp, type, enter, raise, frame } = await onScreen()

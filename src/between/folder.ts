@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { note } from '../notes'
 
 /**
  * The folder she works in.
@@ -28,10 +29,6 @@ export const TYPE_A_PATH = 'type a path'
  * a list longer than the frame scrolls, and scrolling to reach the folder used
  * once in March is worse than having forgotten it. */
 const AT_MOST = 8
-
-/** Where the folders she has been in are written down, so the next window
- * offers them too. Beside the note saying who was last sent for. */
-const NOTE = path.join(os.homedir(), '.openchan', 'folders')
 
 /**
  * What was typed, as a folder.
@@ -136,6 +133,7 @@ export function folderRows(current: string, been: string[]) {
  * could only fail, and it fails several seconds after it is picked.
  */
 export function folders(): string[] {
+  const NOTE = note('folders')
   const written = fs.existsSync(NOTE) ? fs.readFileSync(NOTE, 'utf8') : ''
   return written
     .split('\n')
@@ -147,6 +145,7 @@ export function folders(): string[] {
 /** One more folder written down where the next window will find it, in front of
  * the rest — the list is in the order she was last in them. */
 export function rememberFolder(where: string) {
+  const NOTE = note('folders')
   const kept = [where, ...folders().filter((one) => one !== where)].slice(0, AT_MOST)
   fs.mkdirSync(path.dirname(NOTE), { recursive: true })
   fs.writeFileSync(NOTE, kept.join('\n'))

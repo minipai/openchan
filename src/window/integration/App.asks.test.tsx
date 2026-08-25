@@ -1,8 +1,8 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { STUCK } from '../../opencode/stand'
 import { windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 /** Her, mid-turn, asking to be allowed something. */
 async function asking(detail?: string) {

@@ -1,8 +1,8 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { LOST, MODELS, STUCK } from '../../opencode/stand'
 import { REPORT, windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 test('something she wrote is opened and put away, and her line is still there under it', async () => {
   const { wakeUp, type, enter, raise, hold, escape, frame } = await onScreen()

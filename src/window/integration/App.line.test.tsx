@@ -1,8 +1,8 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { LINE_HOLDS } from '../App'
 import { windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 test('the line says she is not up yet, and what was said to her waits', async () => {
   const { her, wakeUp, type, enter, frame } = await onScreen()

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterAll, afterEach, expect } from 'bun:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -9,6 +9,9 @@ import { briefFor, CAST, remember, remembered } from '../her/cast'
 import { OPENED_IN } from './folder'
 import type { BridgeEvent, OpenConversation } from './protocol'
 import { LOST, MODELS, Stand, STUCK, TALKS } from '../opencode/stand'
+import { testNotes } from '../testNotes'
+
+const { test } = testNotes()
 
 /** The window, reduced to the two things this cares about. */
 function Window({ open, hold }: { open: OpenConversation; hold: (maid: Maid) => void }) {
@@ -19,29 +22,12 @@ function Window({ open, hold }: { open: OpenConversation; hold: (maid: Maid) => 
 
 type Maid = ReturnType<typeof useMaid>
 
-/** Whoever the master last sent for, put back afterwards: sending for one of
- * them writes her down for the next window, and the window these tests open is
- * reading the same note. */
-const kept = remembered()
-afterAll(() => remember(kept))
-
 /** Somewhere to move her that is a real folder — the window refuses to open a
- * session onto one that is not there — and is gone again afterwards, which is
- * also what takes it back out of the note. */
+ * session onto one that is not there — and is gone again afterwards. */
 const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'openchan-been-')))
-/** The note the master's own windows read, put back exactly as it was found:
- * moving her writes the folders down, and these tests move her to folders that
- * are nobody's. */
-const NOTE = path.join(os.homedir(), '.openchan', 'folders')
-const note = fs.existsSync(NOTE) ? fs.readFileSync(NOTE, 'utf8') : null
 afterAll(() => {
   fs.rmSync(elsewhere, { recursive: true, force: true })
-  if (note === null) fs.rmSync(NOTE, { force: true })
-  else fs.writeFileSync(NOTE, note)
 })
-/** Every window here opens on ことね, whoever the last test sent for. */
-const kotone = CAST.find((one) => one.id === 'kotone')!
-beforeEach(() => remember(kotone))
 
 /** Every window a test opened, so the next test starts on an empty terminal
  * rather than on top of the last one's. */

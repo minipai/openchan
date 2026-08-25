@@ -1,8 +1,8 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { spoken } from '../../her/cast'
 import { windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 /** What the list calls the two things a house written in English and 繁體中文
  * can be asked for, and the row that asks for neither. */

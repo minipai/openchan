@@ -1,8 +1,8 @@
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { KAOMOJI } from './expressions'
+import { note } from '../notes'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const home = path.resolve(here, '../..')
@@ -85,14 +85,14 @@ export const SPRITE_SHARE = 0.53
  * pick in between would make the whole list a thing that only ever works when
  * nothing has been said yet.
  */
-const SHIFT = path.join(os.homedir(), '.openchan', 'on-shift')
-
 export function remembered(): Character {
+  const SHIFT = note('on-shift')
   const asked = fs.existsSync(SHIFT) ? fs.readFileSync(SHIFT, 'utf8').trim() : ''
   return CAST.find((one) => one.id === asked) ?? FIRST
 }
 
 export function remember(who: Character) {
+  const SHIFT = note('on-shift')
   fs.mkdirSync(path.dirname(SHIFT), { recursive: true })
   fs.writeFileSync(SHIFT, who.id)
 }
@@ -172,17 +172,17 @@ export const LANGUAGES = languagesIn(home, CAST)
  * disk. Without that there would be no way back: the pick could be changed and
  * never taken off.
  */
-const TONGUE = path.join(os.homedir(), '.openchan', 'speaks')
-
 /** What she has been asked to answer in, or nothing at all if she has not been
  * asked — which is also the answer for a note naming a language the house is no
  * longer written in. */
 export function spoken(): Language | null {
+  const TONGUE = note('speaks')
   const asked = fs.existsSync(TONGUE) ? fs.readFileSync(TONGUE, 'utf8').trim() : ''
   return LANGUAGES.find((one) => one.id === asked) ?? null
 }
 
 export function speak(what: Language | null) {
+  const TONGUE = note('speaks')
   fs.mkdirSync(path.dirname(TONGUE), { recursive: true })
   fs.writeFileSync(TONGUE, what?.id ?? '')
 }
@@ -205,8 +205,6 @@ export const answersIn = (speaks: Language | null) => speaks?.name ?? 'however y
  * can hold a space and a slash is the one character neither of them can:
  * `momo chan summer dress` has three readings and two of them are wrong.
  */
-const WARDROBE = path.join(os.homedir(), '.openchan', 'outfits')
-
 /** What she is wearing: whatever she was last put in, and the one she opens the
  * door in until she has been put in anything. A note naming something nobody
  * drew for her leaves her in that one, the same way a note naming nobody leaves
@@ -218,6 +216,7 @@ export function wearing(who: Character): string {
 
 /** Her, in that, for this window and the next one. */
 export function wear(who: Character, outfit: string) {
+  const WARDROBE = note('outfits')
   const kept = wardrobe().set(who.id, outfit)
   fs.mkdirSync(path.dirname(WARDROBE), { recursive: true })
   fs.writeFileSync(WARDROBE, [...kept].map(([id, worn]) => `${id}/${worn}`).join('\n'))
@@ -226,6 +225,7 @@ export function wear(who: Character, outfit: string) {
 /** Who is in what, as the note has it: the girl up to the slash and the folder
  * of her pictures after it. */
 function wardrobe(): Map<string, string> {
+  const WARDROBE = note('outfits')
   const written = fs.existsSync(WARDROBE) ? fs.readFileSync(WARDROBE, 'utf8') : ''
   const worn = new Map<string, string>()
   for (const line of written.split('\n')) {

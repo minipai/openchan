@@ -1,9 +1,9 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import path from 'node:path'
 import { OPENED_IN } from '../../between/folder'
 import { elsewhereFolder, windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 const elsewhere = elsewhereFolder()
 
 test('sending for one of the others off the list puts her on shift', async () => {

@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -7,7 +7,7 @@ import { OPENED_IN } from '../../between/folder'
 import { howItStands } from '../../between/repo'
 import { branchLine } from '../over/RepoBox'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 /** Somewhere real that nobody keeps in git: the master's temp folder is not
  * anybody's repository, which is the state being checked. */
 const elsewhere = elsewhereFolder()

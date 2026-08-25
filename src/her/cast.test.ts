@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, expect } from 'bun:test'
 import {
   answersIn,
   briefFor,
@@ -20,6 +20,9 @@ import {
   wearing,
 } from './cast'
 import { KAOMOJI, type Expression } from './expressions'
+import { testNotes } from '../testNotes'
+
+const { file: note, test } = testNotes()
 
 /** One of them by name, so a test reads as being about her. */
 const her = (id: string) => CAST.find((one) => one.id === id)!
@@ -191,11 +194,6 @@ test('two of them are not handed the same words', () => {
   expect(new Set(CAST.map((one) => briefFor(one, null))).size).toBe(CAST.length)
 })
 
-/** Whoever the master last sent for, put back once these have had their way
- * with it — this is the same note the running window reads. */
-const kept = remembered()
-afterAll(() => remember(kept))
-
 test('who was sent for is still who is on shift in the next window', () => {
   remember(her('kurumi'))
 
@@ -250,11 +248,6 @@ test('each language is written down as that language calls itself', () => {
   expect(LANGUAGES.map((one) => one.name)).toEqual(['English', '繁體中文'])
 })
 
-/** What she was last asked to answer in, put back once these have had their way
- * with it — this is the same note the running window reads. */
-const asked = spoken()
-afterAll(() => speak(asked))
-
 test('what she was asked to answer in is still it in the next window', () => {
   speak(CHINESE)
 
@@ -268,14 +261,14 @@ test('taking the pick off leaves her asked for nothing, not asked for English', 
   expect(spoken()).toBe(null)
   // And it is written down as such rather than left to the note's absence: the
   // note is there, and what it says is nothing.
-  expect(fs.existsSync(path.join(os.homedir(), '.openchan', 'speaks'))).toBe(true)
+  expect(fs.existsSync(note('speaks'))).toBe(true)
 })
 
 test('a note naming a language the house is not written in asks her for nothing', () => {
   // Through `speak` first, so the note is where the note goes whether or not
   // this machine has ever opened her.
   speak(CHINESE)
-  fs.writeFileSync(path.join(os.homedir(), '.openchan', 'speaks'), 'kl')
+  fs.writeFileSync(note('speaks'), 'kl')
 
   expect(spoken()).toBe(null)
 })
@@ -309,17 +302,8 @@ test('what she answers in is sayable even when it is nothing in particular', () 
   expect(answersIn(null)).toBe('however you write')
 })
 
-/** What each of them was last put in, put back once these have had their way
- * with it — the running window reads this same note. */
-const WARDROBE = path.join(os.homedir(), '.openchan', 'outfits')
-const wardrobe = fs.existsSync(WARDROBE) ? fs.readFileSync(WARDROBE, 'utf8') : null
-afterAll(() => {
-  if (wardrobe === null) fs.rmSync(WARDROBE, { force: true })
-  else fs.writeFileSync(WARDROBE, wardrobe)
-})
-
 test('she opens the door in her uniform, with nothing written down', () => {
-  fs.writeFileSync(WARDROBE, '')
+  fs.writeFileSync(note('outfits'), '')
 
   expect(wearing(her('kotone'))).toBe('uniform')
 })

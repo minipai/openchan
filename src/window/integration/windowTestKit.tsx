@@ -1,10 +1,11 @@
-import { afterAll, afterEach, beforeEach, mock } from 'bun:test'
+import { afterAll, afterEach, mock } from 'bun:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { act } from 'react'
 import { testRender } from '@opentui/react/test-utils'
 import type { Expression } from '../../her/cast'
+import { testNotes } from '../../testNotes'
 import { spriteColumns } from '../SpriteLayer'
 
 /**
@@ -29,7 +30,7 @@ mock.module('../SpriteLayer', () => ({
 }))
 
 import { App } from '../App'
-import { CAST, remember, remembered, speak, spoken } from '../../her/cast'
+import { CAST } from '../../her/cast'
 import { OPENED_IN } from '../../between/folder'
 import type { BridgeEvent } from '../../between/protocol'
 import { Stand } from '../../opencode/stand'
@@ -56,10 +57,6 @@ export const REPORT = { title: 'Colours', body: 'The needle was in the second ha
 
 export const kotone = CAST.find((one) => one.id === 'kotone')!
 
-/** What each of them was last put in, which the window reads and writes the
- * same way it does the note saying who was sent for. */
-const WARDROBE = path.join(os.homedir(), '.openchan', 'outfits')
-
 /**
  * Everything a test file needs to put a window on screen, called once per
  * file so its beforeEach/afterEach/afterAll are that file's own — a hook
@@ -67,32 +64,10 @@ const WARDROBE = path.join(os.homedir(), '.openchan', 'outfits')
  * this one, since the module that does the registering only runs once.
  */
 export function windowTestKit() {
-  // Whoever the master last sent for, put back afterwards: sending for one of
-  // them writes her down for the next window, and the window these tests open
-  // is reading the same note. Every window here opens on ことね, so that is
-  // what each test starts from regardless of who an earlier one sent for.
-  const kept = remembered()
-  afterAll(() => remember(kept))
-  beforeEach(() => remember(kotone))
-  // And whatever she was last asked to answer in, the same way: every window
-  // here opens having been asked for nothing, so a test that asks for
-  // something is the only reason one of these is ever answering in it.
-  const asked = spoken()
-  afterAll(() => speak(asked))
-  beforeEach(() => speak(null))
-
-  // …and what she was last put in, for the same reason: picking an outfit
-  // writes it down for the next window too, and every window here opens on her
-  // in her uniform.
-  const wardrobe = fs.existsSync(WARDROBE) ? fs.readFileSync(WARDROBE, 'utf8') : null
-  afterAll(() => {
-    if (wardrobe === null) fs.rmSync(WARDROBE, { force: true })
-    else fs.writeFileSync(WARDROBE, wardrobe)
-  })
-  beforeEach(() => {
-    fs.mkdirSync(path.dirname(WARDROBE), { recursive: true })
-    fs.writeFileSync(WARDROBE, '')
-  })
+  // Whoever was sent for, whatever she answers in, everywhere she has been
+  // and everything she has worn all live in this file's disposable notebook.
+  // It starts empty for every test, so no individual note needs a fixture here.
+  const { test } = testNotes()
 
   /** Every window a test opened, so the next test starts on an empty terminal
    * rather than on top of the last one's. */
@@ -193,21 +168,15 @@ export function windowTestKit() {
     }
   }
 
-  return { onScreen }
+  return { onScreen, test }
 }
 
 /** Somewhere to move her that is a real folder — the window refuses to open
- * a session onto one that is not there — and is gone again afterwards. Only
- * moving her writes the master's folders down, so only the test file that
- * does that needs this. */
+ * a session onto one that is not there — and is gone again afterwards. */
 export function elsewhereFolder() {
   const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'openchan-window-')))
-  const NOTE = path.join(os.homedir(), '.openchan', 'folders')
-  const note = fs.existsSync(NOTE) ? fs.readFileSync(NOTE, 'utf8') : null
   afterAll(() => {
     fs.rmSync(elsewhere, { recursive: true, force: true })
-    if (note === null) fs.rmSync(NOTE, { force: true })
-    else fs.writeFileSync(NOTE, note)
   })
   return elsewhere
 }

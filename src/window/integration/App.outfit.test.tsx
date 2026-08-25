@@ -1,10 +1,9 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
+import { note } from '../../notes'
 import { windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 /** The one she opens the door in, and the one the list offers instead. Both are
  * folders of her pictures rather than anything she is told about herself. */
@@ -70,9 +69,7 @@ test('what she was put in is what the next window opens on', async () => {
   // Through the note on disk rather than through anything this process is
   // still holding: the next window is a different one tomorrow, and what it
   // opens on has to have survived the one that picked it.
-  expect(fs.readFileSync(path.join(os.homedir(), '.openchan', 'outfits'), 'utf8')).toContain(
-    'kotone/one-piece',
-  )
+  expect(fs.readFileSync(note('outfits'), 'utf8')).toContain('kotone/one-piece')
 
   const next = await onScreen()
   await next.wakeUp()

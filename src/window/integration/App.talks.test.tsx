@@ -1,9 +1,9 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { OPENED_IN } from '../../between/folder'
 import { MODELS, TALKS } from '../../opencode/stand'
 import { kotone, windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 test('the conversations had in this folder are a list, newest first, with the one she is in marked', async () => {
   const { wakeUp, hold, frame } = await onScreen()

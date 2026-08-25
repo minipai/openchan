@@ -1,8 +1,8 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { kotone, windowTestKit } from './windowTestKit'
 import { personaFor } from '../../her/cast'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 /** The opening of the girl on shift's own file, short enough that the page
  * cannot have wrapped it: finding it on screen means her words are there

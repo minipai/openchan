@@ -1,9 +1,9 @@
-import { expect, test } from 'bun:test'
+import { expect } from 'bun:test'
 import { OPENED_IN, shortened } from '../../between/folder'
 import { MODELS } from '../../opencode/stand'
 import { HERE, strip, windowTestKit } from './windowTestKit'
 
-const { onScreen } = windowTestKit()
+const { onScreen, test } = windowTestKit()
 
 test('a list is opened, moved through, and the row taken has taken', async () => {
   const { her, wakeUp, hold, arrow, enter, frame } = await onScreen()
