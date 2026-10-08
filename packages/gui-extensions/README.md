@@ -214,7 +214,7 @@ SDK icon fields use `IconName` from `@opencode/ui/icons/catalog`, a dependency-f
 | [`Server`](src/sdk/points.ts)       | window  | A source of servers, such as SSH hosts                                                      |
 | [`LinkHandler`](src/sdk/points.ts)  | window  | Opens local links, such as file paths in messages                                           |
 | [`TitlebarItem`](src/sdk/points.ts) | window  | A titlebar pill, or the dev channel badge as a toggle                                       |
-| [`Slot`](src/sdk/points.ts)         | window  | Content for `window.bottom`, `session.header`, `session.panel.end`, `session.panel.sidebar` |
+| [`Slot`](src/sdk/points.ts)         | window  | Content for `window.bottom`, `session.header`, `session.overlay`, `session.panel.end`, `session.panel.sidebar` |
 | [`Style`](src/sdk/points.ts)        | window  | CSS imported with `?inline`                                                                 |
 | [`MenubarItem`](src/sdk/main.ts)    | main    | An item of the native app menu                                                              |
 
@@ -417,7 +417,7 @@ legacy: ["summary"],
 - **The lint bans raw effects.** `createEffect`, `createRenderEffect` and `createComputed` may not be imported outside `src/sdk`. An escape hatch needs an `oxlint-disable` comment with a reason.
 - **Suspense only on first load.** Wrap each `lazy()` component in its own `<Suspense>`, read async data through `.latest` or `createLatest`, and never read a refetching resource in render: it blanks the nearest boundary.
 - **Stable objects.** Return the same object from `Panel.list` and reactive contributions while nothing changed, so the host never remounts.
-- **No timeline work.** `session.header` is the only timeline surface.
+- **No row contributions.** `session.header` and `session.overlay` are the only timeline surfaces; never render extensions per message row.
 - **No module state.** Keep state inside setup; module state survives a reload and leaks across windows.
 
 ## Testing
@@ -604,6 +604,7 @@ export default setup
  */
 export const builtins = Extension.compose(
   context,
+  portrait,
   btw,
   debug,
   terminal,
@@ -629,6 +630,7 @@ The window list adds each window entry, loaded with the app:
  */
 export const builtins = Extension.compose(
   { ...context, renderer: eager(contextRenderer) },
+  { ...portrait, renderer: eager(portraitRenderer) },
   { ...btw, renderer: eager(btwRenderer) },
   { ...debug, renderer: eager(debugRenderer) },
   { ...terminal, renderer: eager(terminalRenderer) },

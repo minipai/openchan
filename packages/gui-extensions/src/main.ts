@@ -1,5 +1,6 @@
 import { Extension } from "./sdk/main"
 import context from "./context"
+import portrait from "./portrait"
 import btw from "./btw"
 import debug from "./debug"
 import terminal from "./terminal"
@@ -18,6 +19,7 @@ import wsl from "./wsl"
  */
 export const builtins = Extension.compose(
   context,
+  portrait,
   btw,
   debug,
   terminal,

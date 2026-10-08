@@ -183,6 +183,8 @@ equal<Parameters<NonNullable<Panel["close"]>>[0], PanelProps>(true)
 
 equal<SlotMap["session.header"]["screen"], SessionScreen>(true)
 
+equal<SlotMap["session.overlay"]["screen"], SessionScreen>(true)
+
 equal<SlotMap["session.panel.end"]["screen"], SessionScreen>(true)
 
 equal<SlotMap["session.panel.sidebar"]["screen"], SessionScreen>(true)

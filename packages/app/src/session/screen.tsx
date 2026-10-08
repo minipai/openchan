@@ -19,7 +19,7 @@ import type { SessionModel } from "@/session/model"
 import { SESSION_PANEL_WIDTH_MIN } from "@/session/session-panel-width"
 import { SessionPanelFrame } from "@/session/session-frame"
 import { useExtensionHost } from "@/runtime/extension/host"
-import { ExtensionLinks } from "@/runtime/extension/render"
+import { ExtensionLinks, ExtensionSlot } from "@/runtime/extension/render"
 import { createPanelSidebar, createRegion, DockRegion, MobilePanel } from "@/runtime/extension/panels"
 import { createMobileViews, MobileViewTabs } from "@/runtime/extension/mobile"
 import { useExtensionAttachment } from "@/runtime/extension/host-apis"
@@ -274,7 +274,7 @@ function SessionScreenContent(props: {
   )
 
   const sessionPanelContent = () => (
-    <>
+    <div class="relative flex-1 min-h-0 flex flex-col">
       <ComposerDropzone
         active={composer.drop.active()}
         input={composer.drop.input()}
@@ -301,7 +301,23 @@ function SessionScreenContent(props: {
           throw error()
         }}
       </Show>
-      <div class="relative flex-1 min-h-0 overflow-hidden">
+      <div
+        data-session-stage=""
+        data-reading-history={!timeline.view.pinned() ? "" : undefined}
+        class="relative flex-1 min-h-0 overflow-hidden"
+      >
+        <ExtensionSlot
+          at="session.overlay"
+          input={{
+            get session() {
+              return props.view()
+            },
+            screen: props.screen,
+            get active() {
+              return conversationVisible() && !!session.identity.params.id
+            },
+          }}
+        />
         <Show when={!isDesktop() && store.mobileDockCached}>
           <div class="absolute inset-0" classList={{ invisible: mobileView() !== dockView()?.key }}>
             <DockRegion
@@ -340,12 +356,14 @@ function SessionScreenContent(props: {
         </Switch>
       </div>
 
-      <Show when={composer.active()} keyed>
-        {(model) => (
-          <ActiveSessionComposerRegion session={session} model={model} suggestionBoundary={timeline.scroller} />
-        )}
-      </Show>
-    </>
+      <div data-session-composer="">
+        <Show when={composer.active()} keyed>
+          {(model) => (
+            <ActiveSessionComposerRegion session={session} model={model} suggestionBoundary={timeline.scroller} />
+          )}
+        </Show>
+      </div>
+    </div>
   )
 
   return (

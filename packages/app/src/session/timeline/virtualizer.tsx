@@ -114,6 +114,12 @@ export function createTimelineVirtualizer(input: Input) {
   const rows = input.projection.rows
   const rowByKey = input.projection.rowByKey
 
+  const latestUserMessageRowIndex = createMemo(() => {
+    const id = input.projection.activeMessageID()
+
+    return id ? (input.projection.messageRowIndex().get(id) ?? -1) : -1
+  })
+
   const rowKeys = createMemo(() => rows().map(TimelineRow.key), undefined, {
     equals: (previous, next) => previous.length === next.length && previous.every((key, index) => key === next[index]),
   })
@@ -723,6 +729,8 @@ export function createTimelineVirtualizer(input: Input) {
       const [ready, setReady] = createSignal(initialItem.size <= fallbackItemSize || !props.deferred(initialRow))
       let contentMeasureFrame: number | undefined
 
+      const latestTurn = () => item().index > latestUserMessageRowIndex()
+
       onMount(() => virtualizer.measureElement(element))
       // Prepending history changes data-index, not the keyed element's identity.
       // Its observer reads the current index and delivers any actual size change.
@@ -734,6 +742,7 @@ export function createTimelineVirtualizer(input: Input) {
       return (
         <div
           data-timeline-key={rowProps.rowKey}
+          data-latest-turn={latestTurn() ? "" : undefined}
           style={{
             position: "absolute",
             top: `${item().start - topOffset() - rendering.scrollAdjustment}px`,
@@ -741,7 +750,12 @@ export function createTimelineVirtualizer(input: Input) {
             width: "100%",
             height: `${item().size}px`,
             overflow: "clip",
-            "overflow-clip-margin": Predicate.isTagged(row(), "TurnGap") ? undefined : "0.5px",
+            // History highlights and active bubbles extend beyond the measured row box.
+            "overflow-clip-margin": Predicate.isTagged(row(), "TurnGap")
+              ? undefined
+              : latestTurn() || !input.pinned()
+                ? "13px"
+                : "0.5px",
           }}
         >
           <div
