@@ -36,6 +36,7 @@ import { SessionIdentityHeader } from "./session-identity-header"
 import { SessionReviewToggle } from "./header/session-header-actions"
 import { createAnimatedPresence } from "@/runtime/animated-presence"
 import { createTimelineCache } from "./timeline/cache"
+import { SessionLayout } from "./layouts"
 
 export function SessionScreenView(props: { session: SessionModel }) {
   // The timeline cache captures its owner when created, so link handling must be provided above it.
@@ -301,68 +302,70 @@ function SessionScreenContent(props: {
           throw error()
         }}
       </Show>
-      <div
-        data-session-stage=""
-        data-reading-history={!timeline.view.pinned() ? "" : undefined}
-        class="relative flex-1 min-h-0 overflow-hidden"
-      >
-        <ExtensionSlot
-          at="session.overlay"
-          input={{
-            get session() {
-              return props.view()
-            },
-            screen: props.screen,
-            get active() {
-              return conversationVisible() && !!session.identity.params.id
-            },
-          }}
-        />
-        <Show when={!isDesktop() && store.mobileDockCached}>
-          <div class="absolute inset-0" classList={{ invisible: mobileView() !== dockView()?.key }}>
-            <DockRegion
-              view={props.view()}
-              screen={props.screen}
-              sidebar={sidebar}
-              fill
-              embedded
-              present
-              contentHeight="100%"
-            />
-          </div>
-        </Show>
-        <Switch>
-          <Match when={!isDesktop() && mobileEntry()?.provider.region === "dock"}>
-            <></>
-          </Match>
-          <Match when={!isDesktop() && session.identity.params.id ? mobileEntry() : undefined}>
-            {(entry) => (
-              <MobilePanel
-                screen={props.screen}
-                entry={entry()}
-                view={props.view()}
-                sidebar={sidebar}
-                visible
-                open={() => region.openFor(entry().extension)}
-              />
-            )}
-          </Match>
-          <Match when={session.identity.params.id}>
-            <Show when={isDesktop() && !messagesReady()}>
-              <SessionIdentityHeader sessionID={session.identity.params.id ?? ""} session={session.data.info()} />
+      <SessionLayout
+        readingHistory={!timeline.view.pinned()}
+        overlay={
+          <ExtensionSlot
+            at="session.overlay"
+            input={{
+              get session() {
+                return props.view()
+              },
+              screen: props.screen,
+              get active() {
+                return conversationVisible() && !!session.identity.params.id
+              },
+            }}
+          />
+        }
+        content={
+          <>
+            <Show when={!isDesktop() && store.mobileDockCached}>
+              <div class="absolute inset-0" classList={{ invisible: mobileView() !== dockView()?.key }}>
+                <DockRegion
+                  view={props.view()}
+                  screen={props.screen}
+                  sidebar={sidebar}
+                  fill
+                  embedded
+                  present
+                  contentHeight="100%"
+                />
+              </div>
             </Show>
-            <Show when={messagesReady() && session.identity.params.id}>{timelineView()}</Show>
-          </Match>
-        </Switch>
-      </div>
-
-      <div data-session-composer="">
-        <Show when={composer.active()} keyed>
-          {(model) => (
-            <ActiveSessionComposerRegion session={session} model={model} suggestionBoundary={timeline.scroller} />
-          )}
-        </Show>
-      </div>
+            <Switch>
+              <Match when={!isDesktop() && mobileEntry()?.provider.region === "dock"}>
+                <></>
+              </Match>
+              <Match when={!isDesktop() && session.identity.params.id ? mobileEntry() : undefined}>
+                {(entry) => (
+                  <MobilePanel
+                    screen={props.screen}
+                    entry={entry()}
+                    view={props.view()}
+                    sidebar={sidebar}
+                    visible
+                    open={() => region.openFor(entry().extension)}
+                  />
+                )}
+              </Match>
+              <Match when={session.identity.params.id}>
+                <Show when={isDesktop() && !messagesReady()}>
+                  <SessionIdentityHeader sessionID={session.identity.params.id ?? ""} session={session.data.info()} />
+                </Show>
+                <Show when={messagesReady() && session.identity.params.id}>{timelineView()}</Show>
+              </Match>
+            </Switch>
+          </>
+        }
+        composer={
+          <Show when={composer.active()} keyed>
+            {(model) => (
+              <ActiveSessionComposerRegion session={session} model={model} suggestionBoundary={timeline.scroller} />
+            )}
+          </Show>
+        }
+      />
     </div>
   )
 

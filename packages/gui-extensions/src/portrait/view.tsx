@@ -1,6 +1,6 @@
 import { createMemo, Show } from "solid-js"
 import type { MountedSession } from "../sdk"
-import { latestSessionFace } from "./face"
+import { latestSessionFace } from "@opencode/session-ui/message/face"
 
 export function Portrait(props: { active: () => boolean; session: () => MountedSession }) {
   const face = createMemo(() => {

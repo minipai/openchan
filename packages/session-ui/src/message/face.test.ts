@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test"
-import type {
-  SessionMessageAssistant,
-  SessionMessageAssistantTool,
-  SessionMessageInfo,
-} from "@opencode/client/promise"
+import type { SessionMessageAssistant, SessionMessageAssistantTool, SessionMessageInfo } from "@opencode/client/promise"
 import { latestSessionFace } from "./face"
 
 test("uses trailing mood markers and completed expression tools in history order", () => {
@@ -21,14 +17,17 @@ test("ignores running tools, unrelated tools, code examples, incomplete markers,
   const ready = assistant("msg_1", [text("Ready 【＼(ˆ ᗜ ˆ)／】")])
 
   expect(
-    latestSessionFace([
-      ready,
-      assistant("msg_2", [tool("set_expression", { face: "sad" }, "running")]),
-      assistant("msg_3", [tool("execute", { command: "set_expression('sad')" })]),
-      assistant("msg_4", [text("Example: `【(｡•́︿•̀｡)】`")]),
-      assistant("msg_5", [text("Still typing: 【(｡•́︿•̀｡)")]),
-      assistant("msg_6", [text("Reverted 【(｡•́︿•̀｡)】")]),
-    ], "msg_6"),
+    latestSessionFace(
+      [
+        ready,
+        assistant("msg_2", [tool("set_expression", { face: "sad" }, "running")]),
+        assistant("msg_3", [tool("execute", { command: "set_expression('sad')" })]),
+        assistant("msg_4", [text("Example: `【(｡•́︿•̀｡)】`")]),
+        assistant("msg_5", [text("Still typing: 【(｡•́︿•̀｡)")]),
+        assistant("msg_6", [text("Reverted 【(｡•́︿•̀｡)】")]),
+      ],
+      "msg_6",
+    ),
   ).toBe("happy")
 })
 

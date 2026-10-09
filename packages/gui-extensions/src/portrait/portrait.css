@@ -1,8 +1,8 @@
-[data-session-stage] {
+[data-session-layout="stage"] [data-session-stage] {
   isolation: isolate;
 }
 
-[data-session-stage] [data-component="session-character-portrait"] {
+[data-session-layout="stage"] [data-session-stage] [data-component="session-character-portrait"] {
   position: absolute;
   inset-inline-start: calc(50% - 270px);
   inset-block-start: max(48px, calc(100% - 720px));
@@ -17,21 +17,21 @@
 }
 
 @media (max-width: 767px) {
-  [data-session-stage] [data-component="session-character-portrait"] {
+  [data-session-layout="stage"] [data-session-stage] [data-component="session-character-portrait"] {
     inset-block-start: max(0px, calc(100% - 720px));
   }
 }
 
-[data-session-stage] [data-timeline-key] {
+[data-session-layout="stage"] [data-session-stage] [data-timeline-key] {
   z-index: 1;
 }
 
-[data-session-stage] [data-timeline-key][data-latest-turn],
-[data-session-stage][data-reading-history] [data-timeline-key] {
+[data-session-layout="stage"] [data-session-stage] [data-timeline-key][data-latest-turn],
+[data-session-layout="stage"] [data-session-stage][data-reading-history] [data-timeline-key] {
   z-index: 3;
 }
 
-[data-session-stage] [data-timeline-key][data-latest-turn] [data-timeline-row="AssistantPart"] [data-component="text-part"] > [data-slot="text-part-body"] {
+[data-session-layout="stage"] [data-session-stage] [data-timeline-key][data-latest-turn] [data-timeline-row="AssistantPart"] [data-component="text-part"] > [data-slot="text-part-body"] {
   position: relative;
   padding: 8px 12px;
   border: 1px solid var(--v2-border-border-base);
@@ -39,7 +39,7 @@
   background: var(--v2-background-bg-base);
 }
 
-[data-session-stage][data-reading-history] [data-timeline-key]:not([data-latest-turn]) [data-component="text-part"] > [data-slot="text-part-body"] {
+[data-session-layout="stage"] [data-session-stage][data-reading-history] [data-timeline-key]:not([data-latest-turn]) [data-component="text-part"] > [data-slot="text-part-body"] {
   width: fit-content;
   max-width: 100%;
   background: color-mix(in srgb, var(--v2-background-bg-base) 88%, transparent);
@@ -47,7 +47,7 @@
   box-shadow: 0 0 0 6px color-mix(in srgb, var(--v2-background-bg-base) 88%, transparent);
 }
 
-[data-session-composer] {
+[data-session-layout="stage"] [data-session-composer] {
   position: relative;
   z-index: 4;
 }

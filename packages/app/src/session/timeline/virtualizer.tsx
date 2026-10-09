@@ -72,12 +72,14 @@ type Input = {
   onSelectionInteraction: (event: MouseEvent) => void
   onUserScroll: (target?: EventTarget | null) => void
   onHistoryScroll: () => void
+  rowMembers?: (row: TimelineRow.TimelineRow) => readonly TimelineRow.TimelineRow[] | undefined
   canRenderImmediately?: (
     row: TimelineRow.TimelineRow,
     disclosure: Readonly<Record<string, boolean | undefined>>,
   ) => boolean
   setRevealMessage?: (fn: (id: string, partID?: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
+  beforeRevealMessage?: (id: string, partID?: string) => void
   /** A tool call the route asks this timeline to open on; `done` clears it once revealed. */
   reveal?: { target: () => string | undefined; done: () => void }
 }
@@ -154,12 +156,14 @@ export function createTimelineVirtualizer(input: Input) {
             .slice(start, range.count)
             .findLastIndex(
               (row) =>
-                !(
-                  Predicate.isTagged(row, "AssistantPart") &&
-                  row.group.type === "context" &&
-                  row.group.refs.length <= 64 &&
-                  !toolOpen[`context:${row.group.key}`]
-                ) && !input.canRenderImmediately?.(row, toolOpen),
+                !(input.rowMembers?.(row) ?? [row]).every(
+                  (member) =>
+                    (Predicate.isTagged(member, "AssistantPart") &&
+                      member.group.type === "context" &&
+                      member.group.refs.length <= 64 &&
+                      !toolOpen[`context:${member.group.key}`]) ||
+                    input.canRenderImmediately?.(member, toolOpen),
+                ),
             )
         : -1
 
@@ -397,11 +401,13 @@ export function createTimelineVirtualizer(input: Input) {
 
     const found = rows()
       .flatMap((row, index) =>
-        Predicate.isTagged(row, "AssistantPart")
-          ? (row.group.type === "part" ? [row.group.ref] : row.group.refs).flatMap((ref) =>
-              matches(ref) ? [{ group: row.group, index, partID: ref.partID }] : [],
-            )
-          : [],
+        (input.rowMembers?.(row) ?? [row]).flatMap((member) =>
+          Predicate.isTagged(member, "AssistantPart")
+            ? (member.group.type === "part" ? [member.group.ref] : member.group.refs).flatMap((ref) =>
+                matches(ref) ? [{ group: member.group, index, partID: ref.partID }] : [],
+              )
+            : [],
+        ),
       )
       .at(-1)
 
@@ -470,11 +476,19 @@ export function createTimelineVirtualizer(input: Input) {
     })
     input.setRevealMessage?.((id, partID) => {
       if (!active()) return
+      input.beforeRevealMessage?.(id, partID)
 
       const partIndex = partID
-        ? rows().findIndex(
-            (row) =>
-              Predicate.isTagged(row, "AssistantPart") && row.group.type === "part" && row.group.ref.partID === partID,
+        ? rows().findIndex((row) =>
+            (input.rowMembers?.(row) ?? [row]).some((member) => {
+              if (Predicate.isTagged(member, "Thinking")) return member.ref.partID === partID
+
+              if (!Predicate.isTagged(member, "AssistantPart")) return false
+
+              const refs = member.group.type === "part" ? [member.group.ref] : member.group.refs
+
+              return refs.some((ref) => ref.partID === partID)
+            }),
           )
         : -1
 

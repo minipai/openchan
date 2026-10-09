@@ -42,7 +42,7 @@ export function latestSessionFace(messages: readonly SessionMessageInfo[], rever
     if (message.type !== "assistant" || (revertMessageID && message.id >= revertMessageID)) return face
 
     return message.content.reduce<Face>((current, part) => {
-      if (part.type === "text") return markedFace(part.text) ?? current
+      if (part.type === "text") return messageFace(part.text) ?? current
 
       if (part.type === "tool") return expressionFace(part) ?? current
 
@@ -51,7 +51,7 @@ export function latestSessionFace(messages: readonly SessionMessageInfo[], rever
   }, "neutral")
 }
 
-function markedFace(text: string): Face | undefined {
+export function messageFace(text: string): Face | undefined {
   const marker = /【[^【】]*】\s*$/.exec(text)
 
   if (!marker || isInsideCode(text, marker.index)) return
@@ -70,7 +70,9 @@ function expressionFace(tool: SessionMessageAssistantTool): Face | undefined {
 function isExpressionTool(name: string) {
   const normalized = name.toLowerCase()
 
-  return normalized === "set_expression" || normalized.endsWith(".set_expression") || normalized.endsWith("_set_expression")
+  return (
+    normalized === "set_expression" || normalized.endsWith(".set_expression") || normalized.endsWith("_set_expression")
+  )
 }
 
 function isFace(value: unknown): value is Face {
@@ -97,7 +99,6 @@ function isInsideCode(text: string, markerIndex: number) {
       if (isClosingFence(line, fence)) fence = undefined
       visiblePrefix.push("")
     } else {
-
       const openingFence = fenceForLine(line)
 
       if (openingFence) {
@@ -127,10 +128,7 @@ function isClosingFence(line: string, fence: { character: string; length: number
   const match = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line)
 
   return (
-    match !== null &&
-    match[2][0] === fence.character &&
-    match[2].length >= fence.length &&
-    /^[\t ]*$/.test(match[3])
+    match !== null && match[2][0] === fence.character && match[2].length >= fence.length && /^[\t ]*$/.test(match[3])
   )
 }
 

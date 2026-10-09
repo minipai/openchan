@@ -11,6 +11,7 @@ node_modules
 playground
 tmp
 dist
+/packages/app/dist-flow/
 dist-node
 ts-dist
 .turbo

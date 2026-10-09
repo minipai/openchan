@@ -417,7 +417,7 @@ legacy: ["summary"],
 - **The lint bans raw effects.** `createEffect`, `createRenderEffect` and `createComputed` may not be imported outside `src/sdk`. An escape hatch needs an `oxlint-disable` comment with a reason.
 - **Suspense only on first load.** Wrap each `lazy()` component in its own `<Suspense>`, read async data through `.latest` or `createLatest`, and never read a refetching resource in render: it blanks the nearest boundary.
 - **Stable objects.** Return the same object from `Panel.list` and reactive contributions while nothing changed, so the host never remounts.
-- **No row contributions.** `session.header` and `session.overlay` are the only timeline surfaces; never render extensions per message row.
+- **No row contributions.** `session.header` and `session.overlay` are the only timeline surfaces; never render extensions per message row. Layouts without an overlay do not render `session.overlay` contributions.
 - **No module state.** Keep state inside setup; module state survives a reload and leaks across windows.
 
 ## Testing

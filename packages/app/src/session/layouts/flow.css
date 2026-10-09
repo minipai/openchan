@@ -1,0 +1,95 @@
+[data-session-layout="flow"] {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+[data-session-layout="flow"] [data-flow-message-divider] {
+  border-block-end: 1px solid var(--v2-border-border-muted);
+}
+
+[data-session-layout="flow"] .flow-avatar {
+  width: 80px;
+  height: 80px;
+  --avatar-font-size: 28px;
+  --avatar-radius: 12px;
+  line-height: var(--line-height-compact);
+}
+
+[data-session-layout="flow"] .flow-avatar[data-role="assistant"] [data-slot="avatar-image"] {
+  position: absolute;
+  width: 340%;
+  max-width: none;
+  height: auto;
+  inset-inline-start: -120%;
+  inset-block-start: -30%;
+  border-radius: 0;
+}
+
+[data-session-layout="flow"] .flow-entry {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  column-gap: 16px;
+  padding-block: 12px;
+  align-items: start;
+}
+
+[data-session-layout="flow"] .flow-identity {
+  justify-self: start;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+[data-session-layout="flow"] .flow-content {
+  grid-column: 2;
+}
+
+[data-session-layout="flow"] .flow-label {
+  display: block;
+  width: 80px;
+  margin-block: 4px;
+  padding: 8px 12px;
+  text-align: center;
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-muted);
+  font-size: 13px;
+  line-height: var(--line-height-compact);
+}
+
+[data-session-layout="flow"] .flow-summary-text {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+[data-session-layout="flow"] .flow-expanded {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  column-gap: 8px;
+  align-items: start;
+}
+
+[data-session-layout="flow"] .flow-expanded > [data-timeline-row],
+[data-session-layout="flow"] .flow-content [data-timeline-row="AssistantPart"] {
+  padding-block-start: 0;
+}
+
+[data-session-layout="flow"] [data-component="user-message"],
+[data-session-layout="flow"] [data-slot="user-message-body"] {
+  align-items: flex-start;
+}
+
+[data-session-layout="flow"] [data-slot="user-message-body"],
+[data-session-layout="flow"] [data-slot="user-message-attachments"] {
+  margin-inline-start: 0;
+  margin-inline-end: auto;
+}
+
+[data-session-layout="flow"] [data-slot="user-message-attachments"],
+[data-session-layout="flow"] [data-slot="user-message-copy-wrapper"] {
+  justify-content: flex-start;
+}

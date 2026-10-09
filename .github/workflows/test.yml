@@ -239,6 +239,13 @@ jobs:
           CI: true
         timeout-minutes: 30
 
+      - name: Verify Flow message layout
+        if: env.E2E_ENABLED == 'true'
+        run: bun --cwd packages/app test:e2e:flow --reporter=line
+        env:
+          CI: true
+        timeout-minutes: 5
+
       - name: Verify service worker precaching and upgrades
         if: env.E2E_ENABLED == 'true'
         working-directory: packages/app

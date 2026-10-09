@@ -557,7 +557,7 @@ export interface SlotMap {
     /** The timeline is the one on screen. */
     readonly active: boolean
   }
-  /** A layer in the routed session's chat stage. Use for stage-scale visuals; contributions own their stacking. */
+  /** A layer in the routed session's chat stage. Layouts with an overlay render this slot; contributions own their stacking. */
   readonly "session.overlay": {
     /** The owning session screen; always present. */
     readonly screen: SessionScreen
