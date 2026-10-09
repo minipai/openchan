@@ -83,7 +83,7 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   ).toHaveCount(1)
   await expect(reply.getByRole("img", { name: "Assistant", exact: true })).toHaveCount(1)
   await expect(reply.getByRole("img", { name: "Assistant", exact: true })).toHaveCSS("width", "80px")
-  await expect(reply.getByRole("img", { name: "Assistant", exact: true })).toHaveCSS("height", "80px")
+  await expect(reply.locator(".flow-avatar-circle")).toHaveCSS("height", "80px")
   await expect(reply.locator("[data-flow-message-divider]")).toHaveCount(0)
   await expect(used).toHaveAttribute("aria-expanded", "false")
   await expect(older).toHaveCount(1)

@@ -12,21 +12,39 @@
 }
 
 [data-session-layout="flow"] .flow-avatar {
+  --flow-avatar-image-width: 224px;
+  --flow-avatar-image-top: -14px;
+  --flow-avatar-circle-top: 10px;
+  position: relative;
   width: 80px;
-  height: 80px;
-  --avatar-font-size: 28px;
-  --avatar-radius: 12px;
-  line-height: var(--line-height-compact);
+  height: calc(80px + var(--flow-avatar-circle-top));
 }
 
-[data-session-layout="flow"] .flow-avatar[data-role="assistant"] [data-slot="avatar-image"] {
+[data-session-layout="flow"] .flow-avatar-circle {
   position: absolute;
-  width: 340%;
+  inset: var(--flow-avatar-circle-top) 0 auto;
+  height: 80px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--v2-background-bg-layer-02);
+  box-shadow: inset 0 0 0 0.5px var(--v2-border-border-base);
+}
+
+[data-session-layout="flow"] .flow-avatar-circle img {
+  position: absolute;
+  width: var(--flow-avatar-image-width);
   max-width: none;
   height: auto;
-  inset-inline-start: -120%;
-  inset-block-start: -30%;
-  border-radius: 0;
+  inset-inline-start: calc((80px - var(--flow-avatar-image-width)) / 2);
+  inset-block-start: calc(var(--flow-avatar-image-top) - var(--flow-avatar-circle-top));
+}
+
+[data-session-layout="flow"] .flow-avatar-top {
+  position: absolute;
+  inset: var(--flow-avatar-image-top) 0 40px;
+  background-size: var(--flow-avatar-image-width) auto;
+  background-position: center top;
+  background-repeat: no-repeat;
 }
 
 [data-session-layout="flow"] .flow-entry {
