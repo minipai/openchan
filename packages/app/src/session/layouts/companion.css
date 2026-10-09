@@ -1,0 +1,37 @@
+[data-session-layout="companion"] {
+  container: companion / inline-size;
+}
+
+[data-session-layout="companion"] .companion-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+[data-session-layout="companion"] .composer-companion {
+  display: block;
+  flex: 0 0 112px;
+  inline-size: 112px;
+  pointer-events: none;
+  user-select: none;
+}
+
+[data-session-layout="companion"] .composer-companion img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 160 / 300;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+@container companion (max-width: 600px) {
+  [data-session-layout="companion"] .companion-composer-row {
+    gap: 8px;
+  }
+
+  [data-session-layout="companion"] .composer-companion {
+    flex-basis: 64px;
+    inline-size: 64px;
+  }
+}

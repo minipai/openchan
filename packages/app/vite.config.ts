@@ -9,11 +9,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, fileURLToPath(new URL(".", import.meta.url)), "VITE_OPENCODE_")
   const chatLayout = env.VITE_OPENCODE_CHAT_LAYOUT ?? "stage"
 
-  if (chatLayout !== "stage" && chatLayout !== "flow") {
-    throw new Error(`Invalid VITE_OPENCODE_CHAT_LAYOUT="${chatLayout}". Expected "stage" or "flow".`)
+  if (chatLayout !== "stage" && chatLayout !== "flow" && chatLayout !== "companion") {
+    throw new Error(`Invalid VITE_OPENCODE_CHAT_LAYOUT="${chatLayout}". Expected "stage", "flow", or "companion".`)
   }
 
-  const outDir = chatLayout === "flow" ? "dist-flow" : "dist"
+  const outDir = chatLayout === "stage" ? "dist" : `dist-${chatLayout}`
 
   const sentry =
     process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT

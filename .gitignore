@@ -12,6 +12,7 @@ playground
 tmp
 dist
 /packages/app/dist-flow/
+/packages/app/dist-companion/
 dist-node
 ts-dist
 .turbo

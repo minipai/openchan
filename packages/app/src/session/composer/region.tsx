@@ -33,6 +33,7 @@ import { resolveSessionComposerSelection } from "./selection"
 import { createSessionRequestModel } from "../requests/model"
 import type { Region } from "@/runtime/extension/panels"
 import { SessionLocationMissing } from "./location-missing"
+import { ComposerCompanion } from "./companion"
 
 export function createActiveSessionRegion(input: {
   session: SessionModel
@@ -305,6 +306,13 @@ export function ActiveSessionComposerRegion(props: {
   return (
     <SessionComposerRegion
       controller={props.model.region}
+      companion={
+        import.meta.env.VITE_OPENCODE_CHAT_LAYOUT === "companion" ? (
+          <Show when={!missing()}>
+            <ComposerCompanion session={props.session} model={props.model} />
+          </Show>
+        ) : undefined
+      }
       composer={
         <Show
           when={missing()}

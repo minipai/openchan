@@ -4,6 +4,7 @@ import { createTwoFilesPatch } from "diff"
 import {
   assistantMessage,
   directory,
+  type EventPayload,
   partDelta,
   partUpdated,
   renderedPartID,
@@ -15,6 +16,7 @@ import {
   toolPart,
   userMessage,
   userText,
+  validateTimelineEvent,
   waitForVisualSettle,
 } from "../utils/timeline"
 import {
@@ -26,6 +28,16 @@ import {
 } from "../utils/visual-stability"
 
 const expanded = { editToolPartsExpanded: true, shellToolPartsExpanded: true, showReasoningSummaries: true }
+
+type SessionExecutionEventType = Extract<
+  EventPayload["type"],
+  | "session.execution.started"
+  | "session.execution.succeeded"
+  | "session.execution.failed"
+  | "session.execution.interrupted"
+>
+
+type SessionExecutionEvent<Type extends SessionExecutionEventType> = Extract<EventPayload, { type: Type }>
 
 test("Flow collapses old paragraphs without splitting native Used groups", async ({ page }) => {
   test.skip(process.env.VITE_OPENCODE_CHAT_LAYOUT !== "flow", "Flow layout build required")
@@ -69,6 +81,7 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   })
 
   const stage = page.locator('[data-session-layout="flow"]')
+  await expect(stage.locator(".composer-companion")).toHaveCount(0)
   const older = stage.locator(".flow-summary").filter({ hasText: "Older multipart answer with a long introduction." })
   const user = stage.locator(".flow-summary").filter({ hasText: "Keep the conversation compact." })
   const oldEnd = page.locator(`[data-timeline-part-id="${renderedPartID("prt_dense_old_end")}"]`)
@@ -81,6 +94,7 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   await expect(
     reply.locator(".flow-summary").filter({ hasText: "The last paragraph of the older multipart answer." }),
   ).toHaveCount(1)
+
   await expect(reply.getByRole("img", { name: "Assistant", exact: true })).toHaveCount(1)
   await expect(reply.getByRole("img", { name: "Assistant", exact: true })).toHaveCSS("width", "80px")
   await expect(reply.locator(".flow-avatar-circle")).toHaveCSS("height", "80px")
@@ -189,11 +203,13 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   await latestEntry.getByRole("button", { name: "Expand Assistant", exact: true }).click()
   await expect(next).toContainText("More content arrived.")
   await timeline.send(partDelta("prt_dense_next", "\n\n【 開心 ＼(ˆ ᗜ ˆ)／ 】", nextMessage.id))
+
   await expect(latestEntry.locator(".flow-avatar img")).toHaveAttribute(
     "src",
     "/characters/kotone/portraits/happy.webp",
   )
   await timeline.send(partDelta("prt_dense_next", "\n\n【 專注 (๑•̀ ᴗ•́)૭✧ 】", nextMessage.id))
+
   await expect(latestEntry.locator(".flow-avatar img")).toHaveAttribute(
     "src",
     "/characters/kotone/portraits/focused.webp",
@@ -207,6 +223,211 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   )
   await expect(latestEntry.locator('[data-timeline-part-ids="prt_dense_tail"]')).toHaveCount(1)
   await expect(latestEntry.getByRole("img", { name: "Assistant", exact: true })).toHaveCount(1)
+})
+
+test("Companion preserves the native timeline and follows composer state", async ({ page }) => {
+  test.skip(process.env.VITE_OPENCODE_CHAT_LAYOUT !== "companion", "Companion layout build required")
+
+  const timeline = await setupTimeline(page, {
+    messages: [
+      userMessage(undefined, { id: "msg_companion_older_user", created: 1700000000000 }),
+      assistantMessage(
+        [textPart("prt_companion_older_text", "Older native assistant content stays unfolded.")],
+        {
+          id: "msg_companion_older_assistant",
+          parentID: "msg_companion_older_user",
+          created: 1700000001000,
+        },
+      ),
+      userMessage(undefined, { id: "msg_companion_latest_user", created: 1700000002000 }),
+      assistantMessage(
+        [textPart("prt_companion_initial_text", "The initial native assistant response is visible.")],
+        {
+          id: "msg_companion_initial_assistant",
+          parentID: "msg_companion_latest_user",
+          created: 1700000003000,
+        },
+      ),
+    ],
+    reducedMotion: true,
+  })
+
+  const companionLayout = page.locator('[data-session-layout="companion"]')
+  const row = companionLayout.locator(".companion-composer-row")
+  const companion = row.locator("picture.composer-companion")
+  const image = companion.locator("img")
+  const composer = companionLayout.locator('[data-component="composer"]')
+  const editor = composer.getByRole("textbox")
+
+  await expect(
+    companionLayout.getByText("Older native assistant content stays unfolded.", { exact: true }),
+  ).toBeVisible()
+  await expect(
+    companionLayout.getByText("The initial native assistant response is visible.", { exact: true }),
+  ).toBeVisible()
+  await expect(companionLayout.locator(".flow-summary")).toHaveCount(0)
+  await expect(companionLayout.locator(".flow-avatar")).toHaveCount(0)
+  await expect(companionLayout.locator("[data-flow-message-divider]")).toHaveCount(0)
+
+  const companionPaths = {
+    idle: /^\/characters\/kotone\/companion\/idle-0[1-3]\.png$/,
+    typing: /^\/characters\/kotone\/companion\/typing-0[3-5]\.png$/,
+    working: /^\/characters\/kotone\/companion\/working-0[1-5]\.png$/,
+    error: /^\/characters\/kotone\/companion\/error-0[3-5]\.png$/,
+    success: /^\/characters\/kotone\/companion\/success-0[1-5]\.png$/,
+    waiting: /^\/characters\/kotone\/companion\/waiting-0[2-5]\.png$/,
+  }
+
+  const currentPath = () =>
+    image.evaluate((element) => {
+      if (!(element instanceof HTMLImageElement)) throw new Error("Companion image is unavailable")
+      const source = element.currentSrc
+
+      return source ? new URL(source).pathname : ""
+    })
+
+  const executionEvent = <Type extends SessionExecutionEventType>(
+    event: Pick<SessionExecutionEvent<Type>, "type" | "data">,
+    seq: number,
+  ) =>
+    validateTimelineEvent({
+      ...event,
+      id: `evt_companion_execution_${seq}`,
+      created: 1700000006000 + seq,
+      location: { directory },
+      durable: { aggregateID: sessionID, seq, version: 1 },
+    })
+
+  await expect(page.locator("html")).toHaveAttribute("dir", "ltr")
+  await expect(companion).toBeVisible()
+  await expect(companion).toHaveAttribute("aria-hidden", "true")
+  await expect(image).toHaveAttribute("alt", "")
+  await expect(image).toHaveAttribute("src", /^\/characters\/kotone\/companion\/idle-0[1-3]\.gif$/)
+  await expect.poll(currentPath).toMatch(companionPaths.idle)
+  await expect(companion).toHaveCSS("width", "112px")
+  await expect(editor).toBeVisible()
+  await expect(editor).toBeEditable()
+
+  const companionBounds = await companion.boundingBox()
+  const composerBounds = await composer.boundingBox()
+  const rowBounds = await row.boundingBox()
+
+  if (!companionBounds || !composerBounds || !rowBounds) throw new Error("Missing desktop composer geometry")
+  expect(companionBounds.x + companionBounds.width).toBeLessThanOrEqual(composerBounds.x)
+  expect(composerBounds.width).toBeLessThan(rowBounds.width)
+
+  await page.evaluate(() => {
+    document.documentElement.dir = "rtl"
+  })
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl")
+  await expect
+    .poll(async () => {
+      const companionBox = await companion.boundingBox()
+      const composerBox = await composer.boundingBox()
+
+      return !!companionBox && !!composerBox && companionBox.x > composerBox.x
+    })
+    .toBe(true)
+  await page.evaluate(() => {
+    document.documentElement.dir = "ltr"
+  })
+
+  await editor.fill("A draft makes Kotone type.")
+  await expect.poll(currentPath).toMatch(companionPaths.typing)
+  const typingPath = await currentPath()
+  await page.evaluate(() => {
+    // A deterministic sequence makes a per-keystroke reselection fail without relying on random odds.
+    const values = [0, 0.5, 0.99]
+    let index = 0
+    Math.random = () => values[index++ % values.length]!
+  })
+
+  for (const character of " more") {
+    await editor.pressSequentially(character)
+    await expect.poll(currentPath).toBe(typingPath)
+  }
+
+  await expect(editor).toContainText("A draft makes Kotone type. more")
+  await editor.clear()
+  await expect.poll(currentPath).toMatch(companionPaths.idle)
+
+  await editor.fill("Running takes priority over the draft.")
+  await timeline.send(executionEvent({ type: "session.execution.started", data: { sessionID } }, 0))
+  await expect.poll(currentPath).toMatch(companionPaths.working)
+  await editor.clear()
+  await expect.poll(currentPath).toMatch(companionPaths.working)
+  await timeline.send(executionEvent({ type: "session.execution.succeeded", data: { sessionID } }, 1))
+  await expect.poll(currentPath).toMatch(companionPaths.success)
+
+  await editor.fill("A draft temporarily overrides the previous success.")
+  await expect.poll(currentPath).toMatch(companionPaths.typing)
+  await editor.clear()
+  await expect.poll(currentPath).toMatch(companionPaths.success)
+
+  await timeline.send(
+    executionEvent(
+      {
+        type: "session.execution.failed",
+        data: { sessionID, error: { type: "provider.error", message: "The request failed." } },
+      },
+      2,
+    ),
+  )
+  await expect.poll(currentPath).toMatch(companionPaths.error)
+
+  await editor.fill("A draft temporarily overrides the latest error.")
+  await expect.poll(currentPath).toMatch(companionPaths.typing)
+  await editor.clear()
+  await expect.poll(currentPath).toMatch(companionPaths.error)
+
+  await timeline.send(executionEvent({ type: "session.execution.interrupted", data: { sessionID, reason: "user" } }, 3))
+  await expect.poll(currentPath).toMatch(companionPaths.idle)
+
+  await editor.fill("A pending permission takes priority.")
+  await timeline.send(executionEvent({ type: "session.execution.started", data: { sessionID } }, 4))
+  await expect.poll(currentPath).toMatch(companionPaths.working)
+  await timeline.send(
+    validateTimelineEvent({
+      id: "evt_companion_permission_asked",
+      created: 1700000007000,
+      type: "permission.asked",
+      location: { directory },
+      data: {
+        id: "per_companion_waiting",
+        sessionID,
+        action: "shell",
+        resources: ["git status"],
+        metadata: {},
+      },
+    }),
+  )
+  await expect(page.locator('[data-component="dock-prompt"][data-kind="permission"]')).toBeVisible()
+  await expect.poll(currentPath).toMatch(companionPaths.waiting)
+  await expect(companion).toBeVisible()
+  await expect(composer).toHaveCount(0)
+
+  await timeline.send(
+    validateTimelineEvent({
+      id: "evt_companion_permission_replied",
+      created: 1700000007001,
+      type: "permission.replied",
+      location: { directory },
+      data: { sessionID, requestID: "per_companion_waiting", reply: "once" },
+    }),
+  )
+  await expect(page.locator('[data-component="dock-prompt"][data-kind="permission"]')).toHaveCount(0)
+  await expect(editor).toBeVisible()
+  await editor.clear()
+  await timeline.send(executionEvent({ type: "session.execution.interrupted", data: { sessionID, reason: "user" } }, 5))
+  await expect.poll(currentPath).toMatch(companionPaths.idle)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(companion).toHaveCSS("width", "64px")
+  await expect.poll(() => companionLayout.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await expect(editor).toBeEditable()
+  await editor.fill("The mobile editor remains usable.")
+  await expect(editor).toContainText("The mobile editor remains usable.")
+  await expect.poll(currentPath).toMatch(companionPaths.typing)
 })
 
 const contextTools = [
