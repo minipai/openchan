@@ -1,4 +1,5 @@
 import type { SessionMessageAssistantTool, SessionMessageInfo } from "@opencode/client/promise"
+import { indexAssistantMessagesByParent } from "../timeline/assistant-messages"
 
 const moods = [
   ["neutral", "( • ᴗ • )"],
@@ -49,6 +50,14 @@ export function latestSessionFace(messages: readonly SessionMessageInfo[], rever
       return current
     }, face)
   }, "neutral")
+}
+
+export function latestExchangeFace(
+  messages: readonly SessionMessageInfo[],
+  userMessageID: string,
+  revertMessageID?: string,
+): Face {
+  return latestSessionFace(indexAssistantMessagesByParent(messages).get(userMessageID) ?? [], revertMessageID)
 }
 
 export function messageFace(text: string): Face | undefined {

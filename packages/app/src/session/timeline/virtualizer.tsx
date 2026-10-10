@@ -55,13 +55,19 @@ type Projection = Pick<
   "activeMessageID" | "messageByID" | "messageLastRowIndex" | "messageRowIndex" | "rowByKey" | "rows"
 >
 
+type DocumentGroup = { id: string; rows: TimelineRow.TimelineRow[] }
+
+type TimelineVirtualItem = { key: string; rows: readonly TimelineRow.TimelineRow[] }
+
 type Input = {
   active?: Accessor<boolean>
   sessionKey: Accessor<string>
   presentationKey?: Accessor<string>
   layoutKey?: Accessor<string>
   projection: Projection
+  documentGroups?: Accessor<readonly DocumentGroup[] | undefined>
   showHeader: Accessor<boolean>
+  fixedHeader?: Accessor<boolean>
   /** True while the timeline follows the newest content. Drives every anchoring decision. */
   pinned: Accessor<boolean>
   scroll: Accessor<{ overflow: boolean; jump: boolean }>
@@ -71,6 +77,7 @@ type Input = {
   onScheduleScrollState: (element: HTMLDivElement) => void
   onPin: () => void
   onUnpin: () => void
+  onHistoryLayoutReady?: (ready: boolean) => void
   onSelectionInteraction: (event: MouseEvent) => void
   onUserScroll: (target?: EventTarget | null) => void
   onHistoryScroll: () => void
@@ -88,6 +95,8 @@ type Input = {
 
 type ViewProps = {
   header: JSX.Element
+  frameClass?: string
+  frameOverlay?: (userMessageID?: string) => JSX.Element
   bottomSpacer?: JSX.Element
   workspaceSession: Accessor<boolean>
   deferred: (row: TimelineRow.TimelineRow) => boolean
@@ -98,7 +107,7 @@ export function createTimelineVirtualizer(input: Input) {
   const language = useLanguage()
   const active = () => input.active?.() !== false
   const isDesktop = createMediaQuery("(min-width: 768px)")
-  const topOffset = () => (input.showHeader() ? 64 : isDesktop() ? 0 : 16)
+  const topOffset = () => (input.fixedHeader?.() ? 0 : input.showHeader() ? 64 : isDesktop() ? 0 : 16)
   const ownerSessionKey = input.sessionKey()
   const entry = cache.get(ownerSessionKey)
   const cached = entry?.presentationKey === input.presentationKey?.() ? entry : undefined
@@ -111,21 +120,47 @@ export function createTimelineVirtualizer(input: Input) {
   const rows = input.projection.rows
   const rowByKey = input.projection.rowByKey
 
-  const latestUserMessageRowIndex = createMemo(() => {
-    const id = input.projection.activeMessageID()
+  const grouped = () => input.documentGroups?.() !== undefined
 
-    return id ? (input.projection.messageRowIndex().get(id) ?? -1) : -1
+  const items = createMemo<TimelineVirtualItem[]>(() => {
+    const groups = input.documentGroups?.()
+
+    if (groups) return groups.map((group) => ({ key: `document:${group.id}`, rows: group.rows }))
+
+    return rows().map((row) => ({ key: TimelineRow.key(row), rows: [row] }))
   })
 
-  const rowKeys = createMemo(() => rows().map(TimelineRow.key), undefined, {
+  const itemByKey = createMemo(() => new Map(items().map((item) => [item.key, item] as const)))
+
+  const itemKeys = createMemo(() => items().map((item) => item.key), undefined, {
     equals: (previous, next) => previous.length === next.length && previous.every((key, index) => key === next[index]),
   })
 
-  const knownKeys = new Set(rowKeys())
+  const itemIndexByMessageID = createMemo(() => {
+    const result = new Map<string, number>()
+
+    items().forEach((item, index) => {
+      item.rows.forEach((row) => {
+        if (!result.has(row.userMessageID)) result.set(row.userMessageID, index)
+      })
+    })
+
+    return result
+  })
+
+  const latestActiveItemIndex = createMemo(() => {
+    const id = input.projection.activeMessageID()
+
+    if (!id) return -1
+
+    return grouped() ? (itemIndexByMessageID().get(id) ?? -1) : (input.projection.messageLastRowIndex().get(id) ?? -1)
+  })
+
+  const knownKeys = new Set(itemKeys())
   const addedKeys = new Set<string>()
 
   const getItemKey = createMemo(() => {
-    const keys = rowKeys()
+    const keys = itemKeys()
     keys
       .filter((key) => !knownKeys.has(key))
       .forEach((key) => {
@@ -137,8 +172,7 @@ export function createTimelineVirtualizer(input: Input) {
   })
 
   const rangeExtractor = createMemo(() => {
-    const id = input.projection.activeMessageID()
-    const active = id ? (input.projection.messageLastRowIndex().get(id) ?? -1) : -1
+    const active = latestActiveItemIndex()
     const initialTail = rendering.initialTail && input.pinned()
 
     return (range: Range) => {
@@ -147,18 +181,21 @@ export function createTimelineVirtualizer(input: Input) {
       const start = Math.max(0, range.startIndex - 2)
 
       const boundary = initialTail
-        ? rows()
+        ? items()
             .slice(start, range.count)
-            .findLastIndex(
-              (row) =>
-                !(input.rowMembers?.(row) ?? [row]).every(
+            .findLastIndex((item) =>
+              item.rows.some((row) =>
+                (input.rowMembers?.(row) ?? [row]).some(
                   (member) =>
-                    (Predicate.isTagged(member, "AssistantPart") &&
-                      member.group.type === "context" &&
-                      member.group.refs.length <= 64 &&
-                      !toolOpen[`context:${member.group.key}`]) ||
-                    input.canRenderImmediately?.(member, toolOpen),
+                    !(
+                      (Predicate.isTagged(member, "AssistantPart") &&
+                        member.group.type === "context" &&
+                        member.group.refs.length <= 64 &&
+                        !toolOpen[`context:${member.group.key}`]) ||
+                      input.canRenderImmediately?.(member, toolOpen)
+                    ),
                 ),
+              ),
             )
         : -1
 
@@ -191,7 +228,7 @@ export function createTimelineVirtualizer(input: Input) {
 
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
-      return rows().length
+      return items().length
     },
     getScrollElement: () => listRoot() ?? null,
     observeElementRect: (instance, callback) => {
@@ -231,7 +268,7 @@ export function createTimelineVirtualizer(input: Input) {
         if (!active()) return
         virtualContent?.querySelectorAll<HTMLDivElement>("[data-index]").forEach(virtualizer.measureElement)
 
-        if (input.pinned()) virtualizer.scrollToEnd()
+        if (input.pinned()) scrollToEnd()
         settleColdBottom()
       })
     },
@@ -282,7 +319,7 @@ export function createTimelineVirtualizer(input: Input) {
     scrollEndThreshold: 80,
     get scrollMargin() {
       // Empty projections still need the bottom spacer for running status.
-      return rows().length > 0 ? topOffset() : 0
+      return items().length > 0 ? topOffset() : 0
     },
     paddingEnd: 64,
     get rangeExtractor() {
@@ -325,10 +362,10 @@ export function createTimelineVirtualizer(input: Input) {
   // Otherwise each row can render and force layout before the next is measured.
   virtualizer.resizeItem = (index, size) => {
     if (!active()) return
-    const row = rows()[index]
+    const item = items()[index]
 
-    if (!row) return
-    const key = TimelineRow.key(row)
+    if (!item) return
+    const key = item.key
 
     if ((virtualizer.itemSizeCache.get(key) ?? fallbackItemSize) === size) {
       pendingSizes.delete(index)
@@ -353,9 +390,9 @@ export function createTimelineVirtualizer(input: Input) {
       batchingColdSizes = coldPending && input.pinned()
       batch(() => {
         sizes.forEach(([index, value]) => {
-          const row = rows()[index]
+          const item = items()[index]
 
-          if (!row || TimelineRow.key(row) !== value.key) return
+          if (!item || item.key !== value.key) return
           resizeItem(index, value.size)
 
           // TanStack recalculates its range after each resize. Advance the
@@ -379,8 +416,7 @@ export function createTimelineVirtualizer(input: Input) {
       const root = listRoot()
 
       // Reopening a settled scroll-to-end operation can fight subsequent keyboard scrolling.
-      if (root && Math.abs(root.scrollHeight - root.clientHeight - root.scrollTop) > endEpsilon)
-        virtualizer.scrollToEnd()
+      if (root && Math.abs(root.scrollHeight - root.clientHeight - root.scrollTop) > endEpsilon) scrollToEnd()
     })
   }
 
@@ -422,8 +458,8 @@ export function createTimelineVirtualizer(input: Input) {
       )
     }
 
-    const found = rows()
-      .flatMap((row, index) =>
+    const found = items().flatMap((item, index) =>
+      item.rows.flatMap((row) =>
         (input.rowMembers?.(row) ?? [row]).flatMap((member) =>
           Predicate.isTagged(member, "AssistantPart")
             ? (member.group.type === "part" ? [member.group.ref] : member.group.refs).flatMap((ref) =>
@@ -431,7 +467,8 @@ export function createTimelineVirtualizer(input: Input) {
               )
             : [],
         ),
-      )
+      ),
+    )
       .at(-1)
 
     if (!found) return false
@@ -445,7 +482,7 @@ export function createTimelineVirtualizer(input: Input) {
     )
     input.onUnpin()
     prepareNavigation()
-    virtualizer.scrollToIndex(found.index, { align: "center" })
+    scrollToIndex(found.index, "center")
 
     return true
   }
@@ -492,7 +529,7 @@ export function createTimelineVirtualizer(input: Input) {
       const target = input.reveal?.target()
 
       if (target && revealPart(target)) input.reveal?.done()
-      else if (input.pinned()) virtualizer.scrollToEnd()
+      else if (input.pinned()) scrollToEnd()
 
       reportOffset?.(root.scrollTop, false)
       settleColdBottom()
@@ -502,34 +539,49 @@ export function createTimelineVirtualizer(input: Input) {
       input.beforeRevealMessage?.(id, partID)
 
       const partIndex = partID
-        ? rows().findIndex((row) =>
-            (input.rowMembers?.(row) ?? [row]).some((member) => {
-              if (Predicate.isTagged(member, "Thinking")) return member.ref.partID === partID
+        ? items().findIndex((item) =>
+            item.rows.some((row) =>
+              (input.rowMembers?.(row) ?? [row]).some((member) => {
+                if (Predicate.isTagged(member, "Thinking")) return member.ref.partID === partID
 
-              if (!Predicate.isTagged(member, "AssistantPart")) return false
+                if (!Predicate.isTagged(member, "AssistantPart")) return false
 
-              const refs = member.group.type === "part" ? [member.group.ref] : member.group.refs
+                const refs = member.group.type === "part" ? [member.group.ref] : member.group.refs
 
-              return refs.some((ref) => ref.partID === partID)
-            }),
+                return refs.some((ref) => ref.partID === partID)
+              }),
+            ),
           )
         : -1
 
-      const index = partIndex >= 0 ? partIndex : input.projection.messageRowIndex().get(id)
+      const index =
+        partIndex >= 0
+          ? partIndex
+          : grouped()
+            ? itemIndexByMessageID().get(id)
+            : input.projection.messageRowIndex().get(id)
 
       if (index === undefined) return
       prepareNavigation()
-      virtualizer.scrollToIndex(index, { align: "center" })
+      scrollToIndex(index, "center")
     })
     input.setScrollToEnd?.(() => {
       if (!active() || !listRoot()?.isConnected) return
       prepareNavigation()
       input.onPin()
-      virtualizer.scrollToEnd()
+      scrollToEnd()
     })
   })
 
-  let coldPending = coldBottomMount
+  function scrollToEnd() {
+    virtualizer.scrollToEnd()
+  }
+
+  function scrollToIndex(index: number, align: "center") {
+    virtualizer.scrollToIndex(index, { align })
+  }
+
+  let coldPending = !initialMeasurements?.length
   let settleQueued = false
   let contentObserver: MutationObserver | undefined
   let viewportObserver: ResizeObserver | undefined
@@ -539,10 +591,11 @@ export function createTimelineVirtualizer(input: Input) {
     const root = listRoot()
 
     if (!input.pinned() || !virtualContent || !root) return
+
     // scrollToEnd computes its target from the DOM, not the new size cache.
     virtualContent.style.height = `${virtualizer.getTotalSize()}px`
 
-    if (Math.abs(root.scrollHeight - root.clientHeight - root.scrollTop) > endEpsilon) virtualizer.scrollToEnd()
+    if (Math.abs(root.scrollHeight - root.clientHeight - root.scrollTop) > endEpsilon) scrollToEnd()
 
     // Report after core size adjustments finish so they cannot apply a delta
     // twice. This avoids waiting a frame for the native scroll event.
@@ -550,11 +603,11 @@ export function createTimelineVirtualizer(input: Input) {
   }
 
   const pendingMeasurements = () => {
-    const items = virtualizer.getVirtualItems()
+    const mounted = virtualizer.getVirtualItems()
 
     return (
-      (rows().length > 0 && items.length === 0) ||
-      items.some((item) => !virtualizer.elementsCache.get(item.key)?.isConnected)
+      (items().length > 0 && mounted.length === 0) ||
+      mounted.some((item) => !virtualizer.elementsCache.get(item.key)?.isConnected)
     )
   }
 
@@ -598,6 +651,7 @@ export function createTimelineVirtualizer(input: Input) {
       contentObserver?.disconnect()
       viewportObserver?.disconnect()
       virtualContent.style.removeProperty("visibility")
+      input.onHistoryLayoutReady?.(true)
     })
   }
 
@@ -635,7 +689,11 @@ export function createTimelineVirtualizer(input: Input) {
     scrollTop = root.scrollTop
     maxScroll = root.scrollHeight - root.clientHeight
 
-    if (active()) input.setScrollRef(root)
+    if (active()) {
+      input.onHistoryLayoutReady?.(!coldPending)
+      input.setScrollRef(root)
+    }
+
     viewportObserver?.observe(root)
     settleColdBottom()
   }
@@ -742,6 +800,7 @@ export function createTimelineVirtualizer(input: Input) {
   const handleListScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
     if (!active()) return
     const root = event.currentTarget
+
     const previousTop = scrollTop
     const previousMaxScroll = maxScroll
     scrollTop = root.scrollTop
@@ -759,14 +818,16 @@ export function createTimelineVirtualizer(input: Input) {
   function View(props: ViewProps) {
     function VirtualRow(rowProps: { rowKey: string }) {
       let element: HTMLDivElement
-      const initialItem = virtualItemByKey().get(rowProps.rowKey)!
-      const initialRow = rowByKey().get(rowProps.rowKey)!
-      const item = createMemo(() => virtualItemByKey().get(rowProps.rowKey) ?? initialItem)
-      const row = createMemo(() => rowByKey().get(rowProps.rowKey) ?? rows()[item().index] ?? initialRow)
-      const [ready, setReady] = createSignal(initialItem.size <= fallbackItemSize || !props.deferred(initialRow))
+      const initialItem = virtualItemByKey().get(rowProps.rowKey)
+      const initialRow = itemByKey().get(rowProps.rowKey)!.rows[0]!
+      const initialSize = initialItem?.size ?? virtualizer.itemSizeCache.get(rowProps.rowKey) ?? fallbackItemSize
+      const item = createMemo(() => virtualItemByKey().get(rowProps.rowKey))
+      const index = () => item()?.index ?? itemKeys().indexOf(rowProps.rowKey)
+      const row = createMemo(() => itemByKey().get(rowProps.rowKey)?.rows[0] ?? initialRow)
+      const [ready, setReady] = createSignal(initialSize <= fallbackItemSize || !props.deferred(initialRow))
       let contentMeasureFrame: number | undefined
 
-      const latestTurn = () => item().index > latestUserMessageRowIndex()
+      const latestTurn = () => index() > latestActiveItemIndex()
 
       onMount(() => virtualizer.measureElement(element))
       // Prepending history changes data-index, not the keyed element's identity.
@@ -782,10 +843,10 @@ export function createTimelineVirtualizer(input: Input) {
           data-latest-turn={latestTurn() ? "" : undefined}
           style={{
             position: "absolute",
-            top: `${item().start - topOffset() - rendering.scrollAdjustment}px`,
+            top: `${(item()?.start ?? 0) - topOffset() - rendering.scrollAdjustment}px`,
             left: "0",
             width: "100%",
-            height: `${item().size}px`,
+            height: `${item()?.size ?? fallbackItemSize}px`,
             overflow: "clip",
             // History highlights and active bubbles extend beyond the measured row box.
             "overflow-clip-margin": Predicate.isTagged(row(), "TurnGap")
@@ -813,13 +874,15 @@ export function createTimelineVirtualizer(input: Input) {
                 virtualizer.elementsCache.forEach((item) => {
                   if (item.isConnected) virtualizer.resizeItem(virtualizer.indexFromElement(item), item.offsetHeight)
                 })
-                virtualizer.resizeItem(item().index, element.offsetHeight)
+                virtualizer.resizeItem(index(), element.offsetHeight)
+
                 virtualContent.style.height = `${virtualizer.getTotalSize()}px`
-                virtualizer.scrollToEnd()
+
+                scrollToEnd()
               })
             }}
-            data-index={item().index}
-            style={{ "min-height": ready() ? undefined : `${initialItem.size}px` }}
+            data-index={index()}
+            style={{ "min-height": ready() ? undefined : `${initialSize}px` }}
           >
             {props.renderRow(row, () => {
               setReady(true)
@@ -836,81 +899,194 @@ export function createTimelineVirtualizer(input: Input) {
       )
     }
 
+    function VirtualGroup(groupProps: { itemKey: string }) {
+      let element: HTMLDivElement
+      const initialItem = virtualItemByKey().get(groupProps.itemKey)
+      const initialGroup = itemByKey().get(groupProps.itemKey)!
+      const initialSize = initialItem?.size ?? virtualizer.itemSizeCache.get(groupProps.itemKey) ?? fallbackItemSize
+      const item = createMemo(() => virtualItemByKey().get(groupProps.itemKey))
+      const group = createMemo(() => itemByKey().get(groupProps.itemKey) ?? initialGroup)
+      const rowsByKey = createMemo(() => new Map(group().rows.map((row) => [TimelineRow.key(row), row] as const)))
+
+      const overlayAfterKey = createMemo(() => {
+        const prompt = group().rows.find((row) => Predicate.isTagged(row, "UserMessage"))
+        const anchor = prompt ?? group().rows.at(-1)
+
+        return anchor ? TimelineRow.key(anchor) : undefined
+      })
+
+      const index = () => item()?.index ?? itemKeys().indexOf(groupProps.itemKey)
+      const [ready, setReady] = createSignal(initialSize <= fallbackItemSize || group().rows.every((row) => !props.deferred(row)))
+      let contentMeasureFrame: number | undefined
+
+      const measure = () => {
+        setReady(true)
+
+        if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
+        contentMeasureFrame = requestAnimationFrame(() => {
+          contentMeasureFrame = undefined
+
+          if (active() && element.isConnected) virtualizer.measureElement(element)
+        })
+      }
+
+      onMount(() => virtualizer.measureElement(element))
+      onCleanup(() => {
+        if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
+        queueMicrotask(() => virtualizer.measureElement(null))
+      })
+
+      return (
+        <div
+          ref={(value) => {
+            element = value
+
+            if (
+              !group().rows.some((row) => Predicate.isTagged(row, "UserMessage")) ||
+              !addedKeys.has(groupProps.itemKey) ||
+              !input.pinned() ||
+              coldPending
+            )
+              return
+            queueMicrotask(() => {
+              if (!input.pinned() || !virtualContent?.isConnected) return
+              virtualizer.elementsCache.forEach((item) => {
+                if (item.isConnected) virtualizer.resizeItem(virtualizer.indexFromElement(item), item.offsetHeight)
+              })
+              virtualizer.resizeItem(index(), element.offsetHeight)
+              virtualContent.style.height = `${virtualizer.getTotalSize()}px`
+              scrollToEnd()
+            })
+          }}
+          data-index={index()}
+          data-document-exchange=""
+          class="document-exchange"
+          style={{
+            position: "absolute",
+            top: `${(item()?.start ?? 0) - topOffset() - rendering.scrollAdjustment}px`,
+            left: "0",
+            width: "100%",
+            "min-height": ready() ? undefined : `${initialSize}px`,
+          }}
+        >
+          <div data-document-paper="" class="document-paper">
+            <For each={group().rows.map(TimelineRow.key)}>
+              {(rowKey) => {
+                const initialRow = rowsByKey().get(rowKey)!
+
+                const row = createMemo(() => rowByKey().get(rowKey) ?? initialRow)
+
+                return (
+                  <>
+                    <div
+                      data-timeline-key={rowKey}
+                      data-latest-turn={index() >= latestActiveItemIndex() ? "" : undefined}
+                    >
+                      {props.renderRow(row, measure)}
+                    </div>
+                    <Show when={props.frameOverlay && overlayAfterKey() === rowKey}>
+                      {props.frameOverlay?.(group().rows[0]?.userMessageID)}
+                    </Show>
+                  </>
+                )
+              }}
+            </For>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div
         class="relative w-full h-full min-w-0"
+        classList={{ "flex flex-col min-h-0": input.fixedHeader?.() }}
         data-workspace-session={props.workspaceSession() ? "" : undefined}
         data-local-session={!props.workspaceSession() ? "" : undefined}
       >
-        <div
-          class="absolute left-1/2 -translate-x-1/2 z-[60] pointer-events-none transition-all duration-200 ease-out"
-          classList={{
-            "bottom-8": true,
-            "opacity-100 translate-y-0 scale-100": input.scroll().overflow && input.scroll().jump,
-            "opacity-0 translate-y-2 pointer-events-none": !input.scroll().overflow || !input.scroll().jump,
-            "scale-[0.8]": !input.scroll().overflow || !input.scroll().jump,
-          }}
-        >
-          <button
-            type="button"
-            aria-label={language.t("session.messages.jumpToLatest")}
-            class="pointer-events-auto flex items-center justify-center w-8 h-7 px-2 py-1.5 rounded-lg border-none cursor-pointer text-v2-text-text-base backdrop-blur-[2px]"
-            style={{
-              background: "color-mix(in srgb, var(--v2-background-bg-base) 92%, transparent)",
-              "box-shadow": "var(--v2-elevation-raised), 0px 2px 8px var(--v2-background-bg-base)",
-            }}
-            onClick={input.onResumeScroll}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M12.3333 8.66665L8 13L3.66667 8.66665M8 12.6667V2.83332"
-                stroke="currentColor"
-                stroke-linecap="square"
-              />
-            </svg>
-          </button>
-        </div>
-        <ScrollView
-          data-slot="session-timeline-scroll"
-          viewportRef={bindListRoot}
-          onBeforeScroll={prepareNavigation}
-          verticalScrollAdjustment={rendering.scrollAdjustment}
-          onWheel={handleListWheel}
-          onTouchStart={handleListTouchStart}
-          onPointerDown={handleListPointerDown}
-          onKeyDown={handleListKeyDown}
-          onScroll={handleListScroll}
-          onClick={input.onSelectionInteraction}
-          class="relative min-w-0 w-full h-full"
-          style={{ "--sticky-accordion-top": input.showHeader() ? "48px" : "0px" }}
-        >
-          <Show when={input.showHeader()} fallback={<div aria-hidden="true" class="h-4 md:hidden" />}>
-            {props.header}
-          </Show>
+        <Show when={input.fixedHeader?.() && input.showHeader()}>{props.header}</Show>
+        <div class={props.frameClass} style={{ display: props.frameClass ? undefined : "contents" }}>
           <div
-            data-timeline-virtual-content
-            ref={(element) => {
-              virtualContent = element
-
-              if (active()) input.setContentRef(element)
-            }}
-            style={{
-              height: `${virtualizer.getTotalSize() - rendering.scrollAdjustment}px`,
-              position: "relative",
-              width: "100%",
-              visibility: coldBottomMount ? "hidden" : undefined,
+            class="absolute left-1/2 -translate-x-1/2 z-[60] pointer-events-none transition-all duration-200 ease-out"
+            classList={{
+              "bottom-8": true,
+              "opacity-100 translate-y-0 scale-100": input.scroll().overflow && input.scroll().jump,
+              "opacity-0 translate-y-2 pointer-events-none": !input.scroll().overflow || !input.scroll().jump,
+              "scale-[0.8]": !input.scroll().overflow || !input.scroll().jump,
             }}
           >
-            <For each={virtualRowKeys()}>{(rowKey) => <VirtualRow rowKey={rowKey} />}</For>
-            <div
-              data-timeline-row="bottom-spacer"
-              class="h-16 absolute top-0 left-0 w-full"
-              style={{ transform: `translateY(${virtualizer.getTotalSize() - 64 - rendering.scrollAdjustment}px)` }}
+            <button
+              type="button"
+              aria-label={language.t("session.messages.jumpToLatest")}
+              class="pointer-events-auto flex items-center justify-center w-8 h-7 px-2 py-1.5 rounded-lg border-none cursor-pointer text-v2-text-text-base backdrop-blur-[2px]"
+              style={{
+                background: "color-mix(in srgb, var(--v2-background-bg-base) 92%, transparent)",
+                "box-shadow": "var(--v2-elevation-raised), 0px 2px 8px var(--v2-background-bg-base)",
+              }}
+              onClick={input.onResumeScroll}
             >
-              {props.bottomSpacer}
-            </div>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M12.3333 8.66665L8 13L3.66667 8.66665M8 12.6667V2.83332"
+                  stroke="currentColor"
+                  stroke-linecap="square"
+                />
+              </svg>
+            </button>
           </div>
-        </ScrollView>
+          <ScrollView
+            data-slot="session-timeline-scroll"
+            viewportRef={bindListRoot}
+            onBeforeScroll={prepareNavigation}
+            verticalScrollAdjustment={rendering.scrollAdjustment}
+            onWheel={handleListWheel}
+            onTouchStart={handleListTouchStart}
+            onPointerDown={handleListPointerDown}
+            onKeyDown={handleListKeyDown}
+            onScroll={handleListScroll}
+            onClick={input.onSelectionInteraction}
+            class="relative min-w-0 w-full h-full"
+            style={{ "--sticky-accordion-top": input.showHeader() && !input.fixedHeader?.() ? "48px" : "0px" }}
+          >
+            <Show when={!input.fixedHeader?.()}>
+              <Show when={input.showHeader()} fallback={<div aria-hidden="true" class="h-4 md:hidden" />}>
+                {props.header}
+              </Show>
+            </Show>
+            <div
+              data-timeline-virtual-content
+              class="w-full"
+              ref={(element) => {
+                virtualContent = element
+
+                if (active()) input.setContentRef(element)
+              }}
+              style={{
+                height: `${virtualizer.getTotalSize() - rendering.scrollAdjustment}px`,
+                position: "relative",
+                visibility: coldBottomMount ? "hidden" : undefined,
+              }}
+            >
+              <For each={virtualRowKeys()}>
+                {(itemKey) =>
+                  grouped() ? (
+                    <VirtualGroup itemKey={itemKey} />
+                  ) : (
+                    <VirtualRow rowKey={itemKey} />
+                  )
+                }
+              </For>
+              <div
+                data-timeline-row="bottom-spacer"
+                class="absolute top-0 left-0 h-16 w-full"
+                style={{
+                  transform: `translateY(${virtualizer.getTotalSize() - 64 - rendering.scrollAdjustment}px)`,
+                }}
+              >
+                {props.bottomSpacer}
+              </div>
+            </div>
+          </ScrollView>
+        </div>
       </div>
     )
   }
@@ -944,6 +1120,7 @@ export function createTimelineVirtualizer(input: Input) {
       set: (key: string, open: boolean) => setToolOpen(key, open),
     },
     revealPart,
+    scrollToEnd,
     View,
   }
 }

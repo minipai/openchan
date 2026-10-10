@@ -118,7 +118,7 @@ const generalSchema = Persistence.struct({
   mobileDiffWrap: Persistence.optional(Schema.Boolean),
   terminalPlacement: Schema.Literals(["side", "bottom"]),
   followUpBehavior: Schema.Literals(["queue", "steer"]),
-  chatView: Schema.Literals(["original", "stage", "flow", "companion"]),
+  chatView: Schema.Literals(["original", "stage", "flow", "companion", "document"]),
 })
 
 const appearanceSchema = Persistence.struct({

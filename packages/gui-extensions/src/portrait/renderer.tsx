@@ -9,7 +9,13 @@ const setup: Setup<typeof definition> = (ctx) => {
   ctx.add(Style, css)
   ctx.add(Slot, {
     at: "session.overlay",
-    render: (input) => <Portrait active={() => input.active} session={() => input.session} />,
+    render: (input) => (
+      <Portrait
+        active={() => input.active}
+        session={() => input.session}
+        userMessageID={() => input.userMessageID}
+      />
+    ),
   })
 }
 

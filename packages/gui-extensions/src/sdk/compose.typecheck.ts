@@ -185,6 +185,8 @@ equal<SlotMap["session.header"]["screen"], SessionScreen>(true)
 
 equal<SlotMap["session.overlay"]["screen"], SessionScreen>(true)
 
+equal<SlotMap["session.overlay"]["userMessageID"], string | undefined>(true)
+
 equal<SlotMap["session.panel.end"]["screen"], SessionScreen>(true)
 
 equal<SlotMap["session.panel.sidebar"]["screen"], SessionScreen>(true)

@@ -244,6 +244,7 @@ function SessionScreenContent(props: {
           session={source}
           view={own()}
           screen={props.screen}
+          historyMore={timeline.history.more}
           background={composer.requests.background}
           actions={composer.actions.timeline}
           scroll={timeline.scroll}
@@ -252,6 +253,7 @@ function SessionScreenContent(props: {
           onScheduleScrollState={timeline.view.scheduleScrollState}
           onPin={timeline.view.pin}
           onUnpin={timeline.view.unpin}
+          onHistoryLayoutReady={timeline.view.onHistoryLayoutReady}
           onUserScroll={timeline.view.markUserScroll}
           onHistoryScroll={timeline.view.onHistoryScroll}
           onSelectionInteraction={timeline.view.selectionInteraction}

@@ -14,6 +14,7 @@ import {
   currentToolGroupedRead,
   currentToolHasLoadedFiles,
 } from "../message/current-tool-state"
+import { indexAssistantMessagesByParent } from "./assistant-messages"
 import { TimelineRow, type PartGroup, type PartRef, type TimelineRowMap } from "./timeline-row"
 import { timelineCategory, timelineNoticeRequired, type TimelineDetail } from "./detail"
 
@@ -103,7 +104,7 @@ export function createTimelineProjection(input: TimelineProjectionInput) {
 
   return {
     activeMessageID: projection.activeMessageID,
-    assistantMessagesByParent: indexAssistantMessages(input.sessionMessages),
+    assistantMessagesByParent: indexAssistantMessagesByParent(input.sessionMessages),
     lastAssistantGroupKey,
     messageByID: sessionMessageByID,
     messageRowIndex,
@@ -130,7 +131,7 @@ export function createReactiveTimelineProjection(input: {
   )
 
   const userContextByID = createMemo(() => indexUserContext(input.sessionMessages()))
-  const assistantMessagesByParent = createMemo(() => indexAssistantMessages(input.sessionMessages()))
+  const assistantMessagesByParent = createMemo(() => indexAssistantMessagesByParent(input.sessionMessages()))
 
   // Row structure depends on the empty/non-empty boundary, not each text delta.
   // Keep the original content objects so row renderers still read live text.
@@ -646,32 +647,6 @@ function indexUserContext(messages: SessionMessageInfo[]) {
     model = message.model
 
     if (userID) result.set(userID, { agent, model })
-  })
-
-  return result
-}
-
-function indexAssistantMessages(messages: SessionMessageInfo[]) {
-  const result = new Map<string, SessionMessageAssistant[]>()
-  let userID: string | undefined
-
-  messages.forEach((message) => {
-    if (message.type === "user") userID = message.id
-
-    if (message.type === "shell") userID = undefined
-
-    if (message.type !== "assistant") return
-
-    if (!userID) userID = message.id
-    const existing = result.get(userID)
-
-    if (existing) {
-      existing.push(message)
-
-      return
-    }
-
-    result.set(userID, [message])
   })
 
   return result

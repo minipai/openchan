@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { timelinePresets } from "@opencode/session-ui/timeline/detail"
 import { createTwoFilesPatch } from "diff"
+import { seed } from "../utils/app"
 import {
   assistantMessage,
   directory,
@@ -32,6 +33,7 @@ const expanded = { editToolPartsExpanded: true, shellToolPartsExpanded: true, sh
 
 async function openChatViewPicker(page: Page) {
   const mobile = (page.viewportSize()?.width ?? 1400) < 768
+
   const navigation = mobile
     ? page.locator('[data-slot="session-mobile-view-navigation"]')
     : page.locator("[data-session-title]")
@@ -45,7 +47,7 @@ async function openChatViewPicker(page: Page) {
   await expect(button).toBeVisible()
   await button.click()
 
-  await expect(page.getByRole("menuitemradio")).toHaveCount(4)
+  await expect(page.getByRole("menuitemradio")).toHaveCount(5)
 
   return page.getByRole("menuitemradio", { name: "Original", exact: true })
 }
@@ -66,7 +68,7 @@ async function expectChatViewAfterSessionDetails(page: Page) {
     .toBe(true)
 }
 
-async function selectChatView(page: Page, value: "original" | "stage" | "flow" | "companion") {
+async function selectChatView(page: Page, value: "original" | "stage" | "flow" | "companion" | "document") {
   const picker = await openChatViewPicker(page)
   const label = value[0]!.toUpperCase() + value.slice(1)
   await page.getByRole("menuitemradio", { name: label, exact: true }).click()
@@ -276,23 +278,17 @@ test("Companion preserves the native timeline and follows composer state", async
   const timeline = await setupTimeline(page, {
     messages: [
       userMessage(undefined, { id: "msg_companion_older_user", created: 1700000000000 }),
-      assistantMessage(
-        [textPart("prt_companion_older_text", "Older native assistant content stays unfolded.")],
-        {
-          id: "msg_companion_older_assistant",
-          parentID: "msg_companion_older_user",
-          created: 1700000001000,
-        },
-      ),
+      assistantMessage([textPart("prt_companion_older_text", "Older native assistant content stays unfolded.")], {
+        id: "msg_companion_older_assistant",
+        parentID: "msg_companion_older_user",
+        created: 1700000001000,
+      }),
       userMessage(undefined, { id: "msg_companion_latest_user", created: 1700000002000 }),
-      assistantMessage(
-        [textPart("prt_companion_initial_text", "The initial native assistant response is visible.")],
-        {
-          id: "msg_companion_initial_assistant",
-          parentID: "msg_companion_latest_user",
-          created: 1700000003000,
-        },
-      ),
+      assistantMessage([textPart("prt_companion_initial_text", "The initial native assistant response is visible.")], {
+        id: "msg_companion_initial_assistant",
+        parentID: "msg_companion_latest_user",
+        created: 1700000003000,
+      }),
     ],
     reducedMotion: true,
   })
@@ -476,9 +472,9 @@ test("Companion preserves the native timeline and follows composer state", async
   await expect.poll(currentPath).toMatch(companionPaths.typing)
   await selectChatView(page, "flow")
   await expect(page.locator('[data-session-layout="flow"]')).toBeVisible()
-  await expect(page.locator('[data-session-layout="flow"] [data-component="composer"]').getByRole("textbox")).toContainText(
-    "The mobile editor remains usable.",
-  )
+  await expect(
+    page.locator('[data-session-layout="flow"] [data-component="composer"]').getByRole("textbox"),
+  ).toContainText("The mobile editor remains usable.")
 })
 
 test("Chat view switches preserve streaming and the composer draft across tab layouts", async ({ page }) => {
@@ -504,6 +500,7 @@ test("Chat view switches preserve streaming and the composer draft across tab la
   const header = page.locator("[data-session-title]")
 
   const composerRegion = stage.locator('[data-component="composer"]')
+
   const geometry = async () => ({
     header: await header.boundingBox(),
     composer: await composerRegion.boundingBox(),
@@ -559,13 +556,15 @@ test("Chat view switches preserve streaming and the composer draft across tab la
   await expect(companion.locator(".flow-summary, .flow-avatar, [data-flow-message-divider]")).toHaveCount(0)
   await expect(livePart).toContainText("The response continues in Flow.")
   const companionImage = companion.locator("picture.composer-companion img")
-  await expect.poll(() =>
-    companionImage.evaluate((element) => {
-      if (!(element instanceof HTMLImageElement)) throw new Error("Companion image is unavailable")
+  await expect
+    .poll(() =>
+      companionImage.evaluate((element) => {
+        if (!(element instanceof HTMLImageElement)) throw new Error("Companion image is unavailable")
 
-      return element.currentSrc ? new URL(element.currentSrc).pathname : ""
-    }),
-  ).toMatch(/^\/characters\/kotone\/companion\/typing-0[3-5]\.png$/)
+        return element.currentSrc ? new URL(element.currentSrc).pathname : ""
+      }),
+    )
+    .toMatch(/^\/characters\/kotone\/companion\/typing-0[3-5]\.png$/)
   await timeline.send(
     partDelta(
       "prt_chat_view_stream",
@@ -634,6 +633,324 @@ test("Chat view switches preserve streaming and the composer draft across tab la
   await page.keyboard.press("Escape")
   await page.keyboard.press("Escape")
   await expect(verticalPicker).toBeHidden()
+})
+
+test("Document scrolls exchange papers, lazy-loads history, and follows live replies", async ({ page }) => {
+  const oldestPromptText = "Open the oldest review."
+  const oldestReplyText = "The lazy-loaded answer remains readable."
+  const middlePromptText = "Compare the earlier timeline implementation."
+  const middleReplyText = "The middle answer stays in its own paper."
+  const latestPromptText = "Review the incoming response."
+  const latestReplyText = "The latest answer stays in its own paper."
+  const latestEndText = "The long answer continues below its opening."
+  const newPromptText = "Good, let's check the new answer."
+  const liveReplyText = "A short reply appears without reloading."
+  const draft = "Keep this draft while switching chat views."
+  const before = "export const documentPaper = false\n"
+  const after = "export const documentPaper = true\n"
+
+  const latestResponse = [
+    latestReplyText,
+    ...Array.from(
+      { length: 36 },
+      () => "This response stays readable as the continuous paper extends below the viewport. ".repeat(2),
+    ),
+    latestEndText,
+  ].join("\n\n")
+
+  const oldestPrompt = userMessage([userText(oldestPromptText, { id: "prt_document_oldest_prompt" })], {
+    id: "msg_document_oldest_user",
+    created: 1699999985000,
+  })
+
+  const oldestReply = assistantMessage(
+    [
+      textPart("prt_document_oldest_reply", oldestReplyText),
+      toolPart("prt_document_oldest_expression", "character.set_expression", "completed", { expression: "sad" }),
+    ],
+    {
+      id: "msg_document_oldest_assistant",
+      parentID: oldestPrompt.id,
+      created: 1699999986000,
+    },
+  )
+
+  const middlePrompt = userMessage([userText(middlePromptText, { id: "prt_document_middle_prompt" })], {
+    id: "msg_document_middle_user",
+    created: 1699999988000,
+  })
+
+  const middleReply = assistantMessage(
+    [
+      textPart("prt_document_middle_reply", middleReplyText),
+      toolPart("prt_document_middle_expression", "character.set_expression", "completed", { expression: "happy" }),
+    ],
+    {
+      id: "msg_document_middle_assistant",
+      parentID: middlePrompt.id,
+      created: 1699999989000,
+    },
+  )
+
+  const latestPrompt = userMessage([userText(latestPromptText, { id: "prt_document_latest_prompt" })], {
+    id: "msg_document_latest_user",
+    created: 1699999992000,
+  })
+
+  const latestAssistant = assistantMessage(
+    [
+      toolPart(
+        "prt_document_patch",
+        "patch",
+        "completed",
+        { patchText: "Update src/document.ts" },
+        {
+          metadata: {
+            files: [
+              {
+                file: "src/document.ts",
+                status: "modified",
+                patch: createTwoFilesPatch("a/src/document.ts", "b/src/document.ts", before, after),
+                additions: 1,
+                deletions: 1,
+              },
+            ],
+          },
+        },
+      ),
+      textPart("prt_document_latest_reply", latestResponse),
+    ],
+    {
+      id: "msg_document_latest_assistant",
+      parentID: latestPrompt.id,
+      created: 1699999993000,
+    },
+  )
+
+  const olderRequest = Promise.withResolvers<void>()
+  const releaseOlderRequest = Promise.withResolvers<void>()
+  const pageStarts: (string | undefined)[] = []
+  const pageEnds: (string | undefined)[] = []
+  const messageRequests: URL[] = []
+
+  page.on("request", (request) => {
+    const url = new URL(request.url())
+
+    if (url.pathname.endsWith(`/session/${sessionID}/message`)) messageRequests.push(url)
+  })
+
+  await seed(page, { settings: { general: { chatView: "document" } } })
+
+  const timeline = await setupTimeline(page, {
+    sessionMessages: [middlePrompt, middleReply, latestPrompt, latestAssistant],
+    reducedMotion: true,
+    viewport: { width: 1920, height: 1080 },
+    beforeMessagesResponse: async ({ before: cursor }) => {
+      if (cursor !== "document-older") return
+      olderRequest.resolve()
+      await releaseOlderRequest.promise
+    },
+    pageMessages: (_session, _limit, cursor) => {
+      if (cursor === undefined) return { items: [middlePrompt, middleReply, latestPrompt, latestAssistant], cursor: "document-older" }
+
+      if (cursor === "document-older") return { items: [oldestPrompt, oldestReply] }
+
+      throw new Error(`Unexpected document history cursor: ${cursor}`)
+    },
+    onMessages: ({ before: cursor, phase }) => {
+      if (phase === "start") pageStarts.push(cursor)
+
+      if (phase === "end") pageEnds.push(cursor)
+    },
+  })
+
+  const documentLayout = page.locator('[data-session-layout="document"]')
+  const scroller = documentLayout.locator('[data-slot="session-timeline-scroll"] .scroll-view__viewport')
+  const papers = documentLayout.locator(".document-paper")
+  const latestPaper = papers.filter({ hasText: latestPromptText })
+  const latestEnd = latestPaper.getByText(latestEndText, { exact: true })
+  const patch = latestPaper.locator('[data-timeline-part-ids="prt_document_patch"]')
+
+  await expect(documentLayout).toBeVisible()
+  await expect(documentLayout.getByRole("navigation", { name: "Document pages" })).toHaveCount(0)
+  await expect(papers).toHaveCount(2)
+  await expect(latestPaper.locator('[data-timeline-row="UserMessage"]')).toHaveCount(1)
+  await expect(latestPaper.getByText(latestReplyText, { exact: true })).toBeVisible()
+  await expect(patch).toBeVisible()
+  expect(pageStarts).toEqual([undefined])
+  expect(messageRequests.filter((url) => url.searchParams.get("all") === "true")).toEqual([])
+
+  await latestEnd.scrollIntoViewIfNeeded()
+  await expect(latestEnd).toBeInViewport()
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+  await scroller.hover()
+  await page.mouse.wheel(0, -10_000)
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(0)
+  await olderRequest.promise
+  const oldestPaper = papers.filter({ hasText: oldestPromptText })
+  await expect(oldestPaper).toHaveCount(0)
+  expect(pageStarts).toEqual([undefined, "document-older"])
+
+  releaseOlderRequest.resolve()
+  await expect(oldestPaper).toHaveCount(1)
+  await expect(oldestPaper.locator('[data-timeline-row="UserMessage"]')).toHaveCount(1)
+  await expect(papers).toHaveCount(3)
+  expect(pageEnds).toEqual([undefined, "document-older"])
+
+  const editor = documentLayout.locator('[data-component="composer"]').getByRole("textbox")
+  await editor.fill(newPromptText)
+
+  const promptRequest = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" && new URL(request.url()).pathname === `/api/session/${sessionID}/prompt`,
+  )
+
+  await editor.press("Enter")
+
+  const submittedID: unknown = (await promptRequest).postDataJSON().id
+  expect(submittedID).toEqual(expect.any(String))
+
+  // SAFETY: The request ID was asserted to be a string above.
+  const promptID = submittedID as string
+  const submittedPaper = papers.filter({ hasText: newPromptText })
+  const submittedPrompt = submittedPaper.locator('[data-timeline-row="UserMessage"]')
+  const submittedPortrait = submittedPaper.locator('[data-component="session-character-portrait"]')
+
+  await timeline.send([
+    {
+      id: "evt_document_live_prompt_enqueued",
+      type: "session.inbox.enqueued",
+      created: 1700000005000,
+      location: { directory },
+      durable: { aggregateID: sessionID, seq: 0, version: 1 },
+      data: { sessionID, inboxID: promptID, item: { type: "user", payload: { text: newPromptText }, delivery: "steer" } },
+    },
+    {
+      id: "evt_document_live_prompt_delivered",
+      type: "session.inbox.delivered",
+      created: 1700000005001,
+      location: { directory },
+      durable: { aggregateID: sessionID, seq: 1, version: 1 },
+      data: { sessionID, inboxID: promptID },
+    },
+  ])
+  await expect(submittedPaper).toHaveCount(1)
+  await expect(submittedPrompt).toBeInViewport()
+  await expect(submittedPortrait).toHaveAttribute("src", "/characters/kotone/portraits/neutral.webp")
+
+  const liveAssistant = assistantMessage([textPart("prt_document_live_reply", "")], {
+    parentID: promptID,
+    completed: false,
+    created: 1700000005003,
+  })
+
+  await timeline.send([
+    {
+      id: "evt_document_live_execution_started",
+      type: "session.execution.started",
+      created: 1700000005002,
+      location: { directory },
+      durable: { aggregateID: sessionID, seq: 2, version: 1 },
+      data: { sessionID },
+    },
+    {
+      id: "evt_document_live_step_started",
+      type: "session.step.started",
+      created: 1700000005003,
+      location: { directory },
+      durable: { aggregateID: sessionID, seq: 3, version: 1 },
+      data: {
+        sessionID,
+        assistantMessageID: liveAssistant.id,
+        agent: liveAssistant.agent,
+        model: liveAssistant.model,
+        started: liveAssistant.time.created,
+      },
+    },
+    {
+      id: "evt_document_live_text_started",
+      type: "session.text.started",
+      created: 1700000005004,
+      location: { directory },
+      durable: { aggregateID: sessionID, seq: 4, version: 1 },
+      data: { sessionID, assistantMessageID: liveAssistant.id, ordinal: 0 },
+    },
+  ])
+  await timeline.send(partDelta("prt_document_live_reply", liveReplyText, liveAssistant.id))
+
+  const liveReply = submittedPaper.getByText(liveReplyText, { exact: true })
+  await expect(liveReply).toBeVisible()
+  await expect(liveReply).toBeInViewport()
+  await expect(submittedPrompt).toBeInViewport()
+  await timeline.send(
+    partUpdated(
+      toolPart("prt_document_live_expression", "character.set_expression", "completed", { expression: "focused" }),
+    ),
+  )
+  await expect(submittedPortrait).toHaveAttribute("src", "/characters/kotone/portraits/focused.webp")
+
+  const exchanges = [
+    [oldestPromptText, oldestReplyText, "sad"],
+    [middlePromptText, middleReplyText, "happy"],
+    [latestPromptText, latestReplyText, "neutral"],
+    [newPromptText, liveReplyText, "focused"],
+  ] as const
+
+  await scroller.hover()
+  await page.mouse.wheel(0, -10_000)
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(0)
+
+  for (const [promptText, replyText, face] of exchanges) {
+    if (promptText === newPromptText) {
+      await scroller.hover()
+      await page.mouse.wheel(0, 10_000)
+      await expect
+        .poll(() =>
+          scroller.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+        )
+        .toBe(0)
+    }
+
+    const paper = papers.filter({ hasText: promptText })
+    await expect(paper).toHaveCount(1)
+    const promptRow = paper.locator('[data-timeline-row="UserMessage"]')
+    const portrait = paper.locator('[data-component="session-character-portrait"]')
+    const reply = paper.getByText(replyText, { exact: true })
+
+    await reply.scrollIntoViewIfNeeded()
+    await expect(promptRow).toHaveCount(1)
+    await expect(reply).toBeVisible()
+    await expect(reply).toBeInViewport()
+    await expect(portrait).toBeVisible()
+    await expect(portrait).toHaveAttribute("src", `/characters/kotone/portraits/${face}.webp`)
+
+    const [paperBounds, promptBounds, portraitBounds] = await Promise.all([
+      paper.boundingBox(),
+      promptRow.boundingBox(),
+      portrait.boundingBox(),
+    ])
+
+    if (!paperBounds || !promptBounds || !portraitBounds) throw new Error("Missing document paper geometry")
+    expect(portraitBounds.width).toBeCloseTo(480, 0)
+    expect(portraitBounds.x + portraitBounds.width / 2).toBeGreaterThan(paperBounds.x + paperBounds.width / 2)
+    expect(portraitBounds.x + portraitBounds.width).toBeLessThanOrEqual(paperBounds.x + paperBounds.width + 1)
+    expect(portraitBounds.y).toBeGreaterThanOrEqual(promptBounds.y + promptBounds.height - 1)
+  }
+
+  await expect(submittedPortrait).toHaveAttribute("src", "/characters/kotone/portraits/focused.webp")
+  expect(messageRequests.filter((url) => url.searchParams.get("all") === "true")).toEqual([])
+  expect(pageStarts).toEqual([undefined, "document-older"])
+
+  await editor.fill(draft)
+  await expect(editor).toContainText(draft)
+  await selectChatView(page, "flow")
+
+  const flowEditor = page.locator('[data-session-layout="flow"] [data-component="composer"]').getByRole("textbox")
+  await expect(flowEditor).toContainText(draft)
+  await selectChatView(page, "document")
+  await expect(
+    page.locator('[data-session-layout="document"] [data-component="composer"]').getByRole("textbox"),
+  ).toContainText(draft)
 })
 
 const contextTools = [

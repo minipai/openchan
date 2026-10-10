@@ -8,7 +8,9 @@ const leadingTurnPageDelay = 200
 
 const leadingTurnPageLimit = 3
 
-export function createTimelineModel(input: { session: Pick<SessionModel, "identity" | "history" | "ownership"> }) {
+export function createTimelineModel(input: {
+  session: Pick<SessionModel, "identity" | "history" | "ownership">
+}) {
   const data = useData()
 
   const [resource] = createResource(
@@ -17,9 +19,11 @@ export function createTimelineModel(input: { session: Pick<SessionModel, "identi
       if (!id) return
       const owner = input.session.ownership.capture()
       await Promise.all([data.session.message.sync(id), data.session.pending.sync(id)])
+      const messages = () => data.session.message.list(id)
+
       await enrichLeadingTurn({
         current: owner.current,
-        messages: () => data.session.message.list(id),
+        messages,
         more: () => data.session.message.more(id),
         loading: () => data.session.message.loading(id),
         loadMore: () => data.session.message.loadMore(id),

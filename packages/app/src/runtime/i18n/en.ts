@@ -521,6 +521,7 @@ export const dict = {
   "session.view.stage": "Stage",
   "session.view.flow": "Flow",
   "session.view.companion": "Companion",
+  "session.view.document": "Document",
   "session.flow.message.expand": "Expand message",
   "session.flow.message.collapse": "Collapse message",
   "session.flow.message.empty": "No text content",

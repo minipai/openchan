@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { SessionMessageAssistant, SessionMessageAssistantTool, SessionMessageInfo } from "@opencode/client/promise"
-import { latestSessionFace } from "./face"
+import { latestExchangeFace, latestSessionFace } from "./face"
 
 test("uses trailing mood markers and completed expression tools in history order", () => {
   const messages: SessionMessageInfo[] = [
@@ -29,6 +29,20 @@ test("ignores running tools, unrelated tools, code examples, incomplete markers,
       "msg_6",
     ),
   ).toBe("happy")
+})
+
+test("uses the projected prompt boundary for each exchange and defaults a missing exchange to neutral", () => {
+  const messages: SessionMessageInfo[] = [
+    { id: "user_1", type: "user", text: "First", time: { created: 0 } },
+    assistant("assistant_1", [text("First response 【＼(ˆ ᗜ ˆ)／】")]),
+    { id: "user_2", type: "user", text: "Second", time: { created: 2 } },
+    assistant("assistant_2", [text("Second response 【(｡•́︿•̀｡)】")]),
+  ]
+
+  expect(latestExchangeFace(messages, "user_1")).toBe("happy")
+  expect(latestExchangeFace(messages, "user_2")).toBe("sad")
+  expect(latestExchangeFace(messages, "user_3")).toBe("neutral")
+  expect(latestSessionFace(messages)).toBe("sad")
 })
 
 function assistant(id: string, content: SessionMessageAssistant["content"]): SessionMessageAssistant {

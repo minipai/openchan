@@ -52,6 +52,7 @@ export function createSessionTimelineInteraction(session: SessionModel) {
   }
 
   let scroller: HTMLDivElement | undefined
+  let historyLayoutReady = false
   let dockHeight = 0
   // The history entry whose tool call was already revealed.
   let revealed: string | undefined
@@ -240,6 +241,7 @@ export function createSessionTimelineInteraction(session: SessionModel) {
 
   const onHistoryScroll = () => {
     if (
+      !historyLayoutReady ||
       historyRequests.has(session.ownership.key()) ||
       timeline.history.loading() ||
       pinned() ||
@@ -251,17 +253,23 @@ export function createSessionTimelineInteraction(session: SessionModel) {
   }
 
   const fill = () => {
-    if (fillFrame !== undefined) return
+    if (!historyLayoutReady || fillFrame !== undefined) return
     fillFrame = requestAnimationFrame(() => {
       fillFrame = undefined
 
       if (!session.identity.params.id || !timeline.ready()) return
 
-      if (!pinned() || timeline.history.loading() || !scroller) return
+      if (!historyLayoutReady || !pinned() || timeline.history.loading() || !scroller) return
 
       if (scroller.scrollHeight > scroller.clientHeight + 1 || !timeline.history.more()) return
       void loadOlder()
     })
+  }
+
+  const onHistoryLayoutReady = (ready: boolean) => {
+    historyLayoutReady = ready
+
+    if (ready) fill()
   }
 
   createEffect(
@@ -366,6 +374,7 @@ export function createSessionTimelineInteraction(session: SessionModel) {
       setActiveMessage,
     },
     lastUserMessage: timeline.lastUserMessage,
+    history: { more: timeline.history.more },
     resource: timeline.resource,
     ready: timeline.ready,
     scroll: state.scroll,
@@ -373,6 +382,7 @@ export function createSessionTimelineInteraction(session: SessionModel) {
     view: {
       anchor,
       markUserScroll,
+      onHistoryLayoutReady,
       onHistoryScroll,
       pin,
       pinned,

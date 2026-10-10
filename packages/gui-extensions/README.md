@@ -218,6 +218,9 @@ SDK icon fields use `IconName` from `@opencode/ui/icons/catalog`, a dependency-f
 | [`Style`](src/sdk/points.ts)        | window  | CSS imported with `?inline`                                                                 |
 | [`MenubarItem`](src/sdk/main.ts)    | main    | An item of the native app menu                                                              |
 
+The `session.overlay` input includes `userMessageID` for a document paper's exchange and omits it for the stage-wide
+overlay. If the id is absent, render a neutral/default state rather than borrowing the newest value from the session.
+
 ### Host APIs
 
 | Property                     | Type ([window](src/sdk/host-apis.ts), [main](src/sdk/main.ts)) | What it does                                                      |

@@ -75,6 +75,7 @@ type MessageTimelineProps = {
   session: TimelineSessionSource
   view: MountedSession
   screen: SessionScreen
+  historyMore: Accessor<boolean>
   background: SessionBackground
   actions?: SessionUserActions
   scroll: { overflow: boolean; jump: boolean }
@@ -83,6 +84,7 @@ type MessageTimelineProps = {
   onScheduleScrollState: (el: HTMLDivElement) => void
   onPin: () => void
   onUnpin: () => void
+  onHistoryLayoutReady: (ready: boolean) => void
   onUserScroll: (target?: EventTarget | null) => void
   onHistoryScroll: () => void
   onSelectionInteraction: (event: MouseEvent) => void
@@ -143,6 +145,33 @@ function MessageTimelineView(
 
   const flowDensity = createFlowTimelineDensity({ projection })
   const isFlow = () => settings.general.chatView() === "flow"
+  const isDocument = () => settings.general.chatView() === "document"
+
+  const documentExchanges = createMemo(() => {
+    const exchanges = new Map<string, TimelineRow.TimelineRow[]>()
+
+    projection.rows().forEach((row) => {
+      if (Predicate.isTagged(row, "TurnGap")) return
+      const exchange = exchanges.get(row.userMessageID)
+
+      if (exchange) exchange.push(row)
+      else exchanges.set(row.userMessageID, [row])
+    })
+
+    const groups = [...exchanges].map(([id, rows]) => ({ id, rows }))
+    const leading = groups[0]
+
+    if (
+      props.historyMore() &&
+      leading &&
+      !leading.rows.some(
+        (row) => Predicate.isTagged(row, "UserMessage") || Predicate.isTagged(row, "Shell") || Predicate.isTagged(row, "Notice"),
+      )
+    )
+      return groups.slice(1)
+
+    return groups
+  })
 
   const sessionDirectory = createMemo(() => props.session.data.info()?.location.directory ?? sdk().directory)
 
@@ -174,6 +203,7 @@ function MessageTimelineView(
   const turnPadding = () => (isFlow() ? "" : "px-4 md:px-5")
   const showHeader = createMemo(() => !props.hideHeader && (props.data.showHeader() || workspaceSession()))
   const pinned = createMemo(() => props.pinned)
+
   const messageByID = projection.messageByID
 
   const timelineProjection = {
@@ -181,8 +211,10 @@ function MessageTimelineView(
     messageByID,
     messageLastRowIndex: () =>
       isFlow() ? flowDensity.projection.messageLastRowIndex() : projection.messageLastRowIndex(),
-    messageRowIndex: () => (isFlow() ? flowDensity.projection.messageRowIndex() : projection.messageRowIndex()),
-    rowByKey: () => (isFlow() ? flowDensity.projection.rowByKey() : projection.rowByKey()),
+    messageRowIndex: () =>
+      isFlow() ? flowDensity.projection.messageRowIndex() : projection.messageRowIndex(),
+    rowByKey: () =>
+      isFlow() ? flowDensity.projection.rowByKey() : projection.rowByKey(),
     rows: () => (isFlow() ? flowDensity.projection.rows() : projection.rows()),
   }
 
@@ -203,8 +235,10 @@ function MessageTimelineView(
     presentationKey: () => JSON.stringify(props.data.timelineDetail()),
     layoutKey: settings.general.chatView,
     projection: timelineProjection,
+    documentGroups: () => (isDocument() ? documentExchanges() : undefined),
     rowMembers: (row) => (isFlow() ? flowDensity.members(row) : undefined),
     showHeader,
+    fixedHeader: isDocument,
     pinned,
     scroll: () => props.scroll,
     onResumeScroll: props.onResumeScroll,
@@ -213,6 +247,7 @@ function MessageTimelineView(
     onScheduleScrollState: props.onScheduleScrollState,
     onPin: props.onPin,
     onUnpin: props.onUnpin,
+    onHistoryLayoutReady: props.onHistoryLayoutReady,
     onSelectionInteraction: props.onSelectionInteraction,
     onUserScroll: props.onUserScroll,
     onHistoryScroll: props.onHistoryScroll,
@@ -585,8 +620,28 @@ function MessageTimelineView(
     )
   }
 
-  return (
+  const TimelineContent = () => (
     <VirtualizedTimeline
+      frameClass={isDocument() ? "document-scroll" : undefined}
+      frameOverlay={(userMessageID) => (
+        <Show when={isDocument()}>
+          <ExtensionSlot
+            at="session.overlay"
+            input={{
+              get session() {
+                return props.view
+              },
+              get screen() {
+                return props.screen
+              },
+              get active() {
+                return props.active !== false
+              },
+              userMessageID,
+            }}
+          />
+        </Show>
+      )}
       workspaceSession={workspaceSession}
       bottomSpacer={
         <Show when={showWorking() || backgroundHintPresence.present()}>
@@ -796,5 +851,13 @@ function MessageTimelineView(
         </Show>
       }
     />
+  )
+
+  return (
+    <div class="timeline-presentation" classList={{ "document-view": isDocument() }}>
+      <div class="timeline-presentation__viewport" classList={{ "document-view__viewport": isDocument() }}>
+        <TimelineContent />
+      </div>
+    </div>
   )
 }

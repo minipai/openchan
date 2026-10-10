@@ -1,0 +1,135 @@
+.timeline-presentation:not(.document-view),
+.timeline-presentation__viewport:not(.document-view__viewport) {
+  display: contents;
+}
+
+[data-session-layout="document"] {
+  container: document / inline-size;
+}
+
+.document-view,
+.document-view__viewport {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.document-view [data-session-title] {
+  flex-shrink: 0;
+}
+
+.document-scroll {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.document-scroll .scroll-view__viewport {
+  block-size: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.document-scroll [data-timeline-virtual-content] {
+  box-sizing: border-box;
+  min-block-size: 100%;
+  background: transparent;
+}
+
+.document-exchange {
+  box-sizing: border-box;
+  display: flow-root;
+  padding: 24px;
+}
+
+.document-paper {
+  box-sizing: border-box;
+  display: flow-root;
+  inline-size: min(100%, 960px);
+  margin-inline: auto;
+  border: 1px solid var(--v2-border-border-base);
+  background: transparent;
+  padding: 24px 44px;
+}
+
+/* Tool and notice controls keep their native layout; text rows share the paper's float. */
+.document-paper [data-timeline-key]:not(:has([data-component="text-part"], [data-component="user-message"])) {
+  display: flow-root;
+}
+
+.document-paper [data-timeline-row="UserMessage"] [data-component="session-turn"],
+.document-paper [data-timeline-row="UserMessage"] [data-slot="session-turn-message-container"],
+.document-paper [data-timeline-row="AssistantPart"]:has([data-component="text-part"]) [data-component="session-turn"],
+.document-paper
+  [data-timeline-row="AssistantPart"]:has([data-component="text-part"])
+  [data-slot="session-turn-message-container"],
+.document-paper
+  [data-timeline-row="AssistantPart"]:has([data-component="text-part"])
+  [data-slot="session-turn-assistant-content"] {
+  display: block;
+}
+
+.document-paper [data-slot="session-turn-message-container"] {
+  padding-inline: 0;
+}
+
+:root body [data-session-layout="document"] .document-paper [data-component="user-message"] {
+  display: block;
+  align-items: flex-start;
+  padding-block: 24px 20px;
+  color: var(--v2-text-text-base);
+  font-size: 24px;
+  font-weight: var(--font-weight-medium);
+  line-height: normal;
+  text-align: start;
+}
+
+:root body
+  [data-session-layout="document"]
+  .document-paper
+  [data-component="user-message"]
+  [data-slot="user-message-body"],
+:root body
+  [data-session-layout="document"]
+  .document-paper
+  [data-component="user-message"]
+  [data-slot="user-message-text"] {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  margin-inline-start: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  color: var(--v2-text-text-base);
+  background: transparent;
+}
+
+.document-paper [data-slot="user-message-copy-wrapper"] {
+  width: auto;
+  justify-content: flex-start;
+}
+
+.document-paper [data-slot="user-message-attachments"] {
+  justify-content: flex-start;
+  max-width: 100%;
+  margin-inline-start: 0;
+}
+
+.document-paper [data-component="markdown"] {
+  font-size: 15px;
+  line-height: calc(var(--line-height-base) + 6px);
+}
+
+@container document (max-width: 700px) {
+  .document-exchange {
+    padding: 16px 12px;
+  }
+
+  .document-paper {
+    padding: 16px 20px;
+  }
+}

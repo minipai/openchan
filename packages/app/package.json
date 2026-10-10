@@ -26,7 +26,7 @@
     "test:e2e:built": "PLAYWRIGHT_BUILD=1 playwright test",
     "test:e2e:flow": "PLAYWRIGHT_BUILD=1 playwright test --grep='Flow collapses'",
     "test:e2e:companion": "PLAYWRIGHT_BUILD=1 playwright test --grep='Companion preserves'",
-    "test:e2e:views": "PLAYWRIGHT_BUILD=1 playwright test --grep='Flow collapses|Companion preserves|Chat view'",
+    "test:e2e:views": "PLAYWRIGHT_BUILD=1 playwright test --grep='Flow collapses|Companion preserves|Chat view|Document scrolls'",
     "test:e2e:local": "playwright test",
     "test:components": "playwright test --config playwright.components.config.ts",
     "test:components:ui": "playwright test --config playwright.components.config.ts --ui",

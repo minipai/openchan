@@ -565,6 +565,17 @@ export interface SlotMap {
     readonly session: MountedSession
     /** Whether the conversation stage is visible; false while another mobile view is selected. */
     readonly active: boolean
+    /**
+     * The owning user message ID when this overlay belongs to a document paper. Omitted for the stage-wide overlay or
+     * when no paper exchange is available; consumers should use a neutral/default value instead of the latest session
+     * value when it is absent.
+     *
+     * @example
+     * ```ts
+     * const face = input.userMessageID ? faceFor(input.userMessageID) : "neutral"
+     * ```
+     */
+    readonly userMessageID?: string
   }
   /** The actions at the end of the side region's tab strip. */
   readonly "session.panel.end": {
