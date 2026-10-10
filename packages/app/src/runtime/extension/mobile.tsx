@@ -16,6 +16,7 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { useExtensionHost } from "./host"
 import { panelKey } from "./panel-keys"
 import { MobilePanel, type Region, type RegionEntry } from "./panels"
+import { ChatViewMenu } from "@/session/layouts/view-select"
 
 const MobilePanelDrawer = lazy(async () => {
   const { MobilePanelDrawer } = await import("@/shell/mobile-panel-drawer")
@@ -156,6 +157,7 @@ export function MobileViewTabs(props: {
                 </Menu.Item>
               )}
             </For>
+            <ChatViewMenu />
           </Menu.Content>
         </Menu.Portal>
       </Menu>

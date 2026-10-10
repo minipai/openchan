@@ -23,7 +23,9 @@ import { getReadyMarkdown, preloadMarkdown } from "@opencode/session-ui/markdown
 import { createTimelineController, type TimelineController, type TimelineSessionSource } from "./controller"
 import { createTimelineVirtualizer } from "./virtualizer"
 import { createFlowTimelineDensity, flowMessageSummary } from "./flow-density"
+import { useSettings } from "@/settings/model"
 import { FlowAvatar } from "../layouts/flow-avatar"
+import { ChatViewButton } from "../layouts/view-select"
 import { containsDirectory } from "@opencode/util/path"
 import { isWorkspaceDirectory } from "@/workspaces/paths"
 import { parseCommentNote, readPromptPresentation } from "@/composer/comment-note"
@@ -127,6 +129,7 @@ function MessageTimelineView(
   },
 ) {
   const language = useLanguage()
+  const settings = useSettings()
   const server = useServer()
   const data = server.ctx.data
   const sdk = useWorkspaceLocation()
@@ -138,8 +141,8 @@ function MessageTimelineView(
   const childTitle = props.data.childTitle
   const projection = props.data.projection
 
-  const flowDensity =
-    import.meta.env.VITE_OPENCODE_CHAT_LAYOUT === "flow" ? createFlowTimelineDensity({ projection }) : undefined
+  const flowDensity = createFlowTimelineDensity({ projection })
+  const isFlow = () => settings.general.chatView() === "flow"
 
   const sessionDirectory = createMemo(() => props.session.data.info()?.location.directory ?? sdk().directory)
 
@@ -168,10 +171,20 @@ function MessageTimelineView(
     if (!directory) return
     void data.location.vcs.sync({ directory }).catch(() => undefined)
   })
-  const turnPadding = () => (flowDensity ? "" : "px-4 md:px-5")
+  const turnPadding = () => (isFlow() ? "" : "px-4 md:px-5")
   const showHeader = createMemo(() => !props.hideHeader && (props.data.showHeader() || workspaceSession()))
   const pinned = createMemo(() => props.pinned)
   const messageByID = projection.messageByID
+
+  const timelineProjection = {
+    activeMessageID: projection.activeMessageID,
+    messageByID,
+    messageLastRowIndex: () =>
+      isFlow() ? flowDensity.projection.messageLastRowIndex() : projection.messageLastRowIndex(),
+    messageRowIndex: () => (isFlow() ? flowDensity.projection.messageRowIndex() : projection.messageRowIndex()),
+    rowByKey: () => (isFlow() ? flowDensity.projection.rowByKey() : projection.rowByKey()),
+    rows: () => (isFlow() ? flowDensity.projection.rows() : projection.rows()),
+  }
 
   const userPresentation = (message: Extract<SessionMessageInfo, { type: "user" }>) => {
     const value = readPromptPresentation(message.metadata)
@@ -188,8 +201,9 @@ function MessageTimelineView(
     active: () => props.active !== false,
     sessionKey: () => `${server.key}/${props.data.sessionID()}`,
     presentationKey: () => JSON.stringify(props.data.timelineDetail()),
-    projection: flowDensity?.projection ?? projection,
-    rowMembers: flowDensity?.members,
+    layoutKey: settings.general.chatView,
+    projection: timelineProjection,
+    rowMembers: (row) => (isFlow() ? flowDensity.members(row) : undefined),
     showHeader,
     pinned,
     scroll: () => props.scroll,
@@ -251,7 +265,9 @@ function MessageTimelineView(
     },
     setRevealMessage: props.setRevealMessage,
     setScrollToEnd: props.setScrollToEnd,
-    beforeRevealMessage: flowDensity?.prepareRevealMessage,
+    beforeRevealMessage: (id, partID) => {
+      if (isFlow()) flowDensity.prepareRevealMessage(id, partID)
+    },
     reveal: props.reveal,
   })
 
@@ -404,16 +420,18 @@ function MessageTimelineView(
   })
 
   const renderRow = (row: Accessor<TimelineRow.TimelineRow>, onSizeChange?: () => void) => {
-    if (!flowDensity || Predicate.isTagged(row(), "TurnDivider"))
+    const density = isFlow() ? flowDensity : undefined
+
+    if (!density || Predicate.isTagged(row(), "TurnDivider"))
       return <rowRenderer.Row row={row} onSizeChange={onSizeChange} />
 
-    const role = () => flowDensity.role(row())
+    const role = () => density.role(row())
 
     const members = createMemo(() =>
-      (flowDensity.members(row()) ?? [row()]).map((member) => flowDensity.summarySource(member) ?? member),
+      (density.members(row()) ?? [row()]).map((member) => density.summarySource(member) ?? member),
     )
 
-    const messages = createMemo(() => members().filter(flowDensity.canCollapse))
+    const messages = createMemo(() => members().filter(density.canCollapse))
 
     const text = createMemo(() =>
       messages()
@@ -433,8 +451,8 @@ function MessageTimelineView(
     const targets = createMemo(() => {
       if (messages().length)
         return messages().map((message) => ({
-          open: flowDensity.isExpanded(message),
-          set: (open: boolean) => (open ? flowDensity.expand(message) : flowDensity.collapse(message)),
+          open: density.isExpanded(message),
+          set: (open: boolean) => (open ? density.expand(message) : density.collapse(message)),
         }))
 
       return members().flatMap((member) => {
@@ -481,8 +499,8 @@ function MessageTimelineView(
           </button>
         </Show>
         <div class="flow-content min-w-0">
-          <Show when={flowDensity.members(row())} fallback={renderContent(row, onSizeChange)}>
-            <Key each={flowDensity.members(row())} by={TimelineRow.key}>
+          <Show when={density.members(row())} fallback={renderContent(row, onSizeChange)}>
+            <Key each={density.members(row())} by={TimelineRow.key}>
               {(member) => renderContent(member, onSizeChange)}
             </Key>
           </Show>
@@ -492,12 +510,14 @@ function MessageTimelineView(
   }
 
   const renderContent = (row: Accessor<TimelineRow.TimelineRow>, onSizeChange?: () => void) => {
-    if (!flowDensity) return <rowRenderer.Row row={row} onSizeChange={onSizeChange} />
+    const density = isFlow() ? flowDensity : undefined
+
+    if (!density) return <rowRenderer.Row row={row} onSizeChange={onSizeChange} />
     const current = row()
-    const source = flowDensity.summarySource(current)
+    const source = density.summarySource(current)
 
     if (source) {
-      const messageID = flowDensity.summaryMessageID(current)
+      const messageID = density.summaryMessageID(current)
       const message = messageID ? messageByID().get(messageID) : undefined
 
       if (!messageID || !message) return <></>
@@ -509,7 +529,7 @@ function MessageTimelineView(
 
         const value = flowMessageSummary(
           current,
-          current.type === "assistant" ? flowDensity.summaryContent(row()) : undefined,
+          current.type === "assistant" ? density.summaryContent(row()) : undefined,
         )
 
         const displayValue = current.type === "user" ? (userPresentation(current).displayText ?? value) : value
@@ -536,7 +556,7 @@ function MessageTimelineView(
             class="flex h-7 w-7 shrink-0 items-center justify-center"
             onClick={(event) => {
               event.stopPropagation()
-              flowDensity.expand(source)
+              density.expand(source)
             }}
           >
             <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
@@ -546,9 +566,9 @@ function MessageTimelineView(
     }
 
     return (
-      <div class="min-w-0 w-full max-w-full" classList={{ "flow-expanded": flowDensity.canCollapse(row()) }}>
+      <div class="min-w-0 w-full max-w-full" classList={{ "flow-expanded": density.canCollapse(row()) }}>
         <rowRenderer.Row row={row} onSizeChange={onSizeChange} />
-        <Show when={flowDensity.canCollapse(row()) && flowDensity.isExpanded(row())}>
+        <Show when={density.canCollapse(row()) && density.isExpanded(row())}>
           <IconButton
             icon={<Icon name="chevron-down" size="small" class="rotate-180" />}
             variant="ghost-muted"
@@ -557,7 +577,7 @@ function MessageTimelineView(
             aria-expanded={true}
             onClick={(event) => {
               event.stopPropagation()
-              flowDensity.collapse(current)
+              density.collapse(current)
             }}
           />
         </Show>
@@ -602,8 +622,8 @@ function MessageTimelineView(
           </div>
         </Show>
       }
-      deferred={(row) => {
-        return (flowDensity?.members(row) ?? [row]).some((member) => {
+      deferred={(row) =>
+        ((isFlow() ? flowDensity.members(row) : undefined) ?? [row]).some((member) => {
           if (!Predicate.isTagged(member, "AssistantPart") || member.group.type !== "part") return false
 
           const content = Timeline.resolveContent(
@@ -613,7 +633,7 @@ function MessageTimelineView(
 
           return content?.type === "tool" && ["edit", "write"].includes(content.name)
         })
-      }}
+      }
       renderRow={renderRow}
       header={
         <Show when={!props.hideHeader}>
@@ -766,6 +786,7 @@ function MessageTimelineView(
                         },
                       }}
                     />
+                    <ChatViewButton />
                     <SessionHeaderSpacer visible={props.reserveReviewToggle} />
                   </div>
                 )}

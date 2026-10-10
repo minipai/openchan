@@ -230,21 +230,20 @@ export async function setupTimeline(
     sessionStatus: input.sessionStatus ?? { [sessionID]: initialStatus },
     pageMessages: input.pageMessages ?? (() => ({ items: messages })),
   })
+
   if (input.tabs) await seed(page, { tabs: input.tabs })
-  await page.addInitScript((settings) => {
-    localStorage.setItem(
-      "settings.v3",
-      JSON.stringify({
-        general: {
-          editToolPartsExpanded: false,
-          shellToolPartsExpanded: false,
-          showReasoningSummaries: false,
-          showSessionProgressBar: true,
-          ...settings,
-        },
-      }),
-    )
-  }, input.settings ?? {})
+
+  await seed(page, {
+    settings: {
+      general: {
+        editToolPartsExpanded: false,
+        shellToolPartsExpanded: false,
+        showReasoningSummaries: false,
+        showSessionProgressBar: true,
+        ...input.settings,
+      },
+    },
+  })
   if (input.locale) {
     await page.addInitScript((locale) => {
       localStorage.setItem("opencode.global.dat:language", JSON.stringify({ locale }))

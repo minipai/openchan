@@ -239,9 +239,9 @@ jobs:
           CI: true
         timeout-minutes: 30
 
-      - name: Verify Flow message layout
+      - name: Verify chat view switching and layouts
         if: env.E2E_ENABLED == 'true'
-        run: bun --cwd packages/app test:e2e:flow --reporter=line
+        run: bun --cwd packages/app test:e2e:views --reporter=line
         env:
           CI: true
         timeout-minutes: 5

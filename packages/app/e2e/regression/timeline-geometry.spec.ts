@@ -14,6 +14,7 @@ import {
   shell,
   textPart,
   toolPart,
+  userID,
   userMessage,
   userText,
   validateTimelineEvent,
@@ -29,6 +30,52 @@ import {
 
 const expanded = { editToolPartsExpanded: true, shellToolPartsExpanded: true, showReasoningSummaries: true }
 
+async function openChatViewPicker(page: Page) {
+  const mobile = (page.viewportSize()?.width ?? 1400) < 768
+  const navigation = mobile
+    ? page.locator('[data-slot="session-mobile-view-navigation"]')
+    : page.locator("[data-session-title]")
+
+  if (mobile) await navigation.getByRole("button", { name: "More options", exact: true }).click()
+
+  const button = mobile
+    ? page.getByRole("menuitem", { name: "Chat view", exact: true })
+    : navigation.getByRole("button", { name: "Chat view", exact: true })
+
+  await expect(button).toBeVisible()
+  await button.click()
+
+  await expect(page.getByRole("menuitemradio")).toHaveCount(4)
+
+  return page.getByRole("menuitemradio", { name: "Original", exact: true })
+}
+
+async function expectChatViewAfterSessionDetails(page: Page) {
+  const header = page.locator("[data-session-title]")
+  const details = header.getByRole("button", { name: "Session details", exact: true })
+  const chatView = header.getByRole("button", { name: "Chat view", exact: true })
+
+  await expect(details).toBeVisible()
+  await expect(chatView).toBeVisible()
+  await expect
+    .poll(async () => {
+      const [detailsBounds, chatViewBounds] = await Promise.all([details.boundingBox(), chatView.boundingBox()])
+
+      return !!detailsBounds && !!chatViewBounds && chatViewBounds.x > detailsBounds.x + detailsBounds.width
+    })
+    .toBe(true)
+}
+
+async function selectChatView(page: Page, value: "original" | "stage" | "flow" | "companion") {
+  const picker = await openChatViewPicker(page)
+  const label = value[0]!.toUpperCase() + value.slice(1)
+  await page.getByRole("menuitemradio", { name: label, exact: true }).click()
+  await expect(page.locator(`[data-session-layout="${value}"]`)).toBeVisible()
+  await page.keyboard.press("Escape")
+  await page.keyboard.press("Escape")
+  await expect(picker).toBeHidden()
+}
+
 type SessionExecutionEventType = Extract<
   EventPayload["type"],
   | "session.execution.started"
@@ -40,8 +87,6 @@ type SessionExecutionEventType = Extract<
 type SessionExecutionEvent<Type extends SessionExecutionEventType> = Extract<EventPayload, { type: Type }>
 
 test("Flow collapses old paragraphs without splitting native Used groups", async ({ page }) => {
-  test.skip(process.env.VITE_OPENCODE_CHAT_LAYOUT !== "flow", "Flow layout build required")
-
   const tools = Array.from({ length: 18 }, (_, index) =>
     toolPart(`prt_dense_read_${index}`, "read", "completed", { path: `src/flow-${index}.ts` }),
   )
@@ -80,15 +125,17 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
     ],
   })
 
-  const stage = page.locator('[data-session-layout="flow"]')
-  await expect(stage.locator(".composer-companion")).toHaveCount(0)
-  const older = stage.locator(".flow-summary").filter({ hasText: "Older multipart answer with a long introduction." })
-  const user = stage.locator(".flow-summary").filter({ hasText: "Keep the conversation compact." })
+  await selectChatView(page, "flow")
+  const flow = page.locator('[data-session-layout="flow"]')
+  await expect(flow).toBeVisible()
+  await expect(flow.locator(".composer-companion")).toHaveCount(0)
+  const older = flow.locator(".flow-summary").filter({ hasText: "Older multipart answer with a long introduction." })
+  const user = flow.locator(".flow-summary").filter({ hasText: "Keep the conversation compact." })
   const oldEnd = page.locator(`[data-timeline-part-id="${renderedPartID("prt_dense_old_end")}"]`)
   const latest = page.locator(`[data-timeline-part-id="${renderedPartID("prt_dense_latest")}"]`)
   const group = page.locator(`[data-timeline-part-ids="${tools.map((tool) => tool.id).join(",")}"]`)
   const used = group.locator(':scope > [data-component="collapsible"] > [data-slot="collapsible-trigger"]')
-  const reply = stage.locator("[data-flow-message-divider]").filter({ has: used })
+  const reply = flow.locator("[data-flow-message-divider]").filter({ has: used })
 
   await expect(used).toContainText(/Used\s*18\s*Read/)
   await expect(
@@ -101,10 +148,10 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   await expect(reply.locator("[data-flow-message-divider]")).toHaveCount(0)
   await expect(used).toHaveAttribute("aria-expanded", "false")
   await expect(older).toHaveCount(1)
-  await expect(stage.getByRole("button", { name: "Expand message", exact: true })).toHaveCount(4)
+  await expect(flow.getByRole("button", { name: "Expand message", exact: true })).toHaveCount(4)
   await expect(older.getByRole("button")).toHaveAttribute("aria-expanded", "false")
   await expect(user.getByRole("button")).toHaveAttribute("aria-expanded", "false")
-  const userEntry = stage.locator("[data-flow-message-divider]").filter({ hasText: "Keep the conversation compact." })
+  const userEntry = flow.locator("[data-flow-message-divider]").filter({ hasText: "Keep the conversation compact." })
   await expect(userEntry.locator(".flow-avatar")).toHaveCount(0)
   await userEntry.getByRole("button", { name: "Expand You", exact: true }).click()
   await expect(userEntry.locator('[data-component="user-message"]')).toHaveCSS("align-items", "flex-start")
@@ -116,7 +163,7 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   await userEntry.getByRole("button", { name: "Collapse You", exact: true }).click()
   await expect(user.getByRole("button")).toHaveAttribute("aria-expanded", "false")
 
-  const notice = stage
+  const notice = flow
     .locator("[data-flow-message-divider]")
     .filter({ has: page.locator(".flow-label").filter({ hasText: "Event" }) })
 
@@ -145,7 +192,7 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   await expect(latest).toContainText("A second paragraph stays visible.")
   await expect(latest.getByText("A second paragraph stays visible.", { exact: true })).toBeVisible()
   await expect(
-    stage
+    flow
       .locator(".flow-summary")
       .filter({ hasText: "Pending steer must not hide the live response." })
       .getByRole("button"),
@@ -170,7 +217,7 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   await expect(older.getByRole("button")).toHaveAttribute("aria-expanded", "false")
   await expect.poll(() => older.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(40)
   await expect(older.locator('[dir="auto"]')).toHaveCSS("white-space", "nowrap")
-  await expect.poll(() => stage.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await expect.poll(() => flow.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
 
   const nextMessage = assistantMessage([textPart("prt_dense_next", "")], {
     id: "msg_dense_next",
@@ -189,7 +236,7 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   })
   await timeline.send(partDelta("prt_dense_next", "The next streaming message.", nextMessage.id))
   await expect(
-    stage.locator(".flow-summary").filter({ hasText: "Latest answer remains fully readable." }).getByRole("button"),
+    flow.locator(".flow-summary").filter({ hasText: "Latest answer remains fully readable." }).getByRole("button"),
   ).toHaveAttribute("aria-expanded", "false")
   await expect(latest).toHaveCount(0)
   const next = page.locator(`[data-timeline-part-id="${renderedPartID("prt_dense_next")}"]`)
@@ -197,7 +244,7 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
   await timeline.send(partDelta("prt_dense_next", "\n\nMore content arrived.", nextMessage.id))
   await expect(next.getByText("More content arrived.", { exact: true })).toBeVisible()
   await expect(used).toHaveAttribute("aria-expanded", "false")
-  const latestEntry = stage.locator("[data-flow-message-divider]").filter({ hasText: "The next streaming message." })
+  const latestEntry = flow.locator("[data-flow-message-divider]").filter({ hasText: "The next streaming message." })
   await latestEntry.getByRole("button", { name: "Collapse Assistant", exact: true }).click()
   await expect(next).toHaveCount(0)
   await latestEntry.getByRole("button", { name: "Expand Assistant", exact: true }).click()
@@ -226,8 +273,6 @@ test("Flow collapses old paragraphs without splitting native Used groups", async
 })
 
 test("Companion preserves the native timeline and follows composer state", async ({ page }) => {
-  test.skip(process.env.VITE_OPENCODE_CHAT_LAYOUT !== "companion", "Companion layout build required")
-
   const timeline = await setupTimeline(page, {
     messages: [
       userMessage(undefined, { id: "msg_companion_older_user", created: 1700000000000 }),
@@ -252,6 +297,7 @@ test("Companion preserves the native timeline and follows composer state", async
     reducedMotion: true,
   })
 
+  await selectChatView(page, "companion")
   const companionLayout = page.locator('[data-session-layout="companion"]')
   const row = companionLayout.locator(".companion-composer-row")
   const companion = row.locator("picture.composer-companion")
@@ -428,6 +474,166 @@ test("Companion preserves the native timeline and follows composer state", async
   await editor.fill("The mobile editor remains usable.")
   await expect(editor).toContainText("The mobile editor remains usable.")
   await expect.poll(currentPath).toMatch(companionPaths.typing)
+  await selectChatView(page, "flow")
+  await expect(page.locator('[data-session-layout="flow"]')).toBeVisible()
+  await expect(page.locator('[data-session-layout="flow"] [data-component="composer"]').getByRole("textbox")).toContainText(
+    "The mobile editor remains usable.",
+  )
+})
+
+test("Chat view switches preserve streaming and the composer draft across tab layouts", async ({ page }) => {
+  const timeline = await setupTimeline(page, {
+    seedHistory: true,
+    messages: [userMessage()],
+    reducedMotion: true,
+  })
+
+  const stage = page.locator('[data-session-layout="stage"]')
+  const flow = page.locator('[data-session-layout="flow"]')
+  const companion = page.locator('[data-session-layout="companion"]')
+  const original = page.locator('[data-session-layout="original"]')
+  const portrait = page.locator('[data-component="session-character-portrait"]')
+  const editor = page.locator('[data-session-layout] [data-component="composer"]').getByRole("textbox")
+  const draft = "Keep this draft while the answer streams."
+  const responseEnd = "The streamed response ending remains visible after switching."
+
+  await expect(stage).toBeVisible()
+  await expect(portrait).toBeVisible()
+  await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toHaveCount(0)
+  await expectChatViewAfterSessionDetails(page)
+  const header = page.locator("[data-session-title]")
+
+  const composerRegion = stage.locator('[data-component="composer"]')
+  const geometry = async () => ({
+    header: await header.boundingBox(),
+    composer: await composerRegion.boundingBox(),
+  })
+
+  const closedGeometry = await geometry()
+
+  if (!closedGeometry.header || !closedGeometry.composer) throw new Error("Missing header or composer bounds")
+  const picker = await openChatViewPicker(page)
+  await expect.poll(geometry).toEqual(closedGeometry)
+  await page.keyboard.press("Escape")
+  await page.keyboard.press("Escape")
+  await expect(picker).toBeHidden()
+  await expect.poll(geometry).toEqual(closedGeometry)
+
+  await editor.fill(draft)
+  await expect(editor).toContainText(draft)
+
+  const liveMessage = assistantMessage([textPart("prt_chat_view_stream", "")], {
+    parentID: userID,
+    completed: false,
+  })
+
+  await timeline.send(stepStarted(liveMessage))
+  await timeline.send({
+    id: "evt_chat_view_text_started",
+    type: "session.text.started",
+    created: 1700000005001,
+    location: { directory },
+    durable: { aggregateID: sessionID, seq: 1, version: 1 },
+    data: { sessionID, assistantMessageID: liveMessage.id, ordinal: 0 },
+  })
+  await timeline.send(partDelta("prt_chat_view_stream", "The response starts in Stage. ", liveMessage.id))
+
+  const livePart = page.locator(`[data-timeline-part-id="${renderedPartID("prt_chat_view_stream")}"]`)
+  const liveRow = page.locator("[data-timeline-key]", { has: livePart })
+  await expect(livePart).toContainText("The response starts in Stage.")
+
+  await selectChatView(page, "flow")
+  await expect(flow).toBeVisible()
+  await expect(editor).toContainText(draft)
+  const older = flow.locator(".flow-summary").filter({ hasText: "Historical response 17." })
+  await expect(older.getByRole("button")).toHaveAttribute("aria-expanded", "false")
+  const liveEntry = flow.locator("[data-flow-message-divider]").filter({ hasText: "The response starts in Stage." })
+  await expect(liveEntry.getByRole("img", { name: "Assistant", exact: true })).toBeVisible()
+  await timeline.send(partDelta("prt_chat_view_stream", "The response continues in Flow. ", liveMessage.id))
+  await expect(livePart).toContainText("The response continues in Flow.")
+
+  await selectChatView(page, "companion")
+  await expect(companion).toBeVisible()
+  await expect(editor).toContainText(draft)
+  await expect(companion.getByText(/Historical response 17\./)).toBeVisible()
+  await expect(companion.locator(".flow-summary, .flow-avatar, [data-flow-message-divider]")).toHaveCount(0)
+  await expect(livePart).toContainText("The response continues in Flow.")
+  const companionImage = companion.locator("picture.composer-companion img")
+  await expect.poll(() =>
+    companionImage.evaluate((element) => {
+      if (!(element instanceof HTMLImageElement)) throw new Error("Companion image is unavailable")
+
+      return element.currentSrc ? new URL(element.currentSrc).pathname : ""
+    }),
+  ).toMatch(/^\/characters\/kotone\/companion\/typing-0[3-5]\.png$/)
+  await timeline.send(
+    partDelta(
+      "prt_chat_view_stream",
+      `The response continues in Companion. ${"A tall streamed native response stays measurable. ".repeat(24)}\n\n${responseEnd}`,
+      liveMessage.id,
+    ),
+  )
+  await expect(livePart).toContainText("The response continues in Companion.")
+  await expect(livePart).toContainText(responseEnd)
+
+  await selectChatView(page, "original")
+  await expect(original).toBeVisible()
+  await expect(editor).toContainText(draft)
+  await expect(original.getByText(/Historical response 17\./)).toBeVisible()
+  await expect(original.locator(".flow-summary, .flow-avatar, [data-flow-message-divider]")).toHaveCount(0)
+  await expect(portrait).toHaveCount(0)
+  await expect(page.locator(".composer-companion")).toHaveCount(0)
+  const responseEnding = original.getByText(responseEnd, { exact: true })
+  await expect(responseEnding).toBeInViewport()
+  const liveRowBounds = await liveRow.boundingBox()
+  const responseEndingBounds = await responseEnding.boundingBox()
+
+  if (!liveRowBounds || !responseEndingBounds) throw new Error("Missing streamed response bounds")
+
+  expect(responseEndingBounds.y + responseEndingBounds.height).toBeLessThanOrEqual(
+    liveRowBounds.y + liveRowBounds.height + 1,
+  )
+  await timeline.send(partDelta("prt_chat_view_stream", "The response continues in Original.", liveMessage.id))
+  await expect(livePart).toContainText("The response continues in Original.")
+  await expect(livePart).toBeVisible()
+
+  await selectChatView(page, "stage")
+  await expect(stage).toBeVisible()
+  await expect(portrait).toBeVisible()
+  await expect(editor).toContainText(draft)
+  await timeline.send(partDelta("prt_chat_view_stream", "\n\nThe response returns to Stage.", liveMessage.id))
+  await expect(livePart).toContainText("The response returns to Stage.")
+
+  await selectChatView(page, "flow")
+  await expect(flow).toBeVisible()
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("settings.v3"))).toContain('"chatView":"flow"')
+  await page.reload()
+  await expect(page.locator('[data-session-layout="flow"]')).toBeVisible()
+  const persistedPicker = await openChatViewPicker(page)
+  await expect(page.getByRole("menuitemradio", { name: "Flow", exact: true })).toHaveAttribute("aria-checked", "true")
+  await page.keyboard.press("Escape")
+  await page.keyboard.press("Escape")
+  await expect(persistedPicker).toBeHidden()
+
+  await page.keyboard.press("Control+,")
+  const settings = page.getByTestId("settings-screen")
+  await expect(settings).toBeVisible()
+  const tabLayout = settings.locator('[data-action="settings-tab-layout"]')
+  await expect(tabLayout).toContainText("Horizontal")
+  await tabLayout.click()
+  await page.getByRole("option", { name: "Vertical", exact: true }).click()
+  await expect(tabLayout).toContainText("Vertical")
+  await settings.getByRole("button", { name: "Back to app", exact: true }).click()
+  await expect(settings).toBeHidden()
+  await expect(page.locator('[data-slot="vertical-tabs-sidebar"]')).toBeVisible()
+  await expect(page.locator('[data-slot="titlebar-tabs"]')).toHaveCount(0)
+  await expectChatViewAfterSessionDetails(page)
+
+  const verticalPicker = await openChatViewPicker(page)
+  await expect(page.getByRole("menuitemradio", { name: "Flow", exact: true })).toHaveAttribute("aria-checked", "true")
+  await page.keyboard.press("Escape")
+  await page.keyboard.press("Escape")
+  await expect(verticalPicker).toBeHidden()
 })
 
 const contextTools = [

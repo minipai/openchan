@@ -46,6 +46,7 @@ const cache = new Map<
     toolOpen: Record<string, boolean | undefined>
     patchGroupKeys: Map<string, string>
     presentationKey?: string
+    layoutKey?: string
   }
 >()
 
@@ -58,6 +59,7 @@ type Input = {
   active?: Accessor<boolean>
   sessionKey: Accessor<string>
   presentationKey?: Accessor<string>
+  layoutKey?: Accessor<string>
   projection: Projection
   showHeader: Accessor<boolean>
   /** True while the timeline follows the newest content. Drives every anchoring decision. */
@@ -100,18 +102,11 @@ export function createTimelineVirtualizer(input: Input) {
   const ownerSessionKey = input.sessionKey()
   const entry = cache.get(ownerSessionKey)
   const cached = entry?.presentationKey === input.presentationKey?.() ? entry : undefined
-  const initialMeasurements = cached?.measurements
+  const initialMeasurements = cached?.layoutKey === input.layoutKey?.() ? cached?.measurements : undefined
   const coldBottomMount = !initialMeasurements?.length && input.pinned()
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const patchGroupKeys = cached?.patchGroupKeys ?? new Map<string, string>()
-  createEffect(
-    on(
-      () => input.presentationKey?.(),
-      () => setToolOpen(reconcile({})),
-      { defer: true },
-    ),
-  )
   const [rendering, setRendering] = createStore({ initialTail: coldBottomMount, scrollAdjustment: 0 })
   const rows = input.projection.rows
   const rowByKey = input.projection.rowByKey
@@ -294,6 +289,34 @@ export function createTimelineVirtualizer(input: Input) {
       return rangeExtractor()
     },
   })
+
+  createEffect(
+    on(
+      () => input.presentationKey?.(),
+      () => {
+        setToolOpen(reconcile({}))
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => input.layoutKey?.(),
+      () => {
+        virtualizer.measure()
+        // Native views can retain the same rows and sizes, so ResizeObserver may not fire.
+        queueMicrotask(() => {
+          if (!active()) return
+
+          virtualizer.elementsCache.forEach((element) => {
+            if (element.isConnected) virtualizer.resizeItem(virtualizer.indexFromElement(element), element.offsetHeight)
+          })
+        })
+      },
+      { defer: true },
+    ),
+  )
 
   const resizeItem = virtualizer.resizeItem
   const pendingSizes = new Map<number, { key: string; size: number }>()
@@ -899,6 +922,7 @@ export function createTimelineVirtualizer(input: Input) {
       toolOpen: { ...toolOpen },
       patchGroupKeys,
       presentationKey: input.presentationKey?.(),
+      layoutKey: input.layoutKey?.(),
     })
 
     while (cache.size > 16) cache.delete(cache.keys().next().value!)

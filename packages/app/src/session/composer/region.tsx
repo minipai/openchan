@@ -34,6 +34,7 @@ import { createSessionRequestModel } from "../requests/model"
 import type { Region } from "@/runtime/extension/panels"
 import { SessionLocationMissing } from "./location-missing"
 import { ComposerCompanion } from "./companion"
+import { useSettings } from "@/settings/model"
 
 export function createActiveSessionRegion(input: {
   session: SessionModel
@@ -292,6 +293,7 @@ export function ActiveSessionComposerRegion(props: {
   suggestionBoundary: () => HTMLElement | undefined
 }) {
   const location = useWorkspaceLocation()
+  const settings = useSettings()
 
   // Only the server's LocationNotFoundError for the session's own Location replaces the composer.
   const missing = createMemo(() => {
@@ -307,11 +309,9 @@ export function ActiveSessionComposerRegion(props: {
     <SessionComposerRegion
       controller={props.model.region}
       companion={
-        import.meta.env.VITE_OPENCODE_CHAT_LAYOUT === "companion" ? (
-          <Show when={!missing()}>
-            <ComposerCompanion session={props.session} model={props.model} />
-          </Show>
-        ) : undefined
+        <Show when={settings.general.chatView() === "companion" && !missing()}>
+          <ComposerCompanion session={props.session} model={props.model} />
+        </Show>
       }
       composer={
         <Show

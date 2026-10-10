@@ -17,6 +17,8 @@ export type TerminalPlacement = Settings["general"]["terminalPlacement"]
 
 export type FollowUpBehavior = Settings["general"]["followUpBehavior"]
 
+export type ChatView = Settings["general"]["chatView"]
+
 export type TabLayout = Settings["appearance"]["tabLayout"]
 
 export type NotificationSettings = Settings["notifications"]
@@ -116,6 +118,7 @@ const generalSchema = Persistence.struct({
   mobileDiffWrap: Persistence.optional(Schema.Boolean),
   terminalPlacement: Schema.Literals(["side", "bottom"]),
   followUpBehavior: Schema.Literals(["queue", "steer"]),
+  chatView: Schema.Literals(["original", "stage", "flow", "companion"]),
 })
 
 const appearanceSchema = Persistence.struct({
@@ -271,6 +274,7 @@ export const defaultSettings: Settings = {
     mobileTitlebarPosition: "top",
     terminalPlacement: "side",
     followUpBehavior: "steer",
+    chatView: "stage",
   },
   appearance: { fontSize: 14, mono: "", sans: "", terminal: "", tabLayout: "horizontal" },
   keybinds: {},
@@ -320,6 +324,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         return store
       },
       general: {
+        chatView: withFallback(() => store.general?.chatView, defaultSettings.general.chatView),
+        setChatView(value: ChatView) {
+          setStore("general", "chatView", value)
+        },
         showFileTree,
         setShowFileTree(value: boolean) {
           setStore("general", "showFileTree", value)
