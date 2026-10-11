@@ -18,9 +18,37 @@
   }
 
   .server-connect-brand {
+    position: relative;
     width: 160px;
+    height: 208px;
     margin-inline: auto;
     margin-block-end: 16px;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .server-connect-avatar-circle {
+    position: absolute;
+    inset: 48px 0 0;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--v2-background-bg-layer-02);
+    box-shadow: 0 0 0 6px var(--v2-border-border-base);
+
+    img {
+      position: absolute;
+      top: -48px;
+      inset-inline-start: calc(50% - 140%);
+      width: 280%;
+      max-width: none;
+      height: auto;
+    }
+  }
+
+  .server-connect-avatar-top {
+    position: absolute;
+    inset: 0 0 80px;
+    background: url("/characters/kotone/portraits/neutral.webp") center top / 280% auto no-repeat;
   }
 
   header {
