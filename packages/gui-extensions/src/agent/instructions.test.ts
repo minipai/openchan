@@ -156,7 +156,7 @@ describe("session instructions", () => {
 
       expect(firstPut?.path).toBe(`${entryPath}/openchan.persona`)
       const firstBody = JSON.stringify(firstPut?.body)
-      expect(firstBody).toContain("You are Kotone (ことね)")
+      expect(firstBody).toContain("You are ことね (Kotone), an AI maid — gentle, playful, and classic-style.")
       expect(firstBody).toContain(`Current local time: ${initialTime.toString()}.`)
       expect(server.entries()).toHaveLength(1)
 

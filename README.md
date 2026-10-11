@@ -23,7 +23,7 @@ Do not open the pairing link first: it is single-use and expires after a short t
 
 Your browser connects directly to your OpenCode service. It must be able to reach the server, such as over your local network or VPN. Allow local-network access if your browser asks; if it blocks HTTP connections from the HTTPS site, use an HTTPS endpoint for your server.
 
-Set **Settings → OpenChan → Response language** to choose how the assistant replies. This browser-local preference is applied to the session on your next send, including when ClaudeCafe is active. Leave it empty to follow the conversation.
+Set **Settings → OpenChan → Response language** to choose how the assistant replies. This browser-local preference is applied to the session on your next send, including when ClaudeCafe is active. Leave it empty to use the persona's default language; the built-in persona defaults to English unless you explicitly request another language.
 
 ## Chat Views
 
