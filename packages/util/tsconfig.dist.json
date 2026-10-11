@@ -6,5 +6,5 @@
       "@opencode/util/effect/app-node": ["./dist/effect/app-node.d.ts"]
     }
   },
-  "include": ["../core/test/effect/layer-node/layer-node-types.test.ts"]
+  "include": ["test/effect/layer-node-types.test.ts"]
 }

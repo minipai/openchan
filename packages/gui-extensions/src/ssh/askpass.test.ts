@@ -1,7 +1,7 @@
 import { expect } from "bun:test"
 import { NodeSocket } from "@effect/platform-node"
 import { Deferred, Effect, Fiber, Layer, Queue, Scope, Exit } from "effect"
-import { testEffect } from "../../../core/test/lib/effect"
+import { testEffect } from "../../test/lib/effect"
 import { createAskpass } from "./askpass"
 
 const it = testEffect(Layer.empty)

@@ -47,6 +47,8 @@ Serve `packages/app/dist/` with a static host configured to fall back to `index.
 
 Character artwork is not included in this repository. Supply it under `packages/app/public/characters/` before building to include portraits and animations in your deployment.
 
+Cloudflare deployment configuration and instructions are in [`deployment/`](deployment/).
+
 ## Development
 
 ```bash
@@ -55,6 +57,8 @@ bun run check
 ```
 
 See [chat view implementation notes](packages/app/src/session/layouts/README.md) for layout ownership and presentation tests.
+
+This repository contains the web client and its shared dependencies. Run the OpenCode server separately; CLI, desktop, and upstream hosted services are not included.
 
 ## Credits
 

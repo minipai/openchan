@@ -1,0 +1,9 @@
+{
+  "name": "openchan-deploy",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "cf": "1.0.0-beta.5",
+    "wrangler": "^4.136.0"
+  }
+}

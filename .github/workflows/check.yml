@@ -2,19 +2,19 @@ name: check
 
 on:
   push:
-    branches: [dev, v2]
+    branches: [main]
   pull_request:
-    branches: [dev, v2]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
     name: typecheck
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -28,8 +28,7 @@ jobs:
       - name: Run checks
         run: bun run check
 
-      # Every GUI package file (app, desktop, gui-extensions, ui, session-ui) a pull request adds or edits must be free of
-      # oxlint problems, warn-level rules (anti-slop) included. Other packages are not affected.
+      # Lint the pull request's changed files against the same first-parent base used for its merge commit.
       - name: Lint changed files
         if: github.event_name == 'pull_request'
         # Against the merge's first parent, so base-branch commits the pull request has not merged are not counted as its

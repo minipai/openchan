@@ -33,8 +33,8 @@ import { rootSession } from "@/shell/routes/session"
 import { TitlebarItem } from "@opencode/gui-extensions/sdk"
 import { useExtensionHost } from "@/runtime/extension/host"
 import { TitlebarItems, useTitlebarItems } from "@/runtime/extension/titlebar-items"
-import devIcon from "../../../../desktop/icons/dev/64x64.png"
-import betaIcon from "../../../../desktop/icons/beta/64x64.png"
+import devIcon from "../../../icons/dev/64x64.png"
+import betaIcon from "../../../icons/beta/64x64.png"
 
 const titlebarHeight = 36
 

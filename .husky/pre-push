@@ -1,7 +1,6 @@
 #!/bin/sh
 set -e
 # Check if bun version matches package.json
-# keep in sync with packages/script/src/index.ts semver qualifier
 bun -e '
 import { semver } from "bun";
 const pkg = await Bun.file("package.json").json();

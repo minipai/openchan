@@ -26,7 +26,6 @@
     {
       "files": [
         "packages/app/**",
-        "packages/desktop/**",
         "packages/gui-extensions/**",
         "packages/ui/**",
         "packages/session-ui/**"
@@ -54,7 +53,7 @@
       }
     },
     {
-      "files": ["packages/app/**", "packages/desktop/**", "packages/gui-extensions/**", "packages/session-ui/**"],
+      "files": ["packages/app/**", "packages/gui-extensions/**", "packages/session-ui/**"],
       "rules": {
         "anti-slop-effect/no-manual-effect-error-tag": "warn",
         "anti-slop-effect/no-manual-tag-comparison": "warn",
