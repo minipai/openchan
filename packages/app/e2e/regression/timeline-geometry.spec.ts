@@ -47,7 +47,7 @@ async function openChatViewPicker(page: Page) {
   await expect(button).toBeVisible()
   await button.click()
 
-  await expect(page.getByRole("menuitemradio")).toHaveCount(5)
+  await expect(page.getByRole("menuitemradio")).toHaveCount(6)
 
   return page.getByRole("menuitemradio", { name: "Original", exact: true })
 }
@@ -68,7 +68,10 @@ async function expectChatViewAfterSessionDetails(page: Page) {
     .toBe(true)
 }
 
-async function selectChatView(page: Page, value: "original" | "stage" | "flow" | "companion" | "document") {
+async function selectChatView(
+  page: Page,
+  value: "original" | "stage" | "flow" | "companion" | "document" | "comms",
+) {
   const picker = await openChatViewPicker(page)
   const label = value[0]!.toUpperCase() + value.slice(1)
   await page.getByRole("menuitemradio", { name: label, exact: true }).click()
@@ -478,9 +481,41 @@ test("Companion preserves the native timeline and follows composer state", async
 })
 
 test("Chat view switches preserve streaming and the composer draft across tab layouts", async ({ page }) => {
+  const oldPrompt = userMessage([userText("Review an earlier change.", { id: "prt_chat_view_old_prompt" })], {
+    id: "msg_chat_view_old_user",
+    created: 1690000200000,
+  })
+
+  const oldAssistant = {
+    ...assistantMessage(
+      [
+        toolPart("prt_chat_view_old_read", "read", "completed", { path: "src/comms/history-only.ts" }),
+        textPart("prt_chat_view_old_text", "This tool belongs to an earlier exchange."),
+      ],
+      { id: "msg_chat_view_old_assistant", parentID: oldPrompt.id, created: 1690000201000 },
+    ),
+    snapshot: { files: ["src/comms/history-only.ts"] },
+  }
+
+  const currentPrompt = userMessage()
+
+  const priorStep = {
+    ...assistantMessage(
+      [
+        toolPart("prt_chat_view_prior_patch", "patch", "completed", {
+          patchText: "Update src/comms/current-change.ts",
+        }),
+        textPart("prt_chat_view_prior_text", "The latest exchange changed one file."),
+      ],
+      { id: "msg_chat_view_prior_step", parentID: currentPrompt.id, created: 1700000001000 },
+    ),
+    tokens: { input: 50_000, output: 4_000, reasoning: 0, cache: { read: 1_000, write: 0 } },
+    snapshot: { files: ["src/comms/current-change.ts"] },
+  }
+
   const timeline = await setupTimeline(page, {
     seedHistory: true,
-    messages: [userMessage()],
+    messages: [oldPrompt, oldAssistant, currentPrompt, priorStep],
     reducedMotion: true,
   })
 
@@ -488,6 +523,7 @@ test("Chat view switches preserve streaming and the composer draft across tab la
   const flow = page.locator('[data-session-layout="flow"]')
   const companion = page.locator('[data-session-layout="companion"]')
   const original = page.locator('[data-session-layout="original"]')
+  const comms = page.locator('[data-session-layout="comms"]')
   const portrait = page.locator('[data-component="session-character-portrait"]')
   const editor = page.locator('[data-session-layout] [data-component="composer"]').getByRole("textbox")
   const draft = "Keep this draft while the answer streams."
@@ -575,9 +611,191 @@ test("Chat view switches preserve streaming and the composer draft across tab la
   await expect(livePart).toContainText("The response continues in Companion.")
   await expect(livePart).toContainText(responseEnd)
 
+  await selectChatView(page, "comms")
+  await expect(comms).toBeVisible()
+  await expect(editor).toContainText(draft)
+  await expect(comms.getByText(responseEnd, { exact: true })).toBeVisible()
+  await expect(comms.locator(".document-paper")).toHaveCount(0)
+  await expect(comms.getByRole("navigation", { name: "Document pages", exact: true })).toHaveCount(0)
+
+  const commsPortraitWindow = comms.locator(".comms-portrait")
+  const commsAvatar = comms.locator(".comms-portrait__avatar")
+  const commsPortrait = comms.locator('[data-component="session-character-portrait"]')
+  const commsTimeline = comms.locator(".comms-timeline")
+  const commsTimelineViewport = comms.locator('[data-slot="session-timeline-scroll"] .scroll-view__viewport')
+  const commsHistoryText = comms.getByText("This tool belongs to an earlier exchange.", { exact: true })
+
+  const commsHistoryRow = page.locator("[data-timeline-key]", {
+    has: page.getByText("This tool belongs to an earlier exchange.", { exact: true }),
+  })
+
+  const portraitFrame = commsAvatar.locator('[data-component="session-character-portrait-frame"]')
+  const portraitCircle = commsAvatar.locator('[data-component="session-character-portrait-circle"]')
+  const portraitHead = commsAvatar.locator('[data-component="session-character-portrait-top"]')
+
+  await expect(commsPortraitWindow).toBeVisible()
+  await expect(commsPortraitWindow.getByText("Current work", { exact: true })).toHaveCount(0)
+  await expect(commsPortraitWindow.getByText(/^(Agent|Build|Model|Claude Opus 4\.6|Working)$/)).toHaveCount(0)
+  await expect(commsPortraitWindow.getByRole("status")).toHaveCount(0)
+  await expect(commsPortraitWindow.locator("details")).toHaveCount(0)
+  await expect(commsAvatar).toBeVisible()
+  await expect(commsAvatar).toHaveCSS("position", "absolute")
+  await expect(commsAvatar).toHaveCSS("overflow", "visible")
+  await expect(commsPortraitWindow).toHaveCSS("overflow", "visible")
+  await expect(portraitFrame).toBeVisible()
+  await expect(portraitFrame).toHaveCSS("overflow", "visible")
+  await expect(portraitCircle).toBeVisible()
+  await expect(portraitCircle).toHaveCSS("overflow", "hidden")
+  await expect(portraitCircle).toHaveCSS("border-radius", "50%")
+  await expect(portraitHead).toBeVisible()
+  await expect(commsPortrait).toHaveCount(1)
+  await expect(commsPortrait).toHaveAttribute("src", "/characters/kotone/portraits/neutral.webp")
+  await expect(commsTimeline).toBeVisible()
+  await expect(commsTimelineViewport).toBeVisible()
+  await expect(commsHistoryText).toBeVisible()
+
+  const titlebarTabs = page.locator('[data-slot="titlebar-tabs"]')
+  await expect(titlebarTabs).toBeVisible()
+  await expect(header).toBeVisible()
+
+  const [commsPortraitBeforeScroll, commsViewportBeforeScroll, titleBounds, titlebarTabsBounds] = await Promise.all([
+    commsPortraitWindow.boundingBox(),
+    commsTimelineViewport.boundingBox(),
+    header.boundingBox(),
+    titlebarTabs.boundingBox(),
+  ])
+
+  if (!commsPortraitBeforeScroll || !commsViewportBeforeScroll || !titleBounds || !titlebarTabsBounds)
+    throw new Error("Missing Comms layout bounds")
+  expect(commsPortraitBeforeScroll.y).toBeGreaterThanOrEqual(titleBounds.y + titleBounds.height - 1)
+  expect(commsPortraitBeforeScroll.y).toBeGreaterThanOrEqual(titlebarTabsBounds.y + titlebarTabsBounds.height - 1)
+  expect(
+    Math.min(
+      commsPortraitBeforeScroll.x + commsPortraitBeforeScroll.width,
+      commsViewportBeforeScroll.x + commsViewportBeforeScroll.width,
+    ) - Math.max(commsPortraitBeforeScroll.x, commsViewportBeforeScroll.x),
+  ).toBeGreaterThan(0)
+  expect(
+    Math.min(
+      commsPortraitBeforeScroll.y + commsPortraitBeforeScroll.height,
+      commsViewportBeforeScroll.y + commsViewportBeforeScroll.height,
+    ) - Math.max(commsPortraitBeforeScroll.y, commsViewportBeforeScroll.y),
+  ).toBeGreaterThan(0)
+
+  const [circleBounds, headBounds, portraitBounds, historyRowBounds] = await Promise.all([
+    portraitCircle.boundingBox(),
+    portraitHead.boundingBox(),
+    commsPortrait.boundingBox(),
+    commsHistoryRow.boundingBox(),
+  ])
+
+  if (!circleBounds || !headBounds || !portraitBounds || !historyRowBounds)
+    throw new Error("Missing Comms avatar or chat row geometry")
+  expect(circleBounds.width).toBeCloseTo(160, 0)
+  expect(circleBounds.height).toBeCloseTo(160, 0)
+  expect(portraitBounds.width).toBeGreaterThan(circleBounds.width)
+  expect(portraitBounds.x).toBeLessThan(circleBounds.x)
+  expect(portraitBounds.x + portraitBounds.width).toBeGreaterThan(circleBounds.x + circleBounds.width)
+  expect(portraitBounds.y).toBeLessThan(circleBounds.y)
+  expect(circleBounds.width).toBeCloseTo(circleBounds.height, 1)
+  expect(headBounds.y).toBeLessThan(circleBounds.y)
+  expect(headBounds.y + headBounds.height).toBeGreaterThan(circleBounds.y)
+  expect(headBounds.x).toBeCloseTo(circleBounds.x, 0)
+  expect(headBounds.width).toBeCloseTo(circleBounds.width, 0)
+  expect(headBounds.y + headBounds.height).toBeLessThanOrEqual(
+    commsPortraitBeforeScroll.y + commsPortraitBeforeScroll.height + 1,
+  )
+  expect(historyRowBounds.x).toBeLessThan(circleBounds.x + circleBounds.width / 2)
+  expect(historyRowBounds.x + historyRowBounds.width).toBeGreaterThan(circleBounds.x + circleBounds.width / 2)
+
+  await expect
+    .poll(() => commsTimelineViewport.evaluate((element) => element.scrollHeight > element.clientHeight))
+    .toBe(true)
+  await expect
+    .poll(() =>
+      commsTimelineViewport.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+    )
+    .toBeLessThanOrEqual(1)
+  const scrollTopBeforeWheel = await commsTimelineViewport.evaluate((element) => element.scrollTop)
+  expect(scrollTopBeforeWheel).toBeGreaterThan(0)
+  const circleCenterX = circleBounds.x + circleBounds.width / 2
+  const circleCenterY = circleBounds.y + circleBounds.height / 2
+  const scrollDelta = Math.ceil(circleCenterY - (historyRowBounds.y + historyRowBounds.height / 2))
+  expect(scrollDelta).toBeGreaterThan(0)
+  expect(scrollTopBeforeWheel).toBeGreaterThan(scrollDelta)
+  await page.mouse.move(circleCenterX, circleCenterY)
+  await page.mouse.wheel(0, -scrollDelta)
+  await expect
+    .poll(() => commsTimelineViewport.evaluate((element) => element.scrollTop))
+    .toBeLessThan(scrollTopBeforeWheel)
+  await expect
+    .poll(() => commsHistoryRow.evaluate((element) => element.getBoundingClientRect().top))
+    .toBeGreaterThan(historyRowBounds.y)
+  await expect
+    .poll(async () => {
+      const row = await commsHistoryRow.boundingBox()
+
+      return (
+        !!row &&
+        row.x < circleBounds.x + circleBounds.width &&
+        row.x + row.width > circleBounds.x &&
+        row.y < circleBounds.y + circleBounds.height &&
+        row.y + row.height > circleBounds.y
+      )
+    })
+    .toBe(true)
+
+  const [commsPortraitAfterScroll, circleAfterScroll, historyRowAfterScroll] = await Promise.all([
+    commsPortraitWindow.boundingBox(),
+    portraitCircle.boundingBox(),
+    commsHistoryRow.boundingBox(),
+  ])
+
+  if (!commsPortraitAfterScroll || !circleAfterScroll || !historyRowAfterScroll)
+    throw new Error("Missing Comms portrait bounds after scrolling")
+  expect(Math.abs(commsPortraitAfterScroll.y - commsPortraitBeforeScroll.y)).toBeLessThanOrEqual(1)
+  expect(Math.abs(circleAfterScroll.x - circleBounds.x)).toBeLessThanOrEqual(1)
+  expect(Math.abs(circleAfterScroll.y - circleBounds.y)).toBeLessThanOrEqual(1)
+  expect(historyRowAfterScroll.y).toBeGreaterThan(historyRowBounds.y)
+
+  await page.mouse.wheel(0, 10_000)
+  await expect
+    .poll(() =>
+      commsTimelineViewport.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+    )
+    .toBeLessThanOrEqual(1)
+
+  const contextLabel = "Context usage: 28% (55,000 of 200,000 tokens)"
+  await expect(comms.getByRole("img", { name: contextLabel, exact: true })).toBeVisible()
+  await expect(commsPortraitWindow).not.toContainText("28%")
+  await expect(commsPortraitWindow).not.toContainText("55,000")
+  await expect(comms.locator(".comms-console__context-value")).toHaveCount(0)
+  const contextUsage = page.getByRole("button", { name: "View context usage", exact: true })
+  await expect(contextUsage).toBeVisible()
+  const contextProgress = comms.locator(".comms-portrait__context-progress")
+
+  const contextProgressMeasurement = await contextProgress.evaluate((element) => {
+    if (!(element instanceof SVGCircleElement)) throw new Error("Comms context ring is unavailable")
+
+    return {
+      offset: Number.parseFloat(getComputedStyle(element).strokeDashoffset),
+      circumference: 2 * Math.PI * element.r.baseVal.value,
+    }
+  })
+
+  expect(contextProgressMeasurement.offset).toBeCloseTo(contextProgressMeasurement.circumference * (1 - 28 / 100), 1)
+
+  await timeline.send(
+    partUpdated(
+      toolPart("prt_chat_view_expression", "character.set_expression", "completed", { expression: "focused" }),
+    ),
+  )
+  await expect(commsPortrait).toHaveAttribute("src", "/characters/kotone/portraits/focused.webp")
+
   await selectChatView(page, "original")
   await expect(original).toBeVisible()
   await expect(editor).toContainText(draft)
+  await expect(livePart).toContainText(responseEnd)
   await expect(original.getByText(/Historical response 17\./)).toBeVisible()
   await expect(original.locator(".flow-summary, .flow-avatar, [data-flow-message-divider]")).toHaveCount(0)
   await expect(portrait).toHaveCount(0)

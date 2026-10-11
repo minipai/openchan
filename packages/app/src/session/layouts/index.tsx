@@ -3,6 +3,7 @@ import { useSettings } from "@/settings/model"
 import type { SessionLayoutProps } from "./types"
 import "./flow.css"
 import "./companion.css"
+import "./comms.css"
 import "./document.css"
 
 export function SessionLayout(props: SessionLayoutProps) {

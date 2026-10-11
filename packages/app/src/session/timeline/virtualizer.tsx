@@ -95,6 +95,7 @@ type Input = {
 
 type ViewProps = {
   header: JSX.Element
+  afterHeader?: JSX.Element
   frameClass?: string
   frameOverlay?: (userMessageID?: string) => JSX.Element
   bottomSpacer?: JSX.Element
@@ -1005,6 +1006,7 @@ export function createTimelineVirtualizer(input: Input) {
       >
         <Show when={input.fixedHeader?.() && input.showHeader()}>{props.header}</Show>
         <div class={props.frameClass} style={{ display: props.frameClass ? undefined : "contents" }}>
+          {props.afterHeader}
           <div
             class="absolute left-1/2 -translate-x-1/2 z-[60] pointer-events-none transition-all duration-200 ease-out"
             classList={{

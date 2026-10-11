@@ -16,6 +16,57 @@
   user-select: none;
 }
 
+[data-component="session-character-portrait-frame"],
+[data-component="session-character-portrait-circle"] {
+  display: contents;
+}
+
+[data-component="session-character-portrait-top"] {
+  display: none;
+}
+
+[data-session-layout="comms"] .comms-portrait__avatar [data-component="session-character-portrait-frame"] {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+[data-session-layout="comms"] .comms-portrait__avatar [data-component="session-character-portrait-circle"] {
+  display: block;
+  position: absolute;
+  inset-block-start: 20px;
+  inset-inline-start: 10px;
+  inline-size: 160px;
+  block-size: 160px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--v2-background-bg-layer-02);
+}
+
+[data-session-layout="comms"] .comms-portrait__avatar [data-component="session-character-portrait"] {
+  position: absolute;
+  inset-block-start: -48px;
+  inset-inline-start: calc(50% - 140%);
+  width: 280%;
+  max-width: none;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+[data-session-layout="comms"] .comms-portrait__avatar [data-component="session-character-portrait-top"] {
+  position: absolute;
+  inset-block: -28px 100px;
+  inset-inline-start: 10px;
+  display: block;
+  inline-size: 160px;
+  background-image: var(--portrait-shape);
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: 280% auto;
+  pointer-events: none;
+}
+
 @media (max-width: 767px) {
   [data-session-layout="stage"] [data-session-stage] [data-component="session-character-portrait"] {
     inset-block-start: max(0px, calc(100% - 720px));

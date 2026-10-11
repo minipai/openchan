@@ -1,9 +1,10 @@
 # Chat views
 
-One web build contains all five views. The **Chat view** icon immediately after the Summary (Session details) control in the session header opens the choices directly, with horizontal or vertical tabs. The mobile navigation menu also offers **Chat view**. The selector shares the existing header row without changing the conversation or composer height:
+One web build contains all six views. The **Chat view** icon immediately after the Summary (Session details) control in the session header opens the choices directly, with horizontal or vertical tabs. The mobile navigation menu also offers **Chat view**. The selector shares the existing header row without changing the conversation or composer height:
 
 - **Original**: original conversation and full-width composer without character artwork or Flow presentation.
 - **Stage**: native conversation with the large portrait overlay and history-reading treatment.
+- **Comms**: a circular, pop-out head portrait with a context-usage ring floats below the title row. The native chat scrolls behind it; pointer events pass through to the conversation. The standard composer, drafts, tools, and attachments stay shared.
 - **Flow**: compact conversation, foldable message blocks, and message-specific pop-out avatars.
 - **Companion**: native conversation with a small animated character beside a shorter input box.
 - **Document**: continuous native scrolling with each prompt and its responses enclosed in a transparent, square-bordered paper. A live 480px portrait floats inside the paper on the right below the prompt. Text wraps around its transparent silhouette. Earlier history is virtualized and loads as you scroll up.
@@ -20,11 +21,12 @@ The existing local previews on ports 4273, 4274, and 4275 can all serve that sam
 
 ## Ownership
 
-- `index.tsx` is the stable shell around the shared content and composer slots. Its `data-session-layout` attribute scopes view-specific CSS. Stage mounts its portrait in this shell; Document places a live portrait inside each paper through the session overlay slot.
+- `index.tsx` is the stable shell around the shared content and composer slots. Its `data-session-layout` attribute scopes view-specific CSS. Stage mounts its portrait in this shell; Comms overlays its avatar inside the timeline viewport frame, while Document places a live portrait inside each exchange through the session overlay slot.
 - `view-select.tsx` owns the native selection form; `settings/model.tsx` owns persistence.
 - `flow.css` and `../timeline/flow-density.ts` implement Flow's compact presentation. Native tool groups retain their membership, even across assistant messages. Old message paragraphs collapse separately; pending steers do not hide the current response. Message labels, avatars, and arrows retain their folding controls. Both summaries and full content remain centered with a 1000px maximum width.
 - `companion.css` positions the animation at the composer's leading edge. Companion uses the original timeline without Flow labels, avatars, or automatic folding.
-- `document.css` handles paper dimensions, typography, and narrow panels. Document virtualizes complete exchanges so each mounted paper can lay out its native rows together and text can wrap around the portrait. Other views retain virtualized rows.
+- `comms.css` reserves a compact fixed header for the centered avatar and context ring, then gives the native timeline a scrolling body without changing timeline virtualization.
+- `document.css` handles the grouped-scroll viewport, Document paper dimensions, typography, and narrow panels. Document virtualizes complete exchanges so each mounted paper can lay out native rows together and text can wrap around the portrait. Other views retain virtualized rows.
 
 ## Document reading
 

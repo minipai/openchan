@@ -1,0 +1,65 @@
+.comms-timeline {
+  position: relative;
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+[data-session-layout="comms"] {
+  container: comms / inline-size;
+}
+
+[data-session-layout="comms"] [data-session-stage] {
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
+
+[data-session-layout="comms"] .comms-portrait {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 10;
+  block-size: 210px;
+  inline-size: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+[data-session-layout="comms"] .comms-portrait__avatar {
+  position: absolute;
+  inset-block-start: calc(50% + 14px);
+  inset-inline-start: 50%;
+  inline-size: 180px;
+  block-size: 200px;
+  transform: translate(-50%, -50%);
+}
+
+[data-session-layout="comms"] .comms-portrait__context-ring {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+[data-session-layout="comms"] .comms-portrait__context-track,
+[data-session-layout="comms"] .comms-portrait__context-progress {
+  fill: none;
+  stroke-width: 6px;
+}
+
+[data-session-layout="comms"] .comms-portrait__context-track {
+  stroke: var(--v2-border-border-base);
+}
+
+[data-session-layout="comms"] .comms-portrait__context-progress {
+  stroke: var(--v2-icon-icon-base);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 90px 100px;
+}

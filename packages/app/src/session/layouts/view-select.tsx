@@ -56,7 +56,14 @@ function ChatViewOptions() {
         event.preventDefault()
         const view = new FormData(event.currentTarget).get("view")
 
-        if (view !== "original" && view !== "stage" && view !== "flow" && view !== "companion" && view !== "document")
+        if (
+          view !== "original" &&
+          view !== "stage" &&
+          view !== "flow" &&
+          view !== "companion" &&
+          view !== "document" &&
+          view !== "comms"
+        )
           return
         settings.general.setChatView(view)
       }}
@@ -69,7 +76,7 @@ function ChatViewOptions() {
           input.form?.requestSubmit()
         }}
       >
-        <For each={["original", "stage", "flow", "companion", "document"] as const}>
+        <For each={["original", "stage", "flow", "companion", "document", "comms"] as const}>
           {(view) => <Menu.RadioItem value={view}>{language.t(`session.view.${view}`)}</Menu.RadioItem>}
         </For>
       </Menu.RadioGroup>

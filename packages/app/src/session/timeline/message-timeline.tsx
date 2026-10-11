@@ -33,6 +33,7 @@ import { useCommand } from "@/shell/commands/command"
 import { SessionAncestorTrail, SessionProjectMenu, SessionTitleHeader } from "../session-identity-header"
 import { SessionHeaderSpacer } from "@/session/header/session-header"
 import { SessionRunningMenu } from "@/session/header/session-running-menu"
+import { CommsAvatar } from "./comms-avatar"
 
 type BlockingTask = { type: "shell" | "subagent"; partID: string; id?: string; label?: string }
 
@@ -238,7 +239,7 @@ function MessageTimelineView(
     documentGroups: () => (isDocument() ? documentExchanges() : undefined),
     rowMembers: (row) => (isFlow() ? flowDensity.members(row) : undefined),
     showHeader,
-    fixedHeader: isDocument,
+    fixedHeader: () => isDocument() || settings.general.chatView() === "comms",
     pinned,
     scroll: () => props.scroll,
     onResumeScroll: props.onResumeScroll,
@@ -371,6 +372,40 @@ function MessageTimelineView(
     centered: () => props.centered,
     padding: turnPadding,
     anchor: props.anchor,
+  })
+
+  const commsContextUsage = createMemo(() => {
+    const id = sessionID()
+
+    if (!id) return
+
+    const message = data.session.message.list(id).findLast((item) => item.type === "assistant" && !!item.tokens)
+
+    if (message?.type !== "assistant" || !message.tokens) return
+
+    const directory = sessionDirectory()
+    const providers = data.location.provider.list({ directory })
+    const models = data.location.model.list({ directory })
+
+    if (!providers || !models) return
+
+    if (!providers.findLast((item) => item.id === message.model.providerID)) return
+
+    const model = models.findLast(
+      (item) =>
+        item.providerID === message.model.providerID && item.id === message.model.id && item.status !== "deprecated",
+    )
+
+    if (!model?.limit.context) return
+
+    const tokens = message.tokens
+    const used = tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
+
+    return {
+      used,
+      limit: model.limit.context,
+      percentage: Math.round((used / model.limit.context) * 100),
+    }
   })
 
   const backgroundHintPartID = createMemo(() => {
@@ -622,7 +657,30 @@ function MessageTimelineView(
 
   const TimelineContent = () => (
     <VirtualizedTimeline
-      frameClass={isDocument() ? "document-scroll" : undefined}
+      frameClass={isDocument() ? "document-scroll" : settings.general.chatView() === "comms" ? "comms-timeline" : undefined}
+      afterHeader={
+        <Show when={settings.general.chatView() === "comms"}>
+          <CommsAvatar
+            contextUsage={commsContextUsage}
+            portrait={
+              <ExtensionSlot
+                at="session.overlay"
+                input={{
+                  get session() {
+                    return props.view
+                  },
+                  get screen() {
+                    return props.screen
+                  },
+                  get active() {
+                    return props.active !== false
+                  },
+                }}
+              />
+            }
+          />
+        </Show>
+      }
       frameOverlay={(userMessageID) => (
         <Show when={isDocument()}>
           <ExtensionSlot
@@ -855,7 +913,10 @@ function MessageTimelineView(
 
   return (
     <div class="timeline-presentation" classList={{ "document-view": isDocument() }}>
-      <div class="timeline-presentation__viewport" classList={{ "document-view__viewport": isDocument() }}>
+      <div
+        class="timeline-presentation__viewport"
+        classList={{ "document-view__viewport": isDocument() }}
+      >
         <TimelineContent />
       </div>
     </div>

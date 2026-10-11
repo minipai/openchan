@@ -20,15 +20,22 @@ export function Portrait(props: {
 
   return (
     <Show when={props.active()}>
-      <img
-        data-component="session-character-portrait"
-        src={`/characters/kotone/portraits/${face()}.webp`}
+      <div
+        data-component="session-character-portrait-frame"
         style={{ "--portrait-shape": `url("/characters/kotone/portraits/${face()}.webp")` }}
-        alt=""
-        draggable={false}
-        width={540}
-        height={720}
-      />
+      >
+        <div data-component="session-character-portrait-circle">
+          <img
+            data-component="session-character-portrait"
+            src={`/characters/kotone/portraits/${face()}.webp`}
+            alt=""
+            draggable={false}
+            width={540}
+            height={720}
+          />
+        </div>
+        <div data-component="session-character-portrait-top" aria-hidden="true" />
+      </div>
     </Show>
   )
 }
