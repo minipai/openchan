@@ -1,129 +1,65 @@
-<p align="center">
-  <a href="https://opencode.ai">
-    <picture>
-      <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
-    </picture>
-  </a>
-</p>
-<p align="center">The open source AI coding agent.</p>
-<p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
-</p>
+# OpenChan
 
-<p align="center">
-  <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.zht.md">繁體中文</a> |
-  <a href="README.ko.md">한국어</a> |
-  <a href="README.de.md">Deutsch</a> |
-  <a href="README.es.md">Español</a> |
-  <a href="README.fr.md">Français</a> |
-  <a href="README.it.md">Italiano</a> |
-  <a href="README.da.md">Dansk</a> |
-  <a href="README.ja.md">日本語</a> |
-  <a href="README.pl.md">Polski</a> |
-  <a href="README.ru.md">Русский</a> |
-  <a href="README.bs.md">Bosanski</a> |
-  <a href="README.ar.md">العربية</a> |
-  <a href="README.no.md">Norsk</a> |
-  <a href="README.br.md">Português (Brasil)</a> |
-  <a href="README.th.md">ไทย</a> |
-  <a href="README.tr.md">Türkçe</a> |
-  <a href="README.uk.md">Українська</a> |
-  <a href="README.bn.md">বাংলা</a> |
-  <a href="README.gr.md">Ελληνικά</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
-</p>
+A character-centered web UI for [OpenCode V2](https://opencode.ai/v2/docs/). Switch between six chat views with expressive portraits while keeping the same conversations, tools, attachments, and drafts.
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+## How to Use
 
----
-
-### Installation
+Run these commands on the machine running OpenCode:
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
-
-# Package managers
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS and Linux (recommended, always up to date)
-brew install opencode              # macOS and Linux (official brew formula, updated less)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
-mise use -g opencode               # Any OS
-nix run nixpkgs#opencode           # or github:anomalyco/opencode for latest dev branch
+opencode service set cors https://openchan.starcoder.dev
+opencode pair
 ```
 
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
+Then open **<https://openchan.starcoder.dev>**, paste the **full pairing URL** into **Server address**, and select **Connect**.
 
-### Desktop App (BETA)
+**No password is needed when using a pairing URL.** Leave **Password** empty; the link handles authentication for you.
 
-OpenCode is also available as a desktop application. Download directly from the [releases page](https://github.com/anomalyco/opencode/releases) or [opencode.ai/download](https://opencode.ai/download).
+Do not open the pairing link first: it is single-use and expires after a short time. Run `opencode pair` again if it expires or has already been used.
 
-| Platform              | Download                           |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
-| Linux                 | `.deb`, `.rpm`, or `.AppImage`     |
+Your browser connects directly to your OpenCode service. It must be able to reach the server, such as over your local network or VPN. Allow local-network access if your browser asks; if it blocks HTTP connections from the HTTPS site, use an HTTPS endpoint for your server.
+
+## Chat Views
+
+Choose a view from **Chat view** in the session header. Switching views preserves your session and composer draft.
+
+- **Stage** — a large portrait behind the conversation, with the latest replies in front.
+- **Comms** — a floating, pop-out avatar with a context-usage ring; chat scrolls behind it.
+- **Flow** — compact, collapsible messages with per-message avatars.
+- **Companion** — a small animated character beside the composer.
+- **Document** — continuous illustrated papers, one prompt and its responses per paper.
+- **Original** — the native conversation without character artwork.
+
+![Six chat views in a two-column, three-row grid: Stage, Comms, Flow, Companion, Document, and Original](docs/screenshots/chat-views.png)
+
+Screenshots use an illustrative demo conversation.
+
+## Self-Hosting
+
+Build the standalone web client from the repository root:
 
 ```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
+bun install
+VITE_OPENCODE_SERVER_MODE=none OPENCODE_CHANNEL=prod bun run build:web
 ```
 
-#### Installation Directory
+Serve `packages/app/dist/` with a static host configured to fall back to `index.html` for application routes. Use your site's origin in the CORS command above.
 
-The install script respects the following priority order for the installation path:
+Character artwork is not included in this repository. Supply it under `packages/app/public/characters/` before building to include portraits and animations in your deployment.
 
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if it exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
+## Development
 
 ```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
+bun run dev:web
+bun run check
 ```
 
-### Agents
+See [chat view implementation notes](packages/app/src/session/layouts/README.md) for layout ownership and presentation tests.
 
-OpenCode includes two built-in agents you can switch between with the `Tab` key.
+## Credits
 
-- **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
+Built on [OpenCode](https://github.com/anomalyco/opencode). OpenChan is an independent project and is not affiliated with the OpenCode team.
 
-Also included is a **general** subagent for complex searches and multistep tasks.
-This is used internally and can be invoked using `@general` in messages.
+## License
 
-Learn more about [agents](https://opencode.ai/docs/agents).
-
-### Documentation
-
-For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
-
-### Contributing
-
-If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
-
-### Building on OpenCode
-
-If you are working on a project that's related to OpenCode and is using "opencode" as part of its name, for example "opencode-dashboard" or "opencode-mobile", please add a note to your README to clarify that it is not built by the OpenCode team and is not affiliated with us in any way.
-
----
-
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+[MIT](LICENSE)
