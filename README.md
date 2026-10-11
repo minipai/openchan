@@ -1,3 +1,5 @@
+![OpenChan](docs/screenshots/openchan-share.png)
+
 # OpenChan
 
 A character-centered web UI for [OpenCode V2](https://opencode.ai/v2/docs/). Switch between six chat views with expressive portraits while keeping the same conversations, tools, attachments, and drafts.
