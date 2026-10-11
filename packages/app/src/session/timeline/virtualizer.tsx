@@ -828,7 +828,7 @@ export function createTimelineVirtualizer(input: Input) {
       const [ready, setReady] = createSignal(initialSize <= fallbackItemSize || !props.deferred(initialRow))
       let contentMeasureFrame: number | undefined
 
-      const latestTurn = () => index() > latestActiveItemIndex()
+      const latestTurn = () => row().userMessageID === input.projection.activeMessageID()
 
       onMount(() => virtualizer.measureElement(element))
       // Prepending history changes data-index, not the keyed element's identity.

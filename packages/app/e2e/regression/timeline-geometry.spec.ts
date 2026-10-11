@@ -574,6 +574,48 @@ test("Chat view switches preserve streaming and the composer draft across tab la
   const livePart = page.locator(`[data-timeline-part-id="${renderedPartID("prt_chat_view_stream")}"]`)
   const liveRow = page.locator("[data-timeline-key]", { has: livePart })
   await expect(livePart).toContainText("The response starts in Stage.")
+  const currentUserRow = stage.locator(`[data-timeline-key="user-message:${currentPrompt.id}"]`)
+  await expect(liveRow).toHaveAttribute("data-latest-turn", "")
+  await expect(currentUserRow).toHaveAttribute("data-latest-turn", "")
+
+  const liveTextBody = livePart.locator('[data-slot="text-part-body"]')
+
+  const liveTextPaint = await liveTextBody.evaluate((element) => {
+    const portrait = element.closest('[data-session-layout="stage"]')?.querySelector<HTMLImageElement>(
+      '[data-component="session-character-portrait"]',
+    )
+
+    if (!portrait) return { background: "", abovePortrait: false }
+
+    const bodyBounds = element.getBoundingClientRect()
+    const portraitBounds = portrait.getBoundingClientRect()
+    const left = Math.max(bodyBounds.left, portraitBounds.left)
+    const right = Math.min(bodyBounds.right, portraitBounds.right)
+    const top = Math.max(bodyBounds.top, portraitBounds.top)
+    const bottom = Math.min(bodyBounds.bottom, portraitBounds.bottom)
+
+    if (right <= left || bottom <= top)
+      return {
+        background: getComputedStyle(element).backgroundColor,
+        abovePortrait: false,
+      }
+
+    const pointerEvents = portrait.style.pointerEvents
+    portrait.style.pointerEvents = "auto"
+    const layers = document.elementsFromPoint((left + right) / 2, (top + bottom) / 2)
+    portrait.style.pointerEvents = pointerEvents
+
+    const bodyLayer = layers.findIndex((layer) => element === layer || element.contains(layer))
+    const portraitLayer = layers.indexOf(portrait)
+
+    return {
+      background: getComputedStyle(element).backgroundColor,
+      abovePortrait: bodyLayer !== -1 && portraitLayer !== -1 && bodyLayer < portraitLayer,
+    }
+  })
+
+  expect(liveTextPaint.background).not.toBe("rgba(0, 0, 0, 0)")
+  expect(liveTextPaint.abovePortrait).toBe(true)
 
   await selectChatView(page, "flow")
   await expect(flow).toBeVisible()

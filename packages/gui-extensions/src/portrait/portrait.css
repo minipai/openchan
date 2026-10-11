@@ -56,6 +56,7 @@
 
 [data-session-layout="comms"] .comms-portrait__avatar [data-component="session-character-portrait-top"] {
   position: absolute;
+  z-index: 1;
   inset-block: -28px 100px;
   inset-inline-start: 10px;
   display: block;
