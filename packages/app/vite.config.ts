@@ -23,18 +23,18 @@ export default defineConfig(() => {
             filesToDeleteAfterUpload: `./${outDir}/**/*.map`,
           },
         })
-      : false
+      : []
 
   return {
     plugins: [
       desktopPlugin,
       icons(channel),
       serviceWorker(fileURLToPath(new URL(`./${outDir}`, import.meta.url))),
-      sentry,
+      ...sentry,
     ],
     server: {
       host: "0.0.0.0",
-      allowedHosts: true,
+      allowedHosts: true as const,
       port: 3000,
     },
     build: {

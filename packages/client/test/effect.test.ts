@@ -194,9 +194,13 @@ test("event.subscribe terminates on Effect protocol decode failures", async () =
 test("session methods retain decoded Effect inputs and outputs", async () => {
   const logQueries: Array<Record<string, string>> = []
   const requests: Array<{ method: string; url: string }> = []
+  const viewBodies: Array<unknown> = []
   const httpClient = HttpClient.make((request) => {
     const url = request.url
     requests.push({ method: request.method, url })
+    if (url.endsWith("/view") && request.body._tag === "Uint8Array") {
+      viewBodies.push(JSON.parse(new TextDecoder().decode(request.body.body)))
+    }
     if (url.includes("/log")) {
       logQueries.push(Object.fromEntries(request.urlParams.params))
       return Effect.succeed(
@@ -245,11 +249,13 @@ test("session methods retain decoded Effect inputs and outputs", async () => {
   const result = await Effect.gen(function* () {
     const client = yield* OpenCode.make({ baseUrl: "http://localhost:3000" })
     const page = yield* client.session.list({ limit: 10 })
+    const listed = page.data[0]
+    if (!listed?.time.idle) throw new Error("Expected session idle time")
     const active = yield* client.session.active()
     const created = yield* client.session.create({
       location: Location.Ref.make({ directory: AbsolutePath.make("/tmp/project") }),
     })
-    yield* client.session.view({ sessionID: Session.ID.make("ses_test"), idle: session.data.time.idle })
+    yield* client.session.view({ sessionID: listed.id, idle: listed.time.idle })
     yield* client.session.switchAgent({ sessionID: Session.ID.make("ses_test"), agent: Agent.ID.make("build") })
     yield* client.session.switchModel({
       sessionID: Session.ID.make("ses_test"),
@@ -290,6 +296,7 @@ test("session methods retain decoded Effect inputs and outputs", async () => {
   expect(result.context).toEqual([])
   expect(logQueries[0]).toEqual({ after: "0" })
   expect(requests).toContainEqual({ method: "POST", url: "http://localhost:3000/api/session/ses_test/view" })
+  expect(viewBodies).toEqual([{ idle: 1_717_171_717_002 }])
   const logged = Array.from(result.log)
   expect(logged.map((item) => item.type)).toEqual(["session.model.selected", "log.synced"])
   expect(logged[0]?.type === "session.model.selected" && logged[0].created).toBe(1_717_171_717_000)

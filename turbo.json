@@ -26,6 +26,9 @@
     "@opencode/httpapi-codegen#test": {
       "outputs": []
     },
+    "@opencode/client#test": {
+      "outputs": []
+    },
     "@opencode/app#test": {
       "dependsOn": ["^build"],
       "outputs": []

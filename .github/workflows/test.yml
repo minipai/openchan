@@ -27,6 +27,9 @@ jobs:
       - name: Check generated client
         working-directory: packages/client
         run: bun run check:generated
+      - name: Check generated OpenAPI
+        working-directory: packages/protocol
+        run: bun run check:generated
 
   app:
     name: app tests and build
@@ -57,6 +60,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: ./.github/actions/setup-bun
+      - name: Check E2E types
+        working-directory: packages/app
+        run: bun run typecheck:e2e
       - name: Install Chromium
         working-directory: packages/app
         run: bunx playwright install --with-deps chromium
