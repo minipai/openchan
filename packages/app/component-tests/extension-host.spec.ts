@@ -6,6 +6,7 @@ import type {
   Dialogs,
   Live,
   PanelTab,
+  SessionPrepare,
   SessionRef,
   SessionScreen,
 } from "@opencode/gui-extensions/sdk"
@@ -521,6 +522,66 @@ story(
     expect(result).toEqual({ during: 1, ended: 0, late: 0 })
   },
 )
+
+story("disabling a session preparation contribution aborts it and prevents the pending send", async ({ page }) => {
+  const result = await page.evaluate(async (fixture) => {
+    const { mountExtensions, until, SessionPrepare } = await import(fixture)
+    const started = Promise.withResolvers<void>()
+    const resume = Promise.withResolvers<void>()
+    const observed = { signal: new AbortController().signal }
+    const calls: string[] = []
+    let admitted = false
+
+    const host = mountExtensions({
+      definitions: [
+        {
+          id: "fixture",
+          renderer: async () => ({
+            default: (ctx: Context) => {
+              ctx.add(SessionPrepare, {
+                async prepare(input: Parameters<SessionPrepare["prepare"]>[0]) {
+                  calls.push("first")
+                  observed.signal = input.signal
+                  started.resolve()
+                  await resume.promise
+
+                  if (input.signal.aborted) return
+
+                  calls.push("first-complete")
+                },
+              })
+              ctx.add(SessionPrepare, { prepare: async () => void calls.push("second") })
+            },
+          }),
+        },
+      ],
+    })
+
+    await until(() => host.status("fixture") === "active")
+
+    const sending = host
+      .runSessionPrepare({ sessionID: "ses_fixture", directory: "/repo" })
+      .then(
+        () => {
+          admitted = true
+        },
+        () => undefined,
+      )
+
+    await started.promise
+    host.disable(["fixture"])
+    await until(() => host.status("fixture") === "disabled")
+    const aborted = observed.signal.aborted
+    resume.resolve()
+    await sending
+    const outcome = { aborted, admitted, calls, entries: host.entries(SessionPrepare.id) }
+    host.unmount()
+
+    return outcome
+  }, fixture)
+
+  expect(result).toEqual({ aborted: true, admitted: false, calls: ["first"], entries: 0 })
+})
 
 story("a contribution that throws renders nothing and records the error; the others stay", async ({ page }) => {
   const result = await page.evaluate(async (fixture) => {

@@ -104,6 +104,10 @@ export interface MockServerConfig {
   onIntegrationOAuth?: (input: { integrationID: string; directory: string; body: unknown }) => { url: string }
   plugins?: Resolvable<unknown[]>
   skills?: Resolvable<unknown[]>
+  instructionEntries?: Resolvable<unknown[]>
+  instructionEntryListFailures?: (input: { sessionID: string }) => boolean
+  onInstructionEntryPut?: (input: { sessionID: string; key: string; value: Schema.Json }) => void
+  onInstructionEntryRemove?: (input: { sessionID: string; key: string }) => void
   // Replaces the `/api/worktree` inventory, which defaults to the directory plus project sandboxes.
   worktrees?: Resolvable<unknown[]>
   // Without them, creating or removing a worktree answers 501 MockUnsupported. `onWorktreeCreate` may hold the request
@@ -1216,6 +1220,24 @@ function mockHandlers(
               inboxID: ctx.params.inboxID,
               action: ctx.payload.delivery,
             }),
+          ).pipe(Effect.andThen(noContent)),
+        sessionInstructionEntriesList: (ctx) =>
+          Effect.suspend(() =>
+            config.instructionEntryListFailures?.({ sessionID: ctx.params.sessionID })
+              ? Effect.fail(new MockInternal({ message: "Instruction entry list failed" }))
+              : Effect.succeed({ data: resolve(config.instructionEntries ?? []) }),
+          ),
+        sessionInstructionEntriesPut: (ctx) =>
+          Effect.sync(() =>
+            config.onInstructionEntryPut?.({
+              sessionID: ctx.params.sessionID,
+              key: ctx.params.key,
+              value: ctx.payload.value,
+            }),
+          ).pipe(Effect.andThen(noContent)),
+        sessionInstructionEntriesRemove: (ctx) =>
+          Effect.sync(() =>
+            config.onInstructionEntryRemove?.({ sessionID: ctx.params.sessionID, key: ctx.params.key }),
           ).pipe(Effect.andThen(noContent)),
         sessionSwitchAgent: () => noContent,
         sessionSwitchModel: () => noContent,

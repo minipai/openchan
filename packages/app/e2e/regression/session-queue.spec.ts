@@ -35,6 +35,10 @@ type InboxRow = {
   delivery: SessionInbox.Delivery
 }
 
+type InstructionEntry = { key: string; value: unknown }
+
+type InstructionEntryList = { entries: InstructionEntry[]; failure: boolean }
+
 function storedFile(file: NonNullable<typeof PromptBody.Type.files>[number]) {
   const inline = file.uri.startsWith("data:")
 
@@ -65,6 +69,13 @@ function createQueueMock(seed: string[], messages: SessionMessageInfo[] = []) {
   const compactions: SessionInboxInfo[] = []
   const changes: { inboxID: string; action: "cancel" | "steer" | "queue" }[] = []
   const log: string[] = []
+
+  const instructionEntryList: InstructionEntryList = {
+    entries: [],
+    failure: false,
+  }
+
+  const promptLanguages: unknown[] = []
   let sequence = 0
 
   const emit = <Type extends OpenCodeEvent["type"]>(
@@ -88,12 +99,15 @@ function createQueueMock(seed: string[], messages: SessionMessageInfo[] = []) {
     prompts,
     changes,
     log,
+    instructionEntryList,
+    promptLanguages,
     messages,
     emit,
     events: () => events.splice(0),
     onPrompt: (input: Parameters<NonNullable<MockServerConfig["onPrompt"]>>[0]) => {
       const body = decodePromptBody(input.body)
       prompts.push(body)
+      promptLanguages.push(instructionEntryList.entries.find((entry) => entry.key === "openchan.language")?.value)
       log.push(`prompt:${body.delivery ?? "steer"}`)
 
       const row: InboxRow = {
@@ -118,6 +132,17 @@ function createQueueMock(seed: string[], messages: SessionMessageInfo[] = []) {
         inboxID: row.id,
         item: { type: "user", payload: row.payload, delivery: row.delivery },
       })
+    },
+    onInstructionEntryPut: (input: Parameters<NonNullable<MockServerConfig["onInstructionEntryPut"]>>[0]) => {
+      instructionEntryList.entries = [
+        ...instructionEntryList.entries.filter((entry) => entry.key !== input.key),
+        { key: input.key, value: input.value },
+      ]
+      log.push(`instruction:${input.key}`)
+    },
+    onInstructionEntryRemove: (input: { sessionID: string; key: string }) => {
+      instructionEntryList.entries = instructionEntryList.entries.filter((entry) => entry.key !== input.key)
+      log.push(`instruction-remove:${input.key}`)
     },
     onCompact: (input: Parameters<NonNullable<MockServerConfig["onCompact"]>>[0]) => {
       log.push("compact")
@@ -160,6 +185,7 @@ async function openQueue(
   mock: ReturnType<typeof createQueueMock>,
   followUpBehavior?: "queue" | "steer",
   revert?: string,
+  responseLanguage?: string,
 ) {
   const model = { id: "queue-model", name: "Queue Model" }
 
@@ -174,6 +200,11 @@ async function openQueue(
       },
     ],
     provider: provider(model),
+    plugins: [{ id: "claudecafe", source: { type: "builtin" }, features: { server: true }, state: { status: "active" } }],
+    instructionEntries: () => mock.instructionEntryList.entries,
+    instructionEntryListFailures: () => mock.instructionEntryList.failure,
+    onInstructionEntryPut: mock.onInstructionEntryPut,
+    onInstructionEntryRemove: mock.onInstructionEntryRemove,
     pageMessages: () => ({ items: mock.messages }),
     sessionStatus: () => ({ [sessionID]: { type: "running" } }),
     inbox: () => [...mock.rows.map((row) => ({ ...row, payload: { ...row.payload } })), ...mock.compactions],
@@ -183,7 +214,12 @@ async function openQueue(
     events: mock.events,
   }
 
-  if (followUpBehavior) options.seed = { settings: { general: { followUpBehavior } } }
+  if (followUpBehavior || responseLanguage)
+    options.seed = {
+      settings: {
+        general: { followUpBehavior, responseLanguage },
+      },
+    }
   await openSession(page, options)
   const composer = page.locator('[data-component="composer"]')
 
@@ -350,6 +386,60 @@ test("editing restores the existing draft and replaces only the original queue p
   ])
   expect(mock.log[0]).toBe("prompt:queue")
 })
+
+for (const delivery of ["queue", "steer"] as const) {
+  test(`prepares the response language before a queued edit is admitted as ${delivery}`, async ({ page }) => {
+    const mock = createQueueMock(["first queued prompt", "second queued prompt"])
+    const view = await openQueue(page, mock, "queue", undefined, "Japanese")
+    const original = view.rows.getByText("second queued prompt", { exact: true })
+
+    await original.click()
+    await expect(view.input).toHaveText("second queued prompt")
+    await expect(view.input).toBeFocused()
+    await view.input.press("End")
+    await view.input.pressSequentially(", edited")
+    await view.input.press(delivery === "queue" ? "Enter" : "ControlOrMeta+Enter")
+
+    await expect.poll(() => mock.prompts.length).toBe(1)
+    expect(mock.promptLanguages).toEqual([
+      "Reply in Japanese unless the user explicitly requests another language",
+    ])
+    expect(mock.log.slice(0, 2)).toEqual(["instruction:openchan.language", `prompt:${delivery}`])
+    expect(mock.changes).toEqual([{ inboxID: "inb_seed_2", action: "cancel" }])
+
+    if (delivery === "queue") {
+      await expect(view.rows.locator('[data-action="session-queue-edit"]')).toHaveText([
+        "first queued prompt",
+        "second queued prompt, edited",
+      ])
+    }
+
+    if (delivery === "steer") {
+      await expect(view.rows.locator('[data-action="session-queue-edit"]')).toHaveText(["first queued prompt"])
+      await expect(userRow(page, mock.prompts[0]!.id!)).toContainText("second queued prompt, edited")
+    }
+  })
+
+  test(`a response-language preparation failure preserves the queued edit draft (${delivery})`, async ({ page }) => {
+    const order = ["first queued prompt", "second queued prompt"]
+    const mock = createQueueMock(order)
+    mock.instructionEntryList.failure = true
+    const view = await openQueue(page, mock, "queue", undefined, "Japanese")
+
+    await view.rows.getByText(order[1]!, { exact: true }).click()
+    await expect(view.input).toHaveText(order[1]!)
+    await view.input.press("End")
+    await view.input.pressSequentially(", edited")
+    await view.input.press(delivery === "queue" ? "Enter" : "ControlOrMeta+Enter")
+
+    await expect(page.getByText("Request failed")).toBeVisible()
+    await expect(view.input).toHaveText("second queued prompt, edited")
+    await expect(view.rows.locator('[data-action="session-queue-edit"]')).toHaveText(order)
+    expect(mock.prompts).toEqual([])
+    expect(mock.changes).toEqual([])
+    expect(mock.instructionEntryList.entries).toEqual([])
+  })
+}
 
 for (const delivery of ["queue", "steer"] as const) {
   test(`editing a prompt the server delivered meanwhile keeps the edit draft (${delivery})`, async ({ page }) => {

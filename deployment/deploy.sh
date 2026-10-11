@@ -6,8 +6,8 @@ deployment_dir="$repo_root/deployment"
 dist_dir="$repo_root/packages/app/dist"
 
 (
-  cd "$repo_root"
-  VITE_OPENCODE_SERVER_MODE=none OPENCODE_CHANNEL=prod bun --cwd packages/app run build
+  cd "$repo_root/packages/app"
+  VITE_OPENCODE_SERVER_MODE=none OPENCODE_CHANNEL=prod bun run build
 )
 
 rsync -a --delete --delete-excluded --exclude='*.map' "$dist_dir/" "$deployment_dir/public/"

@@ -16,6 +16,7 @@ import {
   type StoreOptions,
   type Workspaces,
 } from "@opencode/gui-extensions/sdk"
+import { OpenCode } from "@opencode/client/promise"
 import {
   createComponent,
   createMemo,
@@ -41,8 +42,9 @@ import { ExtensionSlot } from "../src/runtime/extension/render"
 import { persistedHandle } from "../src/runtime/extension/stores"
 import { LanguageProvider } from "../src/runtime/i18n/language"
 import { GuiExtensionsSettings } from "../src/runtime/extension/settings-page-dev"
+import { prepareSession } from "../src/runtime/extension/session-prepare"
 
-export { bindExtension, useExtension, Contract, createKeyed, Panel, Slot, Store } from "@opencode/gui-extensions/sdk"
+export { bindExtension, useExtension, Contract, createKeyed, Panel, SessionPrepare, Slot, Store } from "@opencode/gui-extensions/sdk"
 
 export { Schema }
 
@@ -310,6 +312,13 @@ export function mountExtensions(input: {
     status: (id: string) => hosts[0]?.state.status[id],
     failure: (id: string) => hosts[0]?.state.failures[id],
     entries: (point: string) => hosts[0]?.state.entries[point]?.length ?? 0,
+    runSessionPrepare(input: { sessionID: string; directory: string }) {
+      const host = hosts[0]
+
+      if (!host) throw new Error("The extension host is unavailable")
+
+      return prepareSession({ ...input, host, client: OpenCode.make({ baseUrl: "http://localhost" }) })
+    },
   }
 }
 

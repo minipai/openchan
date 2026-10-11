@@ -4,6 +4,8 @@ import { useComposerState } from "@/composer/persistence"
 import { useData } from "@/runtime/server/current"
 import { useServerSDK } from "@/runtime/server/client"
 import { useWorkspaceLocation } from "@/workspaces/location"
+import { prepareSession } from "@/runtime/extension/session-prepare"
+import { useExtensionHost } from "@/runtime/extension/host"
 
 export function createActiveComposerAdapter(input: {
   sessionID: string
@@ -19,6 +21,8 @@ export function createActiveComposerAdapter(input: {
   const data = useData()
   const server = useServerSDK()
   const location = useWorkspaceLocation()
+  const host = useExtensionHost()
+
   const adapter: ActiveComposerAdapter = {
     kind: "active-session",
     state,
@@ -30,6 +34,7 @@ export function createActiveComposerAdapter(input: {
     session: () => ({
       id,
       directory: location().directory,
+      prepare: () => prepareSession({ host, client: server.api, sessionID: id, directory: location().directory }),
       api: server.api.session,
       data,
       current: () => data.session.get(id),
@@ -41,5 +46,6 @@ export function createActiveComposerAdapter(input: {
         .then(() => undefined)
         .catch(() => undefined),
   }
+
   return adapter
 }

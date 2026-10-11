@@ -1,7 +1,7 @@
 import type { SessionMessageAssistantTool, SessionMessageInfo } from "@opencode/client/promise"
 import { indexAssistantMessagesByParent } from "../timeline/assistant-messages"
 
-const moods = [
+export const moods = [
   ["neutral", "( • ᴗ • )"],
   ["happy", "＼(ˆ ᗜ ˆ)／"],
   ["curious", "(づ •. •)?"],

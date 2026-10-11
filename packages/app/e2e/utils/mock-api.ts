@@ -383,6 +383,34 @@ const Group = HttpApiGroup.make("mock")
     }),
   )
   .add(
+    HttpApiEndpoint.get("sessionInstructionEntriesList", "/api/experimental/session/:sessionID/instructions/entries", {
+      params: SessionParams,
+      success: Json,
+      error: MockInternal.pipe(HttpApiSchema.status(500)),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put(
+      "sessionInstructionEntriesPut",
+      "/api/experimental/session/:sessionID/instructions/entries/:key",
+      {
+        params: { ...SessionParams, key: Schema.String },
+        payload: Schema.Struct({ value: Schema.Json }).pipe(HttpApiSchema.asJson()),
+        success: NoContent,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete(
+      "sessionInstructionEntriesRemove",
+      "/api/experimental/session/:sessionID/instructions/entries/:key",
+      {
+        params: { ...SessionParams, key: Schema.String },
+        success: NoContent,
+      },
+    ),
+  )
+  .add(
     HttpApiEndpoint.get("sessionPermission", "/api/session/:sessionID/permission", {
       params: SessionParams,
       success: Json,

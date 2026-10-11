@@ -17,6 +17,8 @@ import { useServerSDK } from "@/runtime/server/client"
 import { useWorkspaceLocation } from "@/workspaces/location"
 import { useLanguage } from "@/runtime/i18n/language"
 import { showToast } from "@/shell/notifications/toast"
+import { useExtensionHost } from "@/runtime/extension/host"
+import { prepareSession } from "@/runtime/extension/session-prepare"
 
 export type QueuedPrompt = Extract<SessionInboxInfo, { type: "user" }>
 
@@ -38,8 +40,12 @@ export function createSessionQueue(input: {
   const server = useServerSDK()
   const location = useWorkspaceLocation()
   const language = useLanguage()
+  const host = useExtensionHost()
   const [state, setState] = createStore<{ editing?: { id: string; stash: EditStash } }>({})
   const notify = () => showToast({ title: language.t("common.requestFailed") })
+
+  const prepare = () =>
+    prepareSession({ host, client: server.api, sessionID: input.sessionID, directory: location().directory })
 
   const mutation = useMutation(() => ({
     mutationFn: async (
@@ -97,6 +103,7 @@ export function createSessionQueue(input: {
       }
 
       // Like a queued edit, an original the server delivered meanwhile keeps the edit draft instead of sending twice.
+      await prepare()
       const pending = await server.api.session.inbox.list({ sessionID: input.sessionID })
 
       if (!pending.some((item) => item.id === change.original && item.type === "user" && item.delivery === "queue"))
@@ -137,6 +144,7 @@ export function createSessionQueue(input: {
     inboxIDs: string[],
     replace?: { original: string; admission: Parameters<typeof data.session.prompt>[0] },
   ) => {
+    await prepare()
     const pending = await server.api.session.inbox.list({ sessionID: input.sessionID })
 
     if (pending.some((item) => item.delivery === "queue" && item.type !== "user"))
@@ -195,13 +203,14 @@ export function createSessionQueue(input: {
     }
   }
 
-  const steer = (id: string) => {
-    if (state.editing?.id === id) cancelEdit()
+  const steer = (id: string) =>
+    prepare()
+      .then(() => {
+        if (state.editing?.id === id) cancelEdit()
 
-    return server.api.session.inbox
-      .update({ sessionID: input.sessionID, inboxID: id, delivery: "steer" })
+        return server.api.session.inbox.update({ sessionID: input.sessionID, inboxID: id, delivery: "steer" })
+      })
       .catch(() => notify())
-  }
 
   const remove = (id: string) => {
     if (state.editing?.id === id) cancelEdit()

@@ -207,16 +207,23 @@ SDK icon fields use `IconName` from `@opencode/ui/icons/catalog`, a dependency-f
 
 | Point                               | Process | What an item is                                                                             |
 | ----------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| [`Command`](src/sdk/points.ts)      | window  | A palette command with an optional keybind and slash command                                |
-| [`MenuItem`](src/sdk/points.ts)     | window  | An item of a host menu: the side panel + menu, Add server, a server row                     |
-| [`Panel`](src/sdk/points.ts)        | window  | Tabs in the session's side region, or the dock                                              |
-| [`SettingsPage`](src/sdk/points.ts) | window  | A settings page, a section on a host page, or rows in a host section                        |
-| [`Server`](src/sdk/points.ts)       | window  | A source of servers, such as SSH hosts                                                      |
-| [`LinkHandler`](src/sdk/points.ts)  | window  | Opens local links, such as file paths in messages                                           |
-| [`TitlebarItem`](src/sdk/points.ts) | window  | A titlebar pill, or the dev channel badge as a toggle                                       |
-| [`Slot`](src/sdk/points.ts)         | window  | Content for `window.bottom`, `session.header`, `session.overlay`, `session.panel.end`, `session.panel.sidebar` |
-| [`Style`](src/sdk/points.ts)        | window  | CSS imported with `?inline`                                                                 |
-| [`MenubarItem`](src/sdk/main.ts)    | main    | An item of the native app menu                                                              |
+| [`Command`](src/sdk/points.ts)        | window  | A palette command with an optional keybind and slash command                                |
+| [`MenuItem`](src/sdk/points.ts)       | window  | An item of a host menu: the side panel + menu, Add server, a server row                     |
+| [`Panel`](src/sdk/points.ts)           | window  | Tabs in the session's side region, or the dock                                              |
+| [`SettingsPage`](src/sdk/points.ts)    | window  | A settings page, a section on a host page, or rows in a host section                        |
+| [`SessionPrepare`](src/sdk/points.ts)  | window  | Work awaited before a session prompt or command is sent                                    |
+| [`Server`](src/sdk/points.ts)          | window  | A source of servers, such as SSH hosts                                                      |
+| [`LinkHandler`](src/sdk/points.ts)     | window  | Opens local links, such as file paths in messages                                           |
+| [`TitlebarItem`](src/sdk/points.ts)    | window  | A titlebar pill, or the dev channel badge as a toggle                                       |
+| [`Slot`](src/sdk/points.ts)            | window  | Content for `window.bottom`, `session.header`, `session.overlay`, `session.panel.end`, `session.panel.sidebar` |
+| [`Style`](src/sdk/points.ts)           | window  | CSS imported with `?inline`                                                                 |
+| [`MenubarItem`](src/sdk/main.ts)       | main    | An item of the native app menu                                                              |
+
+`SessionPrepare.prepare` receives the session's `OpenCodeClient`, id and directory. Hooks run sequentially in
+contribution order. Its `signal` aborts when the contribution's owner or extension ends; the host checks it before and
+after each hook, so removing or disabling an extension during preparation prevents prompt admission. Pass the signal to
+requests and check it after each `await` before writing. A rejection prevents later hooks and the pending prompt or
+command, and is reported as a send failure.
 
 The `session.overlay` input includes `userMessageID` for a document paper's exchange and omits it for the stage-wide
 overlay. If the id is absent, render a neutral/default state rather than borrowing the newest value from the session.
@@ -645,6 +652,7 @@ export const builtins = Extension.compose(
   { ...updater, renderer: eager(updaterRenderer) },
   { ...ssh, renderer: eager(sshRenderer) },
   { ...wsl, renderer: eager(wslRenderer) },
+  { ...agent, renderer: eager(agentRenderer) },
 )
 ```
 

@@ -5,12 +5,15 @@ import { settingsSearchIndex, type SettingsSearchServer } from "./search-index"
 import { rankSettings } from "./search-results"
 import type { SettingsView } from "./surface"
 
-const strings: Record<string, string> = { ...dict, ...en }
+const strings = new Map(Object.entries({ ...dict, ...en }))
+
 const project = { id: "proj_opencode", name: "OpenCode", worktree: "/projects/opencode", expanded: false }
+
 const servers: SettingsSearchServer[] = [
   { key: "local", name: "Local server", connected: true, projects: [project] },
   { key: "remote", name: "Build server", connected: true, projects: [project] },
 ]
+
 const root: SettingsView = { type: "root", tab: "general" }
 
 function index(input: Partial<Parameters<typeof settingsSearchIndex>[0]> = {}) {
@@ -19,7 +22,7 @@ function index(input: Partial<Parameters<typeof settingsSearchIndex>[0]> = {}) {
     desktop: false,
     browser: false,
     mobile: false,
-    translate: (key) => strings[key],
+    translate: (key) => strings.get(key) ?? key,
     ...input,
   })
 }
@@ -64,7 +67,7 @@ describe("settings search index", () => {
   test("uses section labels and stable identities independent of translated text", () => {
     const items = index()
     expect(new Set(items.map((item) => item.id)).size).toBe(items.length)
-    expect(index({ translate: (key) => `translated ${strings[key]}` }).map((item) => item.id)).toEqual(
+    expect(index({ translate: (key) => `translated ${strings.get(key)}` }).map((item) => item.id)).toEqual(
       items.map((item) => item.id),
     )
     expect(
@@ -133,6 +136,7 @@ describe("settings search ranking", () => {
       tab: "general",
       parent: "server",
     }
+
     expect(rankSettings("opencode name", index(), origin).map((item) => item.server)).toEqual(["remote", "local"])
   })
 

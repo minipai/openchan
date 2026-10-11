@@ -51,9 +51,15 @@ import {
 import { useLanguage } from "@/runtime/i18n/language"
 import { createSessionStore, whenLoaded } from "./stores"
 
-type Entry = { key: string; point: string; extension: string; value: Accessor<unknown> }
+type Entry = { key: string; point: string; extension: string; signal: AbortSignal; value: Accessor<unknown> }
 
-export type Item<T> = { readonly key: string; readonly extension: string; readonly value: T }
+export type Item<T> = {
+  readonly key: string
+  readonly extension: string
+  /** Aborts when this contribution's owner or its extension ends. */
+  readonly signal: AbortSignal
+  readonly value: T
+}
 
 /** The context the host builds: every `Setup<D>` of the definition receives it, and contributions read it as `Context`. */
 type InstanceContext = SetupContext<Definition> & Context
@@ -261,7 +267,7 @@ function createHost(input: HostInput) {
 
           if (previous?.value === value) return [previous]
 
-          const item = { key: entry.key, extension: entry.extension, value }
+          const item = { key: entry.key, extension: entry.extension, signal: entry.signal, value }
 
           cache.set(entry.key, item)
 
@@ -626,15 +632,23 @@ function createHost(input: HostInput) {
             : () => item
 
         const key = `${extension}/${++sequence.value}`
+        const contribution = new AbortController()
 
         setState("entries", point.id, (entries = []) => [
           ...entries,
-          { key, point: point.id, extension, value: read ?? (() => undefined) },
+          {
+            key,
+            point: point.id,
+            extension,
+            signal: AbortSignal.any([controller.signal, contribution.signal]),
+            value: read ?? (() => undefined),
+          },
         ])
 
-        return register(() =>
-          setState("entries", point.id, (entries = []) => entries.filter((entry) => entry.key !== key)),
-        )
+        return register(() => {
+          contribution.abort()
+          setState("entries", point.id, (entries = []) => entries.filter((entry) => entry.key !== key))
+        })
       },
       list,
       provide<T>(token: Contract<T> | Ipc, impl: T) {

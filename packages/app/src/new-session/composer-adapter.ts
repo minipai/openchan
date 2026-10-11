@@ -17,6 +17,8 @@ import { showToast } from "@/shell/notifications/toast"
 import { SessionRouteKey, SessionStateKey } from "@/runtime/server/scope"
 import { clearSessionMessageHandoff, setSessionMessageHandoff } from "@/session/handoff"
 import type { DraftMcpControls } from "./mcp"
+import { prepareSession } from "@/runtime/extension/session-prepare"
+import { useExtensionHost } from "@/runtime/extension/host"
 
 export function createNewSessionComposerAdapter(props: {
   draftID: string
@@ -34,6 +36,7 @@ export function createNewSessionComposerAdapter(props: {
   const tabs = useTabs()
   const location = useWorkspaceLocation()
   const language = useLanguage()
+  const host = useExtensionHost()
   const model = createComposerModelSelection({ agent: () => local.agent.current() })
   const controls = createComposerControls({ model })
 
@@ -52,11 +55,14 @@ export function createNewSessionComposerAdapter(props: {
       const branch = props.branch()
       const mcp = props.mcp.capture()
       const id = Session.ID.create()
+
       const pending =
         worktree === "create"
           ? tabs.prepareSession(draftID, { server: server.key, sessionId: id }, { message, selection })
           : undefined
+
       await pending?.ready
+
       const sessionDirectory = await resolveSessionDirectory({
         projectDirectory,
         worktree,
@@ -65,8 +71,10 @@ export function createNewSessionComposerAdapter(props: {
         serverSDK,
         language,
       })
+
       if (!sessionDirectory) {
         await pending?.rollback()
+
         return
       }
 
@@ -76,9 +84,12 @@ export function createNewSessionComposerAdapter(props: {
         await data.project.sync().catch(() => undefined)
         await pending.rollback(sessionDirectory)
       }
+
       if (!(await props.mcp.prepare(sessionDirectory, mcp))) {
         await rollback()
+
         if (pending) props.mcp.remember(sessionDirectory, mcp)
+
         return
       }
 
@@ -92,6 +103,7 @@ export function createNewSessionComposerAdapter(props: {
         },
         location: { directory: sessionDirectory },
       })
+
       const creation = created.request.then(
         () => ({ ok: true as const }),
         (error) => {
@@ -99,31 +111,42 @@ export function createNewSessionComposerAdapter(props: {
             title: language.t("prompt.toast.sessionCreateFailed.title"),
             description: errorMessage(language, error),
           })
+
           return { ok: false as const, error }
         },
       )
+
       if (pending && !(await creation).ok) {
         await rollback()
+
         return
       }
+
       const afterCreation = async <T>(run: () => Promise<T>) => {
         const result = await creation
+
         if (!result.ok) throw result.error
+
         return run()
       }
+
       const sessionKey = SessionStateKey.from(
         serverSDK.scope,
         SessionRouteKey.fromRoute(base64Encode(sessionDirectory), created.id),
       )
+
       const cleanupReady = startTransition(() => {
         if (!pending) tabs.updateDraft(draftID, { worktree: undefined, branch: undefined })
+
         local.session.promote(sessionDirectory, created.id, {
           agent: selection.agent,
           model: selection.model,
           variant: selection.variant ?? null,
           choices: model.remembered(),
         })
+
         if (!pending) tabs.promoteDraft(draftID, { server: server.key, sessionId: created.id })
+
         submission.retarget(
           prompt.capture(
             { dir: base64Encode(sessionDirectory), id: created.id },
@@ -139,6 +162,10 @@ export function createNewSessionComposerAdapter(props: {
         session: {
           id: created.id,
           directory: sessionDirectory,
+          prepare: () =>
+            afterCreation(() =>
+              prepareSession({ host, client: serverSDK.api, sessionID: created.id, directory: sessionDirectory }),
+            ),
           handoff: createMessageHandoff(sessionKey, created.id, serverSDK.event),
           api: {
             command: (input) => afterCreation(() => serverSDK.api.session.command(input)),
@@ -175,6 +202,7 @@ export function createNewSessionComposerAdapter(props: {
 
 function createMessageHandoff(key: string, sessionID: string, event: ServerSDK["event"]) {
   let unsubscribe: VoidFunction | undefined
+
   return {
     set(message: SessionMessageUser) {
       unsubscribe?.()
@@ -203,6 +231,7 @@ async function resolveSessionDirectory(input: {
   language: ReturnType<typeof useLanguage>
 }) {
   if (input.worktree === "main") return input.projectDirectory
+
   if (input.worktree !== "create") return input.worktree
 
   return createWorktree({
@@ -219,13 +248,20 @@ async function resolveSessionDirectory(input: {
   })
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- rejected API values arrive unparsed; this boundary only formats known display fields and falls back otherwise.
 function errorMessage(language: ReturnType<typeof useLanguage>, error: unknown) {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- API rejections are untrusted values; this guard only checks the display message shape.
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
     return error.message
   }
+
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- API rejections are untrusted values; this guard only checks the optional data shape.
   if (error && typeof error === "object" && "data" in error) {
+    // SAFETY: The data property is only inspected after the own-property check above; its optional message is read as display text.
     const data = (error as { data?: { message?: string } }).data
+
     if (data?.message) return data.message
   }
+
   return language.t("common.requestFailed")
 }

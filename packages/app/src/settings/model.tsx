@@ -119,6 +119,8 @@ const generalSchema = Persistence.struct({
   terminalPlacement: Schema.Literals(["side", "bottom"]),
   followUpBehavior: Schema.Literals(["queue", "steer"]),
   chatView: Schema.Literals(["original", "stage", "flow", "companion", "document", "comms"]),
+  // Retain the legacy field so storage migrations can still read saved preferences.
+  responseLanguage: Schema.String,
 })
 
 const appearanceSchema = Persistence.struct({
@@ -275,6 +277,7 @@ export const defaultSettings: Settings = {
     terminalPlacement: "side",
     followUpBehavior: "steer",
     chatView: "stage",
+    responseLanguage: "",
   },
   appearance: { fontSize: 14, mono: "", sans: "", terminal: "", tabLayout: "horizontal" },
   keybinds: {},

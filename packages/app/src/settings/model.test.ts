@@ -97,6 +97,7 @@ describe("settings schema", () => {
         terminalPlacement: "side",
         followUpBehavior: "steer",
         chatView: "stage",
+        responseLanguage: "",
       },
       appearance: {
         fontSize: 14,
@@ -156,6 +157,13 @@ describe("settings schema", () => {
     expect(settings.notifications).toEqual({ agent: false, permissions: true, errors: true })
     expect(settings.sounds).toMatchObject({ agent: "custom", agentEnabled: false, permissions: "staplebops-02" })
     expect(decode(encode(settings))).toEqual(settings)
+  })
+
+  test("persists the agent response language preference", () => {
+    const settings = decode({ general: { responseLanguage: "Traditional Chinese (Taiwan)" } })
+
+    expect(settings.general.responseLanguage).toBe("Traditional Chinese (Taiwan)")
+    expect(decode(encode(settings)).general.responseLanguage).toBe("Traditional Chinese (Taiwan)")
   })
 
   test.each([undefined, null, false, 7, "invalid", []].map((invalid) => [invalid]))(

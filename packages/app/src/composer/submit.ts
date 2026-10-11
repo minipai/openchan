@@ -66,6 +66,8 @@ export function createComposerSubmit(input: ComposerSubmitInput) {
       submitting.add(input.adapter.state)
 
       try {
+        if (input.adapter.kind === "active-session") await input.adapter.session().prepare()
+
         // Client commands such as /btw answer with the session's model, so apply the composer's selection first,
         // following the same steer rule as server commands.
         const selection = currentSelection(input)
@@ -433,6 +435,8 @@ async function sendCommand(
 ) {
   const request = await buildSubmissionRequest(session, value)
 
+  await session.prepare()
+
   // Like queued prompts, queued commands must not apply the composer's selection to active work.
   if (value.delivery === "steer") await applySelection(session, value.selection, track)
   await session.api.command({
@@ -483,6 +487,8 @@ async function sendPrompt(
   onAdmit: () => void,
 ) {
   const request = await buildSubmissionRequest(session, value)
+
+  await session.prepare()
 
   // Switching agent or model reconfigures the session immediately, and with it
   // the remainder of a running turn. A steer targets that turn, so its

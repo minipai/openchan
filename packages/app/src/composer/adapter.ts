@@ -51,19 +51,25 @@ export type ComposerQueue = {
 export type ComposerSession = {
   id: string
   directory: string
+  prepare: () => Promise<void>
   handoff?: {
     set: (message: SessionMessageUser) => void
     clear: (messageID: string) => void
   }
   api: {
+    // oxlint-disable-next-line anti-slop/no-unknown-returns -- Composer awaits the command operation but intentionally discards its response.
     command: (input: Parameters<ServerSDK["api"]["session"]["command"]>[0]) => Promise<unknown>
+    // oxlint-disable-next-line anti-slop/no-unknown-returns -- Composer awaits the shell operation but intentionally discards its response.
     shell: (input: Parameters<ServerSDK["api"]["session"]["shell"]>[0]) => Promise<unknown>
+    // oxlint-disable-next-line anti-slop/no-unknown-returns -- Composer awaits the agent switch but intentionally discards its response.
     switchAgent: (input: Parameters<ServerSDK["api"]["session"]["switchAgent"]>[0]) => Promise<unknown>
+    // oxlint-disable-next-line anti-slop/no-unknown-returns -- Composer awaits the model switch but intentionally discards its response.
     switchModel: (input: Parameters<ServerSDK["api"]["session"]["switchModel"]>[0]) => Promise<unknown>
   }
   data: {
     location: { command: Pick<Data["location"]["command"], "list"> }
     session: {
+      // oxlint-disable-next-line anti-slop/no-unknown-returns -- Composer awaits prompt admission but intentionally discards the endpoint response.
       prompt: (input: Parameters<Data["session"]["prompt"]>[0]) => Promise<unknown>
       setStatus: Data["session"]["setStatus"]
     }

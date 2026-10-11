@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js"
 import type { IconName } from "@opencode/ui/icons/catalog"
+import type { OpenCodeClient } from "@opencode/client/promise"
 import { Point } from "./core"
 import type { SessionRef, MountedSession, SessionScreen } from "./host-apis"
 
@@ -358,6 +359,38 @@ export interface SettingsPage {
   }): JSX.Element
 }
 
+/** A hook the host awaits before sending a session prompt or command. Hooks run in contribution order, one at a time. */
+export interface SessionPrepare {
+  /**
+   * Prepares the session before a prompt or command is sent. Hooks run sequentially in contribution order. A rejection
+   * or an aborted signal prevents later hooks and the send, and is reported as a send failure. Stop work when `signal`
+   * aborts, and check it after every `await` before writing.
+   *
+   * @param input - The target session, its client and this contribution's lifetime signal.
+   * @returns Resolves when preparation is complete; rejects to prevent the pending send and later hooks.
+   *
+   * @example
+   * ```ts
+   * ctx.add(SessionPrepare, {
+   *   async prepare(input) {
+   *     await prepareSession(input.client, input.sessionID, input.directory, input.signal)
+   *     if (input.signal.aborted) return
+   *   },
+   * })
+   * ```
+   */
+  prepare(input: {
+    /** The connected OpenCode client for the session's server. */
+    readonly client: OpenCodeClient
+    /** The session's id on that server. */
+    readonly sessionID: string
+    /** The session's workspace directory. */
+    readonly directory: string
+    /** Aborts when this contribution's owner or its extension ends. */
+    readonly signal: AbortSignal
+  }): Promise<void>
+}
+
 /**
  * Where a contributed server stands.
  * - `stopped`: not running.
@@ -663,6 +696,17 @@ export const Panel = Point.define<Panel>("panel")
  * ```
  */
 export const SettingsPage = Point.define<SettingsPage>("settings-page")
+
+/**
+ * A point: work to finish before the host sends a session prompt or command. Hooks run sequentially in contribution
+ * order. The signal aborts when the contribution's owner or extension ends; the host prevents the send when it does.
+ *
+ * @example
+ * ```ts
+ * ctx.add(SessionPrepare, { prepare: (input) => prepareSession(input) })
+ * ```
+ */
+export const SessionPrepare = Point.define<SessionPrepare>("session-prepare")
 
 /**
  * A point: a source of servers the app lists.

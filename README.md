@@ -2,6 +2,8 @@
 
 A character-centered web UI for [OpenCode V2](https://opencode.ai/v2/docs/). Switch between six chat views with expressive portraits while keeping the same conversations, tools, attachments, and drafts.
 
+OpenChan adds Kotone's persona, expression instructions, and your browser's local time when you send a message, unless the ClaudeCafe server plugin is active. No ClaudeCafe installation is required; the built-in persona uses OpenCode's experimental Session Instructions API.
+
 ## How to Use
 
 Run these commands on the machine running OpenCode:
@@ -18,6 +20,8 @@ Then open **<https://openchan.starcoder.dev>**, paste the **full pairing URL** i
 Do not open the pairing link first: it is single-use and expires after a short time. Run `opencode pair` again if it expires or has already been used.
 
 Your browser connects directly to your OpenCode service. It must be able to reach the server, such as over your local network or VPN. Allow local-network access if your browser asks; if it blocks HTTP connections from the HTTPS site, use an HTTPS endpoint for your server.
+
+Set **Settings → OpenChan → Response language** to choose how the assistant replies. This browser-local preference is applied to the session on your next send, including when ClaudeCafe is active. Leave it empty to follow the conversation.
 
 ## Chat Views
 

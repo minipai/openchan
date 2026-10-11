@@ -97,6 +97,7 @@ function submitInput(
 
 function session(input: {
   calls: string[]
+  prepare?: ComposerSession["prepare"]
   prompt?: (value: Parameters<ComposerSession["data"]["session"]["prompt"]>[0]) => Promise<void>
   handoff?: ComposerSession["handoff"]
   statuses?: ("idle" | "running")[]
@@ -110,6 +111,7 @@ function session(input: {
   return {
     id: "session-1",
     directory: "C:/repo",
+    prepare: input.prepare ?? (async () => undefined),
     handoff: input.handoff,
     current: input.current ?? (() => undefined),
     admitted: input.admitted ?? (() => false),
@@ -138,6 +140,15 @@ function session(input: {
         prompt: async (value) => {
           input.calls.push("prompt")
           await input.prompt?.(value)
+
+          return {
+            id: value.id ?? "msg_test",
+            sessionID: value.sessionID,
+            time: { created: 1 },
+            type: "user",
+            payload: { text: value.text },
+            delivery: value.delivery ?? "steer",
+          }
         },
       },
     },
@@ -207,6 +218,67 @@ describe("Composer submission", () => {
     expect(request.files?.[0]?.mention).toBeUndefined()
     expect(state.current()).toEqual([{ type: "text", content: "", start: 0, end: 0 }])
     expect(state.context.items()).toEqual([])
+  })
+
+  test.each([
+    { action: "prompt", text: "wait for setup", failure: "prompt" as const },
+    { action: "client command", text: "/btw wait for setup", failure: "command" as const },
+  ])("waits for session preparation before $action and preserves a rejected draft", async (row) => {
+    const state = createMemoryComposerState({ prompt: row.text }).capture()
+    const calls: string[] = []
+    const started = Promise.withResolvers<void>()
+    const preparation = Promise.withResolvers<void>()
+    const failed = Promise.withResolvers<{ kind: "command" | "prompt" | "shell"; error: unknown }>()
+    const error = new Error("session preparation failed")
+
+    const target = session({
+      calls,
+      prepare: () => {
+        calls.push("prepare")
+        started.resolve()
+
+        return preparation.promise
+      },
+      prompt: async () => {
+        calls.push("prompt")
+      },
+    })
+
+    const clientCommand =
+      row.action === "client command"
+        ? () => () => {
+            calls.push("client-command")
+          }
+        : undefined
+
+    const submitted = submitInput(
+      active(state, target),
+      {
+        missingSelection() {},
+        unqueueable() {},
+        failed: (kind, error) => failed.resolve({ kind, error }),
+      },
+      "normal",
+      undefined,
+      [],
+      clientCommand,
+    ).submit(new Event("submit"))
+
+    await started.promise
+
+    expect(calls).toContain("prepare")
+    expect(calls).not.toContain("prompt")
+    expect(calls).not.toContain("client-command")
+    expect(state.current()).toMatchObject([
+      { type: "text", content: row.action === "prompt" ? "" : row.text },
+    ])
+
+    preparation.reject(error)
+    await submitted
+    expect(await failed.promise).toEqual({ kind: row.failure, error })
+    expect(calls).not.toContain("prompt")
+    expect(calls).not.toContain("client-command")
+    expect(state.current()).toMatchObject([{ type: "text", content: row.text }])
   })
 
   test("applies the captured agent and model before a custom command without passing over its overrides", async () => {
