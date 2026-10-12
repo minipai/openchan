@@ -517,6 +517,7 @@ export const dict = {
   "session.queue.attachments.other": "{{count}} attachments",
   "session.timeline.working": "Working",
   "session.comms.header": "Session overview",
+  "session.comms.avatar.move": "Move session avatar",
   "session.comms.context.usage": "Context usage: {{percentage}}% ({{used}} of {{limit}} tokens)",
   "session.comms.context.unavailable": "Context usage unavailable",
   "session.view.label": "Chat view",

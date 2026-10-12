@@ -827,12 +827,74 @@ test("Chat view switches preserve streaming and the composer draft across tab la
 
   expect(contextProgressMeasurement.offset).toBeCloseTo(contextProgressMeasurement.circumference * (1 - 28 / 100), 1)
 
+  // Dragging moves the portrait and ring together without moving the conversation or losing the draft.
+  const avatarBeforeDrag = await commsAvatar.boundingBox()
+
+  if (!avatarBeforeDrag) throw new Error("Missing Comms avatar before dragging")
+  await commsAvatar.hover()
+  await page.mouse.down()
+  await page.mouse.move(
+    avatarBeforeDrag.x + avatarBeforeDrag.width / 2 - 120,
+    avatarBeforeDrag.y + avatarBeforeDrag.height / 2 + 100,
+    { steps: 8 },
+  )
+  await page.mouse.up()
+  await expect
+    .poll(async () => {
+      const bounds = await commsAvatar.boundingBox()
+
+      return bounds && { x: Math.round(bounds.x), y: Math.round(bounds.y) }
+    })
+    .toEqual({ x: Math.round(avatarBeforeDrag.x - 120), y: Math.round(avatarBeforeDrag.y + 100) })
+  await expect(editor).toContainText(draft)
+
   await timeline.send(
     partUpdated(
       toolPart("prt_chat_view_expression", "character.set_expression", "completed", { expression: "focused" }),
     ),
   )
   await expect(commsPortrait).toHaveAttribute("src", "/characters/kotone/portraits/focused.webp")
+  await expect
+    .poll(async () => {
+      const bounds = await commsAvatar.boundingBox()
+
+      return bounds && { x: Math.round(bounds.x), y: Math.round(bounds.y) }
+    })
+    .toEqual({ x: Math.round(avatarBeforeDrag.x - 120), y: Math.round(avatarBeforeDrag.y + 100) })
+
+  await commsAvatar.hover()
+  await page.mouse.down()
+  await page.mouse.move(0, 0, { steps: 8 })
+  await page.mouse.up()
+  await expect
+    .poll(async () => {
+      const bounds = await commsAvatar.boundingBox()
+      const region = await commsPortraitWindow.boundingBox()
+
+      return bounds && region && { x: Math.round(bounds.x - region.x), y: Math.round(bounds.y - region.y) }
+    })
+    .toEqual({ x: 0, y: 0 })
+
+  const viewportBeforeResize = page.viewportSize()
+
+  if (!viewportBeforeResize) throw new Error("Missing viewport before resizing")
+  await commsAvatar.hover()
+  await page.mouse.down()
+  await page.mouse.move(viewportBeforeResize.width - 1, viewportBeforeResize.height - 1, { steps: 8 })
+  await page.mouse.up()
+  await page.setViewportSize({ width: 1000, height: 700 })
+  await expect
+    .poll(async () => {
+      const bounds = await commsAvatar.boundingBox()
+      const region = await commsPortraitWindow.boundingBox()
+
+      return bounds && region && {
+        right: Math.round(region.x + region.width - bounds.x - bounds.width),
+        bottom: Math.round(region.y + region.height - bounds.y - bounds.height),
+      }
+    })
+    .toEqual({ right: 0, bottom: 0 })
+  await page.setViewportSize(viewportBeforeResize)
 
   await selectChatView(page, "original")
   await expect(original).toBeVisible()

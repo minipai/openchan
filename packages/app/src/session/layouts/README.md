@@ -4,7 +4,7 @@ One web build contains all six views. The **Chat view** icon immediately after t
 
 - **Original**: original conversation and full-width composer without character artwork or Flow presentation.
 - **Stage**: native conversation with the large portrait overlay and history-reading treatment.
-- **Comms**: a circular, pop-out head portrait with a context-usage ring floats below the title row. The native chat scrolls behind it; pointer events pass through to the conversation. The standard composer, drafts, tools, and attachments stay shared.
+- **Comms**: a circular, pop-out head portrait with a context-usage ring floats below the title row. Drag the avatar anywhere within the conversation stage; its context ring moves with it, and arrow keys reposition it while focused. Scrolling over the avatar still scrolls the native chat. The standard composer, drafts, tools, and attachments stay shared.
 - **Flow**: compact conversation, foldable message blocks, and message-specific pop-out avatars.
 - **Companion**: native conversation with a small animated character beside a shorter input box.
 - **Document**: continuous native scrolling with each prompt and its responses enclosed in a transparent, square-bordered paper. A live 480px portrait floats inside the paper on the right below the prompt. Text wraps around its transparent silhouette. Earlier history is virtualized and loads as you scroll up.
@@ -25,7 +25,7 @@ The existing local previews on ports 4273, 4274, and 4275 can all serve that sam
 - `view-select.tsx` owns the native selection form; `settings/model.tsx` owns persistence.
 - `flow.css` and `../timeline/flow-density.ts` implement Flow's compact presentation. Native tool groups retain their membership, even across assistant messages. Old message paragraphs collapse separately; pending steers do not hide the current response. Message labels, avatars, and arrows retain their folding controls. Both summaries and full content remain centered with a 1000px maximum width.
 - `companion.css` positions the animation at the composer's leading edge. Companion uses the original timeline without Flow labels, avatars, or automatic folding.
-- `comms.css` reserves a compact fixed header for the centered avatar and context ring, then gives the native timeline a scrolling body without changing timeline virtualization.
+- `comms.css` overlays the movable avatar and context ring across the conversation stage while pointer events pass through everywhere else, then gives the native timeline a scrolling body without changing timeline virtualization.
 - `document.css` handles the grouped-scroll viewport, Document paper dimensions, typography, and narrow panels. Document virtualizes complete exchanges so each mounted paper can lay out native rows together and text can wrap around the portrait. Other views retain virtualized rows.
 
 ## Document reading

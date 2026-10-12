@@ -30,7 +30,7 @@ Set **Settings → OpenChan → Response language** to choose how the assistant 
 Choose a view from **Chat view** in the session header. Switching views preserves your session and composer draft.
 
 - **Stage** — a large portrait behind the conversation, with the latest replies in front.
-- **Comms** — a floating, pop-out avatar with a context-usage ring; chat scrolls behind it.
+- **Comms** — a draggable, pop-out avatar with a context-usage ring; place it anywhere in the chat area while messages scroll behind it.
 - **Flow** — compact, collapsible messages with per-message avatars.
 - **Companion** — a small animated character beside the composer.
 - **Document** — continuous illustrated papers, one prompt and its responses per paper.
